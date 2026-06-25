@@ -6,8 +6,9 @@ core end-to-end (slice 01) prima che esistano le implementazioni reali.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
+from .audio import STREAMER, AudioChunk, SpeechSegment
 from .llm import LLMProvider, LLMResult, LLMTimeout
 from .memory import Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
@@ -69,3 +70,101 @@ class FakeOutputRouter(OutputRouter):
 
     async def route(self, message: str, mode: OutputMode) -> None:
         self.sent.append((message, mode))
+
+
+class FakeVad:
+    """VAD deterministico: tratta un chunk come parlato o silenzio.
+
+    Per default usa una euristica esplicita: il chunk è "silenzio" se i suoi
+    `samples` sono falsy (None, "", lista vuota) o se `source_label`/payload
+    contengono il marcatore "silence". Altrimenti emette un singolo
+    `SpeechSegment` che eredita i metadati del chunk. Si può forzare il
+    comportamento con `always_speech` / `never_speech`.
+
+    Espone `calls` per asserire quante volte è stato invocato.
+    """
+
+    def __init__(
+        self, *, always_speech: bool = False, never_speech: bool = False
+    ) -> None:
+        self._always = always_speech
+        self._never = never_speech
+        self.calls = 0
+
+    def segments(self, chunk: AudioChunk) -> Sequence[SpeechSegment]:
+        self.calls += 1
+        if self._never or not self._has_speech(chunk):
+            return []
+        return [
+            SpeechSegment(
+                samples=chunk.samples,
+                sample_rate=chunk.sample_rate,
+                source_label=chunk.source_label,
+                ts=chunk.ts,
+            )
+        ]
+
+    def _has_speech(self, chunk: AudioChunk) -> bool:
+        if self._always:
+            return True
+        if not chunk.samples:
+            return False
+        return "silence" not in str(chunk.samples).lower()
+
+
+class FakeAsr:
+    """ASR deterministico: trascrive in base ai `samples` del segmento.
+
+    Per default ritorna `str(segment.samples)`, così il test controlla il testo
+    fissando i campioni. Si può passare un dizionario `transcripts` per mappare
+    `source_label` -> testo, o `text` per un testo fisso. Conta le invocazioni
+    in `calls`, così i test verificano che l'ASR NON sia chiamato sul silenzio.
+    """
+
+    def __init__(
+        self,
+        text: str | None = None,
+        *,
+        transcripts: dict[str, str] | None = None,
+    ) -> None:
+        self._text = text
+        self._transcripts = transcripts or {}
+        self.calls = 0
+
+    def transcribe(self, segment: SpeechSegment) -> str:
+        self.calls += 1
+        if segment.source_label in self._transcripts:
+            return self._transcripts[segment.source_label]
+        if self._text is not None:
+            return self._text
+        return str(segment.samples)
+
+
+class FakeSpeakerTagger:
+    """Speaker tagger deterministico basato su `source_label` (EC02).
+
+    L'audio proveniente da `streamer_label` (default "mic") è taggato come
+    `STREAMER`; tutto il resto riceve l'etichetta `other_label` (default
+    "video"). Permette di asserire che l'operatore sia distinto dalle altre
+    fonti. Si può passare una `mapping` esplicita source_label -> speaker.
+    """
+
+    def __init__(
+        self,
+        *,
+        streamer_label: str = "mic",
+        other_label: str = "video",
+        mapping: dict[str, str | None] | None = None,
+    ) -> None:
+        self._streamer_label = streamer_label
+        self._other_label = other_label
+        self._mapping = mapping
+        self.calls = 0
+
+    def tag(self, segment: SpeechSegment) -> str | None:
+        self.calls += 1
+        if self._mapping is not None:
+            return self._mapping.get(segment.source_label)
+        if segment.source_label == self._streamer_label:
+            return STREAMER
+        return self._other_label

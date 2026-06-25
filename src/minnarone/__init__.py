@@ -6,6 +6,16 @@ verranno implementati negli slice successivi.
 
 from __future__ import annotations
 
+from .audio import (
+    STREAMER,
+    Asr,
+    AudioChunk,
+    AudioPerceiver,
+    SpeakerTagger,
+    SpeechSegment,
+    Vad,
+)
+from .capture import OSCaptureAdapter, make_device_capture_source
 from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
 from .console import ConsoleOutputRouter
@@ -41,6 +51,15 @@ __all__ = [
     "RetentionConfig",
     "PerceptionStore",
     "ChatPerceiver",
+    "AudioPerceiver",
+    "AudioChunk",
+    "SpeechSegment",
+    "Vad",
+    "Asr",
+    "SpeakerTagger",
+    "STREAMER",
+    "OSCaptureAdapter",
+    "make_device_capture_source",
     "Senser",
     "Trigger",
     "PromptBuilder",
