@@ -64,6 +64,43 @@ richiedono i rispettivi backend (VAD/ASR/VLM) e si attivano solo iniettando
 il **passo manuale** da cablare: senza un adapter iniettato, `run()` gira il solo
 motore di reazione + summarizer.
 
+### Smoke Twitch capture-only
+
+Lo smoke Twitch e' separato dal CLI dell'agente e non richiede
+`OPENROUTER_API_KEY`. Per la chat servono credenziali bot in ambiente:
+
+```bash
+export TWITCH_BOT_USERNAME=nome_bot
+export TWITCH_OAUTH_TOKEN=oauth:token_o_senza_prefisso
+
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-chat
+```
+
+Per abilitare anche la cattura audio raw servono `streamlink` e `ffmpeg`
+installati sul sistema e disponibili su `PATH`:
+
+```bash
+streamlink --version
+ffmpeg -version
+
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-audio \
+  --audio \
+  --audio-chunk-seconds 1.0 \
+  --quality audio_only
+```
+
+Gli artifact sono scritti nella directory passata a `--output`:
+`perceptions.jsonl` per la chat, `raw/audio/*.pcm` per un numero limitato di
+sample PCM mono 16 kHz signed 16-bit little-endian, e `stats.json` con conteggi
+ed eventuali failure. I file `.pcm` provano solo la cattura raw da FFmpeg:
+questa slice non implementa ASR, VAD o diarizzazione.
+
 ### Esempio di config (`config.yaml`)
 
 ```yaml
