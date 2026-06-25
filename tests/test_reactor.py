@@ -83,6 +83,74 @@ def test_llm_timeout_skips_turn_no_output(tmp_path):
     assert router.sent == []
 
 
+def test_llm_timeout_once_then_recovers_next_tick(tmp_path):
+    # EC03/latenza: un timeout su un tick salta il turno (nessun messaggio
+    # stale), ma il loop prosegue e il tick successivo produce di nuovo output.
+    class FlakyLLM:
+        def __init__(self):
+            self.calls = 0
+            self.last_prompt = None
+
+        async def complete(self, prompt):
+            from minnarone.llm import LLMResult, LLMTimeout
+
+            self.last_prompt = prompt
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMTimeout("latenza anomala simulata")
+            return LLMResult(message="risposta tardiva!")
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone")
+    builder = PromptBuilder(FakeMemory().load())
+    llm = FlakyLLM()
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser, prompt_builder=builder, llm=llm, router=router,
+        store=store, mode=OutputMode.PUBLIC,
+    )
+
+    # primo trigger -> timeout -> turno saltato, nessun output
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+    asyncio.run(reactor.run_once())
+    assert router.sent == []
+    assert llm.calls == 1
+
+    # tick successivo con un nuovo trigger -> l'LLM risponde -> output instradato
+    chat.perceive("minnarone rispondi", speaker="enkk", ts=2.0)
+    asyncio.run(reactor.run_once())
+    assert router.sent == [("risposta tardiva!", OutputMode.PUBLIC)]
+    assert llm.calls == 2
+
+
+def test_generic_llm_error_skips_turn(tmp_path):
+    # Anche un LLMError generico (non solo il timeout) salta il turno.
+    class ErroringLLM:
+        last_prompt = None
+
+        async def complete(self, prompt):
+            from minnarone.llm import LLMError
+
+            self.last_prompt = prompt
+            raise LLMError("guasto generico")
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone")
+    builder = PromptBuilder(FakeMemory().load())
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser, prompt_builder=builder, llm=ErroringLLM(), router=router,
+        store=store, mode=OutputMode.PUBLIC,
+    )
+    chat.perceive("minnarone!", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == []
+
+
 def test_summary_from_provider_appears_in_reaction_prompt(tmp_path):
     # Un Reactor con un summary_provider deve iniettare il riassunto corrente
     # nella sezione dinamica del prompt di reazione.
