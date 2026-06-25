@@ -10,9 +10,9 @@ import pytest
 
 from minnarone.audio import (
     STREAMER,
+    Asr,
     AudioChunk,
     AudioPerceiver,
-    Asr,
     SpeakerTagger,
     Vad,
 )

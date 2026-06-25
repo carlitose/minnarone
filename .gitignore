@@ -22,3 +22,6 @@ dist/
 
 # Runtime data
 perceptions.jsonl
+
+# Agent worktrees
+.claude/worktrees/

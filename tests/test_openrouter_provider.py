@@ -60,7 +60,9 @@ class RecordingTransport:
 
 
 def test_provider_is_llm_provider():
-    provider = OpenRouterProvider(model="x-ai/grok", api_key="k", transport=lambda **kw: _ok_response())
+    provider = OpenRouterProvider(
+        model="x-ai/grok", api_key="k", transport=lambda **_kw: _ok_response()
+    )
     assert isinstance(provider, LLMProvider)
 
 

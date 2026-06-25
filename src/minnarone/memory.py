@@ -54,6 +54,7 @@ class Memory(ABC):
         Implementazione di default: NO-OP. Le sottoclassi MVP non lo
         sovrascrivono; l'auto-memoria v2 lo implementerà.
         """
+        del delta
         return None
 
 

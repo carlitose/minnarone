@@ -169,6 +169,7 @@ def make_device_screen_capture_source(
 
     Sollevare a chi cabla l'app la scelta del backend concreto.
     """
+    del fps
     raise NotImplementedError(
         "make_device_screen_capture_source è il percorso opzionale di cattura "
         "schermo reale: cablare un backend (es. mss/PyAV) implementando un "

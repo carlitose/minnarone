@@ -11,8 +11,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-import pytest
-
 from minnarone.capture import (
     StreamCaptureAdapter,
     os_audio_capture,
