@@ -38,7 +38,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Punto d'ingresso CLI. Ritorna l'exit code (0 = ok)."""
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_args)
 
     try:
         config = Config.load(args.config)

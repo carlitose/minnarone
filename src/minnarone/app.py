@@ -95,29 +95,11 @@ class PrivateNotImplementedRouter(OutputRouter):
 def _chat_dispatch(perceiver: ChatPerceiver) -> PerceiveFn:
     """Adatta `ChatPerceiver` (testo) al contratto `RawEvent` → percezioni.
 
-    Il payload di un `RawEvent` di canale "chat" è un dict opaco (contratto fra
-    adapter e perceiver dello stesso canale): si estraggono `text` e l'opzionale
-    `speaker`, usando il `ts` di cattura dell'evento. Un payload senza testo
-    viene ignorato (nessuna percezione) anziché crashare la pompa.
+    La semantica del payload chat vive in `ChatPerceiver.perceive_event`, così
+    smoke Twitch e pompa dell'agente condividono lo stesso adattamento
+    `RawEvent` -> `Perception`.
     """
-
-    def dispatch(event: RawEvent) -> object:
-        payload = event.payload
-        if isinstance(payload, dict):
-            text = payload.get("text")
-            speaker = payload.get("speaker")
-        else:
-            text = payload if isinstance(payload, str) else None
-            speaker = None
-        if not isinstance(text, str) or not text:
-            return None
-        return perceiver.perceive(
-            text,
-            speaker=speaker if isinstance(speaker, str) else None,
-            ts=event.ts,
-        )
-
-    return dispatch
+    return perceiver.perceive_event
 
 
 @dataclass(frozen=True, slots=True)
