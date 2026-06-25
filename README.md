@@ -95,11 +95,24 @@ minnarone-twitch-smoke \
   --quality audio_only
 ```
 
+Per campionare anche frame video JPEG a bassa frequenza:
+
+```bash
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-video \
+  --video \
+  --video-fps 1.0 \
+  --quality best
+```
+
 Gli artifact sono scritti nella directory passata a `--output`:
 `perceptions.jsonl` per la chat, `raw/audio/*.pcm` per un numero limitato di
-sample PCM mono 16 kHz signed 16-bit little-endian, e `stats.json` con conteggi
-ed eventuali failure. I file `.pcm` provano solo la cattura raw da FFmpeg:
-questa slice non implementa ASR, VAD o diarizzazione.
+sample PCM mono 16 kHz signed 16-bit little-endian, `raw/video/*.jpg` per un
+numero limitato di frame JPEG, e `stats.json` con conteggi ed eventuali failure.
+I file `.pcm` e `.jpg` provano solo la cattura raw da FFmpeg: queste slice non
+implementano ASR, VAD, diarizzazione o captioning VLM.
 
 ### Esempio di config (`config.yaml`)
 

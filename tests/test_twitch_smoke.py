@@ -123,9 +123,12 @@ def test_twitch_chat_smoke_command_runs_with_twitch_env_only(
             "duration": 3.5,
             "enable_chat": True,
             "enable_audio": False,
-            "quality": "audio_only",
+            "enable_video": False,
+            "quality": "best",
             "audio_chunk_seconds": 1.0,
             "max_audio_samples": 3,
+            "video_fps": 1.0,
+            "max_video_frames": 3,
         }
     ]
     assert "2" in capsys.readouterr().out
@@ -281,6 +284,40 @@ def test_twitch_smoke_audio_only_does_not_require_chat_credentials(
     assert calls[0]["audio_chunk_seconds"] == 0.25
 
 
+def test_twitch_smoke_video_only_does_not_require_chat_credentials(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    async def fake_smoke(**kwargs):
+        calls.append(kwargs)
+        return SmokeStats(video_events=1, video_frames_saved=1)
+
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--no-chat",
+            "--video",
+            "--video-fps",
+            "0.5",
+        ]
+    )
+
+    assert code == 0
+    assert calls[0]["enable_chat"] is False
+    assert calls[0]["enable_video"] is True
+    assert calls[0]["video_fps"] == 0.5
+
+
 def test_twitch_smoke_fails_when_requested_audio_has_no_events(
     tmp_path, monkeypatch, capsys
 ):
@@ -305,6 +342,32 @@ def test_twitch_smoke_fails_when_requested_audio_has_no_events(
 
     assert code == 1
     assert "audio: nessun evento" in capsys.readouterr().err
+
+
+def test_twitch_smoke_fails_when_requested_video_has_no_events(
+    tmp_path, monkeypatch, capsys
+):
+    async def fake_smoke(**kwargs):
+        return SmokeStats(chat_events=1, video_events=0)
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--video",
+        ]
+    )
+
+    assert code == 1
+    assert "video: nessun evento" in capsys.readouterr().err
 
 
 def test_twitch_smoke_fails_when_stats_contains_failures(
@@ -357,6 +420,30 @@ def test_twitch_smoke_rejects_invalid_audio_chunk_duration(
     assert "--audio-chunk-seconds" in capsys.readouterr().err
 
 
+def test_twitch_smoke_rejects_invalid_video_fps(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--video",
+            "--video-fps",
+            "nan",
+        ]
+    )
+
+    assert code != 0
+    assert "--video-fps" in capsys.readouterr().err
+
+
 def test_run_twitch_smoke_disabling_audio_skips_audio_process_runner(tmp_path):
     class ExplodingRunner:
         async def start(self, argv):
@@ -381,3 +468,29 @@ def test_run_twitch_smoke_disabling_audio_skips_audio_process_runner(tmp_path):
 
     assert stats.chat_events == 1
     assert stats.audio_events == 0
+
+
+def test_run_twitch_smoke_disabling_video_skips_video_process_runner(tmp_path):
+    class ExplodingRunner:
+        async def start(self, argv):
+            raise AssertionError("video process should not start")
+
+    chat = FakeSourceAdapter(
+        [RawEvent(channel="chat", payload={"text": "ciao"}, ts=1.0)]
+    )
+
+    stats = asyncio.run(
+        run_twitch_smoke(
+            channel="minnarone",
+            username="bot_user",
+            oauth_token="oauth:token",
+            output_dir=tmp_path / "smoke",
+            duration=1.0,
+            enable_video=False,
+            chat_adapter=chat,
+            video_process_runner=ExplodingRunner(),
+        )
+    )
+
+    assert stats.chat_events == 1
+    assert stats.video_events == 0

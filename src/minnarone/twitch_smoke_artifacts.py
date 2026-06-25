@@ -12,6 +12,7 @@ from .audio import AudioChunk
 from .chat import ChatPerceiver
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
+from .video import VideoFrame
 
 _SMOKE_STOP_TIMEOUT_SECONDS = 5.0
 
@@ -23,6 +24,8 @@ class SmokeStats:
     chat_events: int = 0
     audio_events: int = 0
     audio_samples_saved: int = 0
+    video_events: int = 0
+    video_frames_saved: int = 0
     failures: list[str] = field(default_factory=list)
 
     def as_json(self) -> dict[str, object]:
@@ -30,6 +33,8 @@ class SmokeStats:
             "chat_events": self.chat_events,
             "audio_events": self.audio_events,
             "audio_samples_saved": self.audio_samples_saved,
+            "video_events": self.video_events,
+            "video_frames_saved": self.video_frames_saved,
             "failures": list(self.failures),
         }
 
@@ -42,14 +47,19 @@ class TwitchSmokeArtifacts:
         output_dir: str | Path,
         *,
         max_audio_samples: int = 3,
+        max_video_frames: int = 3,
         perceptions_path: str | Path | None = None,
     ) -> None:
         if max_audio_samples < 0:
             raise ValueError("max_audio_samples deve essere >= 0")
+        if max_video_frames < 0:
+            raise ValueError("max_video_frames deve essere >= 0")
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._audio_dir = self._dir / "raw" / "audio"
         self._audio_dir.mkdir(parents=True, exist_ok=True)
+        self._video_dir = self._dir / "raw" / "video"
+        self._video_dir.mkdir(parents=True, exist_ok=True)
         self._perceptions_path = (
             Path(perceptions_path)
             if perceptions_path is not None
@@ -59,9 +69,12 @@ class TwitchSmokeArtifacts:
         self._perceptions_path.write_text("", encoding="utf-8")
         for stale_sample in self._audio_dir.glob("*.pcm"):
             stale_sample.unlink()
+        for stale_frame in self._video_dir.glob("*.jpg"):
+            stale_frame.unlink()
         self._store = PerceptionStore(self.perceptions_path)
         self._chat = ChatPerceiver(self._store)
         self._max_audio_samples = max_audio_samples
+        self._max_video_frames = max_video_frames
         self.stats = SmokeStats()
 
     @property
@@ -88,6 +101,17 @@ class TwitchSmokeArtifacts:
                 sample_path.write_bytes(bytes(samples))
                 self.stats.audio_samples_saved += 1
             return True
+        if event.channel == "video" and isinstance(event.payload, VideoFrame):
+            self.stats.video_events += 1
+            if self.stats.video_frames_saved < self._max_video_frames:
+                index = self.stats.video_frames_saved + 1
+                frame_path = self._video_dir / f"video-{index:04d}.jpg"
+                pixels = event.payload.pixels
+                if not isinstance(pixels, (bytes, bytearray, memoryview)):
+                    raise TypeError("VideoFrame.pixels deve essere bytes-like")
+                frame_path.write_bytes(bytes(pixels))
+                self.stats.video_frames_saved += 1
+            return True
         return False
 
     def add_failure(self, message: str) -> None:
@@ -106,6 +130,7 @@ async def capture_twitch_smoke(
     output_dir: str | Path,
     duration: float,
     max_audio_samples: int = 3,
+    max_video_frames: int = 3,
     stop_timeout: float = _SMOKE_STOP_TIMEOUT_SECONDS,
 ) -> SmokeStats:
     """Run enabled adapters for a bounded duration and write smoke artifacts."""
@@ -114,6 +139,7 @@ async def capture_twitch_smoke(
     artifacts = TwitchSmokeArtifacts(
         output_dir,
         max_audio_samples=max_audio_samples,
+        max_video_frames=max_video_frames,
     )
 
     async def pump(adapter: SourceAdapter) -> None:
