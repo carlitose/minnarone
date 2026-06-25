@@ -6,12 +6,18 @@ verranno implementati negli slice successivi.
 
 from __future__ import annotations
 
+from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
+from .console import ConsoleOutputRouter
 from .llm import LLMError, LLMProvider, LLMResult, LLMTimeout
 from .memory import FactsDelta, Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
 from .perception import Perception, Source
+from .prompt import PromptBuilder
+from .reactor import Reactor
+from .senser import Senser, Trigger
 from .source import RawEvent, SourceAdapter
+from .store import PerceptionStore
 
 __all__ = [
     "Perception",
@@ -31,4 +37,11 @@ __all__ = [
     "ConfigError",
     "DisclosureConfig",
     "RetentionConfig",
+    "PerceptionStore",
+    "ChatPerceiver",
+    "Senser",
+    "Trigger",
+    "PromptBuilder",
+    "ConsoleOutputRouter",
+    "Reactor",
 ]
