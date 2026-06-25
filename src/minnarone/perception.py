@@ -84,17 +84,33 @@ class Perception:
 
     @classmethod
     def from_json(cls, line: str) -> "Perception":
-        """Deserializza da una riga JSON. Inverso di `to_json`."""
-        data = json.loads(line)
+        """Deserializza da una riga JSON. Inverso di `to_json`.
+
+        Unico punto di decodifica: ogni campo mancante o malformato (JSON non
+        valido incluso) viene segnalato con un `ValueError` coerente che cita la
+        riga offendente, mai un `KeyError` grezzo.
+        """
+        try:
+            data = json.loads(line)
+        except ValueError as exc:  # JSONDecodeError è sottoclasse di ValueError
+            raise ValueError(f"riga JSON non decodificabile: {line!r}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"riga JSON non è un oggetto in {line!r}")
         try:
             source = Source(data["source"])
         except (KeyError, ValueError) as exc:
             raise ValueError(f"source mancante o non valido in {line!r}") from exc
+        try:
+            ts = data["ts"]
+            type_ = data["type"]
+            text = data["text"]
+        except KeyError as exc:
+            raise ValueError(f"campo {exc.args[0]!r} mancante in {line!r}") from exc
         return cls(
-            ts=data["ts"],
+            ts=ts,
             source=source,
-            type=data["type"],
-            text=data["text"],
+            type=type_,
+            text=text,
             speaker=data.get("speaker"),
         )
 
