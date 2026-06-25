@@ -17,6 +17,7 @@ import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 
+from .cadence import CadenceLoop
 from .human import HumanLikeness
 from .llm import LLMError, LLMProvider
 from .output import OutputMode, OutputRouter
@@ -75,7 +76,11 @@ class Reactor:
         # avvia il ciclo del Summarizer (assemblaggio completo: issue 11). Se
         # None, il prompt non riceve alcun riassunto (comportamento invariato).
         self._summary_provider = summary_provider
-        self._running = False
+        # La cadenza del loop senso-reazione è delegata a un CadenceLoop interno
+        # (creato in `run()`, quando si conosce l'intervallo). Lo skip-turno su
+        # LLMError resta PER-TRIGGER dentro `run_once` (granularità più fine di
+        # un ciclo), quindi il CadenceLoop non assorbe nulla.
+        self._loop: CadenceLoop | None = None
 
     def recent_messages(self, n: int | None = None) -> list[str]:
         """Snapshot read-only degli ultimi messaggi instradati dall'agente.
@@ -157,12 +162,16 @@ class Reactor:
             self._senser.note_agent_message(self._senser.now())
 
     async def run(self, *, interval: float = 0.5) -> None:
-        """Esegue il loop finché `stop()` non viene chiamato."""
-        self._running = True
-        while self._running:
-            await self.run_once()
-            await asyncio.sleep(interval)
+        """Esegue il loop finché `stop()` non viene chiamato.
+
+        Proxy sottile su un `CadenceLoop` interno: a ogni giro esegue
+        `run_once` poi attende `interval`. Lo skip-turno su LLMError vive in
+        `run_once` (per-trigger), non qui.
+        """
+        self._loop = CadenceLoop(self.run_once, interval, sleep=asyncio.sleep)
+        await self._loop.run()
 
     def stop(self) -> None:
         """Richiede l'arresto del loop al prossimo giro."""
-        self._running = False
+        if self._loop is not None:
+            self._loop.stop()

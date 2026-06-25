@@ -21,6 +21,7 @@ from .audio import (
     SpeechSegment,
     Vad,
 )
+from .cadence import CadenceLoop
 from .capture import (
     OSCaptureAdapter,
     ScreenCaptureAdapter,
@@ -94,6 +95,7 @@ __all__ = [
     "ConsoleOutputRouter",
     "Reactor",
     "Summarizer",
+    "CadenceLoop",
     "HumanLikeness",
     "HumanDecision",
     "END_CONV_SENTINEL",
