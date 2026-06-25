@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+perceptions.jsonl

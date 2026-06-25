@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "project-designer": {
+      "source": "carlitose/project-designer-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "87529da17e7a4923330f8baeb5105ceb47336d83922f3b66e71a07560f13bb6c"
+    }
+  }
+}
