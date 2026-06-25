@@ -47,6 +47,7 @@ from .senser import ConversationWindow, Senser, Trigger
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
 from .summarizer import Summarizer
+from .twitch_stream import TwitchStreamAdapter, TwitchStreamStats
 from .video import Captioner, VideoFrame, VideoPerceiver
 
 __all__ = [
@@ -54,6 +55,8 @@ __all__ = [
     "Source",
     "SourceAdapter",
     "RawEvent",
+    "TwitchStreamAdapter",
+    "TwitchStreamStats",
     "LLMProvider",
     "LLMResult",
     "LLMError",
