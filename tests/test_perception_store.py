@@ -5,7 +5,7 @@ read_since filtra, tail restituisce gli ultimi N in ordine cronologico.
 """
 
 from minnarone.perception import Perception, Source
-from minnarone.store import PerceptionStore
+from minnarone.store import _TAIL_CACHE_SIZE, PerceptionStore
 
 
 def _p(ts: float, text: str) -> Perception:
@@ -94,3 +94,58 @@ def test_reopened_store_tail_sees_previously_appended_rows(tmp_path):
         s1.append(_p(float(i), f"m{i}"))
     reopened = PerceptionStore(path)
     assert [p.text for p in reopened.tail(2)] == ["m2", "m3"]
+
+
+def _write_corrupt_log(path) -> None:
+    """Scrive un log con una riga corrotta fra due righe valide."""
+    lines = [
+        _p(1.0, "prima").to_json(),
+        "{ questa riga e' corrotta",  # JSON malformato in mezzo
+        _p(3.0, "ultima").to_json(),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_read_since_skips_corrupt_line(tmp_path):
+    path = tmp_path / "perceptions.jsonl"
+    _write_corrupt_log(path)
+    store = PerceptionStore(path)
+    assert [p.text for p in store.read_since(0.0)] == ["prima", "ultima"]
+
+
+def test_tail_skips_corrupt_line(tmp_path):
+    path = tmp_path / "perceptions.jsonl"
+    _write_corrupt_log(path)
+    store = PerceptionStore(path)
+    # tail oltre la cache ricade sul file: deve comunque saltare la riga rotta.
+    assert [p.text for p in store.tail(_TAIL_CACHE_SIZE + 1)] == ["prima", "ultima"]
+
+
+def test_read_from_skips_corrupt_line_and_advances_to_end(tmp_path):
+    path = tmp_path / "perceptions.jsonl"
+    _write_corrupt_log(path)
+    store = PerceptionStore(path)
+    rows, pos = store.read_from(0)
+    assert [p.text for p in rows] == ["prima", "ultima"]
+    # il cursore avanza fino alla fine, oltre la riga corrotta.
+    assert pos == path.stat().st_size
+
+
+def test_invalid_utf8_line_does_not_brick_reads_or_constructor(tmp_path):
+    p = tmp_path / "perceptions.jsonl"
+    # riga valida, riga con byte non-UTF-8, riga valida
+    good1 = '{"ts": 1.0, "source": "chat", "type": "msg", "text": "prima"}\n'
+    good2 = '{"ts": 2.0, "source": "chat", "type": "msg", "text": "dopo"}\n'
+    with p.open("wb") as fh:
+        fh.write(good1.encode("utf-8"))
+        fh.write(b"\xff\xfe corrotta non-utf8\n")
+        fh.write(good2.encode("utf-8"))
+
+    # il costruttore non deve sollevare (prima brickava via _prime_recent)
+    store = PerceptionStore(p)
+    texts_since = [pc.text for pc in store.read_since(0.0)]
+    assert texts_since == ["prima", "dopo"]              # salta la riga corrotta
+    assert [pc.text for pc in store.tail(10)] == ["prima", "dopo"]
+    rows, pos = store.read_from(0)
+    assert [pc.text for pc in rows] == ["prima", "dopo"]
+    assert pos == p.stat().st_size                        # cursore a fine file

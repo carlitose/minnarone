@@ -23,19 +23,20 @@ dell'applicazione. Per i test si usano i fake deterministici in `fakes.py`.
 
 Il payload audio (`AudioChunk`) è volutamente opaco rispetto al formato: porta i
 campioni grezzi e i metadati minimi (sample rate, canale di provenienza) di cui
-gli stadi hanno bisogno. È il contratto fra l'`OSCaptureAdapter` (che lo emette
-come `RawEvent.payload`) e questa pipeline.
+gli stadi hanno bisogno. È il contratto fra lo `StreamCaptureAdapter` di canale
+"audio" (costruito via `os_audio_capture`, che lo emette come
+`RawEvent.payload`) e questa pipeline.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from .perceiver import EventPerceiver
 from .perception import Perception, Source
-from .source import RawEvent
 from .store import PerceptionStore
 
 # Etichetta canonica per l'operatore locale (chi conduce la sessione). Le altre
@@ -122,12 +123,17 @@ class SpeakerTagger(Protocol):
         ...
 
 
-class AudioPerceiver:
+class AudioPerceiver(EventPerceiver):
     """Orchestra VAD -> ASR -> speaker tagging e scrive percezioni audio.
 
     Modulo profondo: nasconde la pipeline a tre stadi dietro un'API semplice.
-    Dipende solo dai Protocol iniettati, mai da un modello concreto.
+    Dipende solo dai Protocol iniettati, mai da un modello concreto. Eredita da
+    `EventPerceiver` il dispatch `RawEvent` -> percezione (canale "audio",
+    payload `AudioChunk`).
     """
+
+    channel = "audio"
+    payload_type = AudioChunk
 
     def __init__(
         self,
@@ -175,26 +181,11 @@ class AudioPerceiver:
             created.append(perception)
         return created
 
-    def perceive_event(self, event: RawEvent) -> list[Perception]:
-        """Processa un `RawEvent` di canale "audio" (payload `AudioChunk`).
+    def _perceive_payload(self, payload: AudioChunk) -> list[Perception]:
+        """Hook di `EventPerceiver`: delega alla pipeline audio già testata.
 
-        È l'aggancio fra l'`OSCaptureAdapter` e la pipeline: gli eventi di
-        canale "audio" portano un `AudioChunk` come payload. Eventi di altri
-        canali vengono ignorati (ritorna lista vuota).
+        È l'aggancio fra lo `StreamCaptureAdapter` ("audio") e la pipeline: gli eventi di
+        canale "audio" portano un `AudioChunk` come payload. La guardia su
+        canale e tipo del payload vive in `EventPerceiver`.
         """
-        if event.channel != "audio":
-            return []
-        payload = event.payload
-        if not isinstance(payload, AudioChunk):
-            raise TypeError(
-                "il payload di un RawEvent audio deve essere un AudioChunk, "
-                f"ricevuto {type(payload)!r}"
-            )
         return self.perceive_chunk(payload)
-
-    def perceive_events(self, events: Iterable[RawEvent]) -> list[Perception]:
-        """Processa una sequenza di `RawEvent`, concatenando le percezioni."""
-        created: list[Perception] = []
-        for event in events:
-            created.extend(self.perceive_event(event))
-        return created

@@ -41,6 +41,29 @@ def test_invalid_source_string_on_load_raises():
         Perception.from_json(line)
 
 
+def test_missing_ts_on_load_raises_valueerror():
+    line = json.dumps({"source": "chat", "type": "msg", "text": "x"})
+    with pytest.raises(ValueError):
+        Perception.from_json(line)
+
+
+def test_missing_type_on_load_raises_valueerror():
+    line = json.dumps({"ts": 0.0, "source": "chat", "text": "x"})
+    with pytest.raises(ValueError):
+        Perception.from_json(line)
+
+
+def test_missing_text_on_load_raises_valueerror():
+    line = json.dumps({"ts": 0.0, "source": "chat", "type": "msg"})
+    with pytest.raises(ValueError):
+        Perception.from_json(line)
+
+
+def test_malformed_json_on_load_raises_valueerror():
+    with pytest.raises(ValueError):
+        Perception.from_json("non sono { json valido")
+
+
 def test_non_numeric_ts_raises():
     with pytest.raises(ValueError):
         Perception(ts="presto", source=Source.CHAT, type="msg", text="x")  # type: ignore[arg-type]

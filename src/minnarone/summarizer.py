@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 
+from .cadence import CadenceLoop
 from .llm import LLMError, LLMProvider
 from .perception import Perception, format_perception_line
 from .store import PerceptionStore
@@ -51,7 +52,11 @@ class Summarizer:
         self._store = store
         self._window = window
         self._summary = ""
-        self._running = False
+        # La cadenza è delegata a un CadenceLoop interno (creato in `run()`,
+        # quando si conosce l'intervallo). Lo skip-turno su LLMError — timeout
+        # incluso, perché LLMTimeout è sottotipo di LLMError — è assorbito dal
+        # loop via `swallow`, conservando il riassunto precedente.
+        self._loop: CadenceLoop | None = None
 
     @property
     def current_summary(self) -> str:
@@ -80,19 +85,21 @@ class Summarizer:
     async def run(self, *, interval: float = 30.0) -> None:
         """Esegue il riassunto su cadenza finché `stop()` non viene chiamato.
 
-        Un giro alla volta: `summarize` è awaited prima del prossimo `sleep`,
-        così le chiamate non si accumulano sotto carico. Gli errori dell'LLM
-        sono assorbiti (si salta il ciclo, si conserva il riassunto precedente).
+        Proxy sottile su un `CadenceLoop` interno. Un giro alla volta:
+        `summarize` è awaited prima del prossimo `sleep`, così le chiamate non
+        si accumulano sotto carico. Gli errori dell'LLM sono assorbiti dal loop
+        (`swallow=(LLMError,)`): si salta il ciclo, si conserva il riassunto
+        precedente, niente crash. `on_skip` è None → skip silenzioso come prima.
         """
-        self._running = True
-        while self._running:
-            try:
-                await self.summarize()
-            except LLMError:
-                # Salta il ciclo: mantieni il riassunto precedente, niente crash.
-                pass
-            await asyncio.sleep(interval)
+        self._loop = CadenceLoop(
+            self.summarize,
+            interval,
+            sleep=asyncio.sleep,
+            swallow=(LLMError,),
+        )
+        await self._loop.run()
 
     def stop(self) -> None:
         """Richiede l'arresto del loop al prossimo giro."""
-        self._running = False
+        if self._loop is not None:
+            self._loop.stop()

@@ -60,14 +60,38 @@ class PerceptionStore:
             os.fsync(fh.fileno())
         self._recent.append(perception)
 
+    @staticmethod
+    def _parse_or_skip(line: str) -> Perception | None:
+        """Decodifica una riga, saltando (con `None`) quelle corrotte.
+
+        Il log è append-only: una singola riga illeggibile (scrittura parziale,
+        corruzione su disco, formato vecchio) non deve abortire l'intera lettura.
+        Lo skip è SILENZIOSO per scelta deliberata (il repo non usa logging):
+        la resilienza alla corruzione parziale prevale sull'osservabilità del
+        singolo skip.
+        """
+        try:
+            return Perception.from_json(line)
+        except ValueError:
+            return None
+
     def _read_all(self) -> Iterable[Perception]:
         if not self._path.exists():
             return
-        with self._path.open("r", encoding="utf-8") as fh:
+        # Apertura in BINARIO + decode per-riga: byte non-UTF-8 su disco non
+        # devono abortire la lettura (coerente con read_from). Una riga non
+        # decodificabile viene saltata come una riga corrotta.
+        with self._path.open("rb") as fh:
             for raw in fh:
-                line = raw.strip()
-                if line:
-                    yield Perception.from_json(line)
+                try:
+                    line = raw.decode("utf-8").strip()
+                except UnicodeDecodeError:
+                    continue
+                if not line:
+                    continue
+                perception = self._parse_or_skip(line)
+                if perception is not None:
+                    yield perception
 
     def read_since(self, ts: float) -> list[Perception]:
         """Percezioni con `ts` strettamente maggiore di `ts`, in ordine di file."""
@@ -95,9 +119,17 @@ class PerceptionStore:
                     # Riga incompleta: non consumarla, riprende al prossimo giro.
                     break
                 consumed += len(raw)
-                line = raw.decode("utf-8").strip()
-                if line:
-                    perceptions.append(Perception.from_json(line))
+                try:
+                    line = raw.decode("utf-8").strip()
+                except UnicodeDecodeError:
+                    # Riga non decodificabile come UTF-8: saltala ma avanza il
+                    # cursore, così non resta bloccata al prossimo giro.
+                    continue
+                if not line:
+                    continue
+                perception = self._parse_or_skip(line)
+                if perception is not None:
+                    perceptions.append(perception)
         return perceptions, consumed
 
     def tail(self, n: int) -> list[Perception]:
