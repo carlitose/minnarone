@@ -35,12 +35,11 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from .perceiver import EventPerceiver
 from .perception import Perception, Source
-from .source import RawEvent
 from .store import PerceptionStore
 
 
@@ -107,11 +106,13 @@ def _frame_hash(frame: VideoFrame) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-class VideoPerceiver:
+class VideoPerceiver(EventPerceiver):
     """Orchestra sampling -> hashing/dedup -> caption e scrive percezioni video.
 
     Modulo profondo: nasconde la pipeline dietro un'API semplice. Dipende solo
-    dal `Captioner` iniettato, mai da un modello concreto.
+    dal `Captioner` iniettato, mai da un modello concreto. Eredita da
+    `EventPerceiver` il dispatch `RawEvent` -> percezione (canale "video",
+    payload `VideoFrame`).
 
     Args:
         store: dove scrivere le `Perception` prodotte.
@@ -119,6 +120,9 @@ class VideoPerceiver:
         sample_every: campiona un frame ogni `sample_every` (default 1 = ogni
             frame è candidato). Deve essere >= 1; è il freno costo/latenza.
     """
+
+    channel = "video"
+    payload_type = VideoFrame
 
     def __init__(
         self,
@@ -185,26 +189,11 @@ class VideoPerceiver:
         self._store.append(perception)
         return [perception]
 
-    def perceive_event(self, event: RawEvent) -> list[Perception]:
-        """Processa un `RawEvent` di canale "video" (payload `VideoFrame`).
+    def _perceive_payload(self, payload: VideoFrame) -> list[Perception]:
+        """Hook di `EventPerceiver`: delega alla pipeline video già testata.
 
         È l'aggancio fra lo `ScreenCaptureAdapter` e la pipeline: gli eventi di
-        canale "video" portano un `VideoFrame` come payload. Eventi di altri
-        canali vengono ignorati (ritorna lista vuota).
+        canale "video" portano un `VideoFrame` come payload. La guardia su
+        canale e tipo del payload vive in `EventPerceiver`.
         """
-        if event.channel != "video":
-            return []
-        payload = event.payload
-        if not isinstance(payload, VideoFrame):
-            raise TypeError(
-                "il payload di un RawEvent video deve essere un VideoFrame, "
-                f"ricevuto {type(payload)!r}"
-            )
         return self.perceive_frame(payload)
-
-    def perceive_events(self, events: Iterable[RawEvent]) -> list[Perception]:
-        """Processa una sequenza di `RawEvent`, concatenando le percezioni."""
-        created: list[Perception] = []
-        for event in events:
-            created.extend(self.perceive_event(event))
-        return created

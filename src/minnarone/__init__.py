@@ -35,6 +35,7 @@ from .human import END_CONV_SENTINEL, HumanDecision, HumanLikeness
 from .llm import LLMError, LLMProvider, LLMResult, LLMTimeout
 from .memory import FactsDelta, FileMemory, Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
+from .perceiver import EventPerceiver
 from .perception import Perception, Source
 from .prompt import PromptBuilder
 from .reactor import Reactor
@@ -64,6 +65,7 @@ __all__ = [
     "DisclosureConfig",
     "RetentionConfig",
     "PerceptionStore",
+    "EventPerceiver",
     "ChatPerceiver",
     "AudioPerceiver",
     "AudioChunk",
