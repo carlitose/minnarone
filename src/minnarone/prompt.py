@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .memory import MemoryBlocks
-from .perception import Perception
+from .perception import Perception, format_perception_line
 from .senser import Trigger
 
 
@@ -37,12 +37,13 @@ class PromptBuilder:
             f"{self._blocks.facts}\n"
         )
 
-    @staticmethod
-    def _format_message(p: Perception) -> str:
-        who = p.speaker if p.speaker else "anon"
-        return f"{who}: {p.text}"
-
-    def build(self, *, recent: Sequence[Perception], trigger: Trigger) -> str:
+    def build(
+        self,
+        *,
+        recent: Sequence[Perception],
+        trigger: Trigger,
+        summary: str | None = None,
+    ) -> str:
         """Assembla il prompt completo per il turno corrente.
 
         La finestra recente fa da storia *precedente* il trigger: la percezione
@@ -56,12 +57,22 @@ class PromptBuilder:
         Nota: se la storia contenesse un messaggio legittimamente identico per
         valore al trigger, verrebbe anch'esso escluso; preferiamo la dedup del
         trigger (la resa in SITUAZIONE è quella canonica).
+
+        `summary` è la memoria a BREVE termine prodotta dal Summarizer: un
+        blocchetto di riassunto della sessione finora. È DINAMICO (cambia nel
+        tempo) quindi vive nella sezione dinamica, dopo il prefisso stabile e
+        PRIMA dei messaggi recenti — mai nel prefisso cacheable. Se assente o
+        vuoto, la sezione RIASSUNTO non viene resa.
         """
         history = [p for p in recent if p != trigger.perception]
-        recent_block = "\n".join(self._format_message(p) for p in history)
-        situation = self._format_message(trigger.perception)
+        recent_block = "\n".join(format_perception_line(p) for p in history)
+        situation = format_perception_line(trigger.perception)
+        summary_block = ""
+        if summary and summary.strip():
+            summary_block = f"## RIASSUNTO\n{summary.strip()}\n\n"
         return (
             f"{self.stable_prefix()}\n"
+            f"{summary_block}"
             "## CONVERSAZIONE RECENTE\n"
             f"{recent_block}\n\n"
             "## SITUAZIONE\n"

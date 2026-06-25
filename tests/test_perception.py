@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from minnarone.perception import Perception, Source
+from minnarone.perception import Perception, Source, format_perception_line
 
 
 def test_roundtrip_preserves_fields():
@@ -49,3 +49,13 @@ def test_non_numeric_ts_raises():
 def test_unicode_text_survives_roundtrip():
     p = Perception(ts=2.0, source=Source.CHAT, type="msg", text="però 🐌 lumache")
     assert Perception.from_json(p.to_json()).text == "però 🐌 lumache"
+
+
+def test_format_perception_line_uses_speaker():
+    p = Perception(ts=1.0, source=Source.CHAT, type="msg", text="ciao", speaker="enkk")
+    assert format_perception_line(p) == "enkk: ciao"
+
+
+def test_format_perception_line_falls_back_to_anon_when_no_speaker():
+    p = Perception(ts=1.0, source=Source.VIDEO, type="caption", text="una stanza")
+    assert format_perception_line(p) == "anon: una stanza"

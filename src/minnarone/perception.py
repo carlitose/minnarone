@@ -97,3 +97,15 @@ class Perception:
             text=data["text"],
             speaker=data.get("speaker"),
         )
+
+
+def format_perception_line(p: Perception) -> str:
+    """Resa testuale canonica di una percezione: ``"<speaker>: <text>"``.
+
+    Quando lo speaker è ignoto si usa ``"anon"``. Questa è l'UNICA fonte del
+    formato riga: sia il PromptBuilder (sezione conversazione recente /
+    situazione) sia il Summarizer (lista eventi) la usano, così la resa resta
+    byte-identica fra i due.
+    """
+    who = p.speaker if p.speaker else "anon"
+    return f"{who}: {p.text}"

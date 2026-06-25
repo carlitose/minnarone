@@ -83,6 +83,63 @@ def test_llm_timeout_skips_turn_no_output(tmp_path):
     assert router.sent == []
 
 
+def test_summary_from_provider_appears_in_reaction_prompt(tmp_path):
+    # Un Reactor con un summary_provider deve iniettare il riassunto corrente
+    # nella sezione dinamica del prompt di reazione.
+    store, chat, llm, router, reactor = _build(tmp_path)
+    reactor = Reactor(
+        senser=reactor._senser,
+        prompt_builder=reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        summary_provider=lambda: "RIASSUNTO X",
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert llm.last_prompt is not None
+    assert "RIASSUNTO X" in llm.last_prompt
+
+
+def test_summarizer_object_wired_as_summary_provider(tmp_path):
+    # Anche un Summarizer (oggetto con current_summary) può essere collegato.
+    from minnarone.summarizer import Summarizer
+
+    store, chat, llm, router, reactor = _build(tmp_path)
+    summarizer = Summarizer(llm=FakeLLMProvider(message="ignorato"), store=store)
+    summarizer._summary = "RIASSUNTO Y"  # come se summarize() fosse già girato
+    reactor = Reactor(
+        senser=reactor._senser,
+        prompt_builder=reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        summary_provider=lambda: summarizer.current_summary,
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert llm.last_prompt is not None
+    assert "RIASSUNTO Y" in llm.last_prompt
+
+
+def test_no_summary_provider_omits_summary_section(tmp_path):
+    # Senza summary_provider il comportamento è invariato: nessuna sezione
+    # RIASSUNTO nel prompt.
+    store, chat, llm, router, reactor = _build(tmp_path)
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert llm.last_prompt is not None
+    assert "RIASSUNTO" not in llm.last_prompt
+
+
 def test_run_loop_reacts_only_when_trigger_fires_then_stops(tmp_path):
     store, chat, llm, router, reactor = _build(tmp_path)
     chat.perceive("ciao a tutti", speaker="enkk", ts=1.0)

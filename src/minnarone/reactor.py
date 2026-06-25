@@ -14,6 +14,7 @@ turno" (EC03): non viene mai inviato un messaggio stale.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from .llm import LLMError, LLMProvider
 from .output import OutputMode, OutputRouter
@@ -38,6 +39,7 @@ class Reactor:
         store: PerceptionStore,
         mode: OutputMode = OutputMode.PUBLIC,
         recent_window: int = _DEFAULT_RECENT_WINDOW,
+        summary_provider: Callable[[], str] | None = None,
     ) -> None:
         self._senser = senser
         self._prompt_builder = prompt_builder
@@ -46,6 +48,12 @@ class Reactor:
         self._store = store
         self._mode = mode
         self._recent_window = recent_window
+        # Fonte OPZIONALE della memoria a breve termine: una callable zero-arg che
+        # restituisce il riassunto corrente (es. `summarizer.current_summary`).
+        # Il Reactor la LEGGE soltanto al momento del build — non possiede né
+        # avvia il ciclo del Summarizer (assemblaggio completo: issue 11). Se
+        # None, il prompt non riceve alcun riassunto (comportamento invariato).
+        self._summary_provider = summary_provider
         self._running = False
 
     async def run_once(self) -> None:
@@ -55,8 +63,12 @@ class Reactor:
             return
         # Lo store non muta entro il tick: leggi la finestra recente una volta.
         recent = self._store.tail(self._recent_window)
+        # Leggi il riassunto corrente (se c'è una fonte) una volta per tick.
+        summary = self._summary_provider() if self._summary_provider else None
         for trigger in triggers:
-            prompt = self._prompt_builder.build(recent=recent, trigger=trigger)
+            prompt = self._prompt_builder.build(
+                recent=recent, trigger=trigger, summary=summary
+            )
             try:
                 result = await self._llm.complete(prompt)
             except LLMError:

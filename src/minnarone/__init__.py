@@ -18,6 +18,7 @@ from .reactor import Reactor
 from .senser import Senser, Trigger
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
+from .summarizer import Summarizer
 
 __all__ = [
     "Perception",
@@ -45,4 +46,5 @@ __all__ = [
     "PromptBuilder",
     "ConsoleOutputRouter",
     "Reactor",
+    "Summarizer",
 ]

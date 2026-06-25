@@ -72,3 +72,35 @@ def test_stable_prefix_contains_no_dynamic_data():
     # ma deve contenere la soul/facts (contesto stabile)
     assert "Sono Minnarone." in prefix
     assert "enkk ama il trap." in prefix
+
+
+def test_summary_rendered_in_dynamic_section_before_recent():
+    # Il riassunto (memoria a breve termine) è DINAMICO: va nella sezione
+    # dinamica, dopo il prefisso stabile ma PRIMA dei messaggi recenti.
+    builder = PromptBuilder(_blocks())
+    recent = [_msg(1.0, "ciao"), _msg(2.0, "tutto bene?")]
+    prompt = builder.build(
+        recent=recent, trigger=_trigger(), summary="Prima enkk ha battuto il boss."
+    )
+    prefix = builder.stable_prefix()
+    assert prompt.startswith(prefix)
+    i_summary = prompt.index("Prima enkk ha battuto il boss.")
+    i_recent = prompt.index("ciao")
+    assert len(prefix) <= i_summary < i_recent
+
+
+def test_stable_prefix_unaffected_by_summary():
+    # Il riassunto non deve MAI finire nel prefisso cacheable: il prefisso resta
+    # byte-identico a prescindere dal summary passato a build().
+    builder = PromptBuilder(_blocks())
+    recent = [_msg(1.0, "ciao")]
+    trigger = _trigger()
+    p_no_summary = builder.build(recent=recent, trigger=trigger)
+    p_with_summary = builder.build(
+        recent=recent, trigger=trigger, summary="qualcosa di volatile"
+    )
+    prefix = builder.stable_prefix()
+    assert p_no_summary.startswith(prefix)
+    assert p_with_summary.startswith(prefix)
+    # il summary non deve essere comparso dentro il prefisso
+    assert "qualcosa di volatile" not in prefix
