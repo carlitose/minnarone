@@ -10,7 +10,7 @@ from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
 from .console import ConsoleOutputRouter
 from .llm import LLMError, LLMProvider, LLMResult, LLMTimeout
-from .memory import FactsDelta, Memory, MemoryBlocks
+from .memory import FactsDelta, FileMemory, Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
 from .perception import Perception, Source
 from .prompt import PromptBuilder
@@ -33,6 +33,7 @@ __all__ = [
     "Memory",
     "MemoryBlocks",
     "FactsDelta",
+    "FileMemory",
     "Config",
     "ConfigError",
     "DisclosureConfig",

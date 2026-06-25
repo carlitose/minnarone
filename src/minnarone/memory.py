@@ -10,7 +10,8 @@ esiste senza alterare il comportamento.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,3 +55,55 @@ class Memory(ABC):
         sovrascrivono; l'auto-memoria v2 lo implementerà.
         """
         return None
+
+
+class FileMemory(Memory):
+    """Memoria permanente caricata da file su disco.
+
+    `soul` viene letta da un singolo file (`soul_path`); `facts` viene
+    composta concatenando TUTTI i file presenti in una directory
+    (`facts_dir`), in ordine deterministico (alfabetico per nome file), con
+    una piccola intestazione per entità (il nome del file senza estensione)
+    così i fatti restano riconducibili a chi riguardano.
+
+    Degrado con grazia: un file `soul` mancante o una `facts_dir`
+    mancante/vuota producono blocchi vuoti (`""`), MAI un'eccezione — la
+    memoria è un contesto opzionale, non un prerequisito.
+
+    `update()` resta il NO-OP ereditato dalla base (auto-memoria = v2).
+    """
+
+    def __init__(self, *, soul_path: str | Path, facts_dir: str | Path) -> None:
+        self._soul_path = Path(soul_path)
+        self._facts_dir = Path(facts_dir)
+
+    def load(self) -> MemoryBlocks:
+        return MemoryBlocks(soul=self._load_soul(), facts=self._load_facts())
+
+    def _load_soul(self) -> str:
+        try:
+            return self._soul_path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            # File assente, non leggibile o non-UTF-8: blocco vuoto, non crash.
+            return ""
+
+    def _load_facts(self) -> str:
+        try:
+            files = sorted(
+                p for p in self._facts_dir.iterdir() if p.is_file()
+            )
+        except OSError:
+            # Directory assente o non leggibile: blocco vuoto, non crash.
+            return ""
+
+        chunks: list[str] = []
+        for path in files:
+            try:
+                text = path.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                # File non leggibile o non-UTF-8: salta questo, non abortire.
+                continue
+            if not text:
+                continue
+            chunks.append(f"### {path.stem}\n{text}")
+        return "\n\n".join(chunks)
