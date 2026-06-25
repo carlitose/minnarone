@@ -1,55 +1,85 @@
-"""`OSCaptureAdapter`: cattura a livello di sistema operativo come `SourceAdapter`.
+"""`StreamCaptureAdapter`: cattura generica per-canale come `SourceAdapter`.
 
-Nell'MVP la sorgente è la cattura del SO (mic + audio di sistema), non un
-connettore per-piattaforma. Questo adapter emette `RawEvent(channel="audio")`
-il cui payload è un `AudioChunk` (vedi `audio.py`), che l'`AudioPerceiver`
-consuma.
+Nell'MVP la sorgente è la cattura del SO (mic + audio di sistema, schermo), non
+un connettore per-piattaforma. Un solo adapter parametrico impacchetta ogni
+payload `Timestamped` (un `AudioChunk` per il canale "audio", un `VideoFrame`
+per il canale "video") in un `RawEvent`, che il perceiver del canale consuma.
 
-Iniettabilità del backend di cattura. Il *come* si arriva ai campioni audio è
-un dettaglio del sistema operativo (sounddevice / CoreAudio / loopback di
-sistema), e su macOS l'audio di sistema richiede permessi e tooling specifici
-(vedi nota in fondo). Per non legare il core a un device reale — e per poterlo
-testare offline — il backend è INIETTATO come un *capture source*: un iterabile
-(sincrono o asincrono) di `AudioChunk`. L'adapter si limita a impacchettare ogni
-chunk in un `RawEvent` rispettando il ciclo di vita `start()/stop()`.
+Iniettabilità del backend di cattura. Il *come* si arriva ai campioni (audio o
+frame) è un dettaglio del sistema operativo (sounddevice / CoreAudio / loopback
+per l'audio; mss / PyAV per lo schermo), e su macOS richiede permessi e tooling
+specifici (vedi note in fondo). Per non legare il core a un device reale — e per
+poterlo testare offline — il backend è INIETTATO come una *sorgente*: un
+iterabile (sincrono o asincrono) di payload con `.ts`. L'adapter si limita a
+impacchettare ogni payload in un `RawEvent` rispettando il ciclo di vita
+`start()/stop()`.
 
 Il backend reale di device NON viene importato al caricamento del modulo: è un
-percorso opzionale documentato (`make_device_capture_source`) che importa la sua
-dipendenza pesante solo se invocato. Così il modulo si carica e i test girano
-senza alcun device né dipendenza ML.
+percorso opzionale documentato (`make_device_capture_source` /
+`make_device_screen_capture_source`) che importa la sua dipendenza pesante solo
+se invocato. Così il modulo si carica e i test girano senza alcun device né
+dipendenza ML.
+
+Costruttori ergonomici (`os_audio_capture` / `os_screen_capture`) conservano i
+nomi di dominio per i chiamanti.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterable, AsyncIterator, Iterable
+from typing import Protocol, runtime_checkable
 
 from .audio import AudioChunk
 from .source import RawEvent, SourceAdapter
 from .video import VideoFrame
 
-# Un capture source può essere un iterabile sincrono o asincrono di AudioChunk.
-# Lo normalizziamo a runtime, così l'iniezione resta semplice per i test
-# (lista in-memory) e flessibile per i backend reali (generatore async).
-CaptureSource = Iterable[AudioChunk]
 
-# Analogamente per il video: una sorgente di frame, iterabile sincrono o async.
-FrameSource = Iterable[VideoFrame]
+@runtime_checkable
+class Timestamped(Protocol):
+    """Payload di cattura: deve esporre l'epoch di cattura `ts` in secondi.
 
-
-class OSCaptureAdapter(SourceAdapter):
-    """Adapter di cattura audio del SO: `AudioChunk` -> `RawEvent(audio)`.
-
-    Il backend di cattura è iniettato (`capture_source`): un iterabile sincrono
-    o asincrono di `AudioChunk`. L'adapter non sa né gli importa da dove vengano
-    i campioni; questo lo rende testabile con una sorgente in-memory.
+    `AudioChunk` e `VideoFrame` lo soddisfano già.
     """
 
-    def __init__(self, capture_source: object) -> None:
-        self._capture_source = capture_source
+    @property
+    def ts(self) -> float: ...
+
+
+# Una sorgente di cattura è un iterabile sincrono o asincrono di payload
+# `Timestamped`. La normalizziamo a runtime, così l'iniezione resta semplice per
+# i test (lista in-memory) e flessibile per i backend reali (generatore async).
+Captured = Iterable[Timestamped] | AsyncIterable[Timestamped]
+
+
+async def _aiter(source: Captured) -> AsyncIterator[Timestamped]:
+    """Normalizza una sorgente (sync o async) a un async iterator.
+
+    Nasconde la differenza sync/async: chi consuma vede sempre un `async for`.
+    """
+    if isinstance(source, AsyncIterable):
+        async for item in source:
+            yield item
+    else:
+        for item in source:
+            yield item
+
+
+class StreamCaptureAdapter(SourceAdapter):
+    """Adapter di cattura generico: payload `Timestamped` -> `RawEvent(channel)`.
+
+    Parametrico sul `channel` ("audio", "video", ...). Il backend di cattura è
+    iniettato (`source`): un iterabile sincrono o asincrono di payload con `.ts`.
+    L'adapter non sa né gli importa da dove vengano i payload; questo lo rende
+    testabile con una sorgente in-memory e disaccoppia il core dal device.
+    """
+
+    def __init__(self, channel: str, source: Captured) -> None:
+        self._channel = channel
+        self._source = source
         self._started = False
 
     def channels(self) -> set[str]:
-        return {"audio"}
+        return {self._channel}
 
     async def start(self) -> None:
         """Avvia la cattura. Idempotente."""
@@ -60,30 +90,37 @@ class OSCaptureAdapter(SourceAdapter):
         self._started = False
 
     async def events(self) -> AsyncIterator[RawEvent]:
-        """Stream di `RawEvent(channel="audio")` finché l'adapter è attivo.
+        """Stream di `RawEvent(channel=self._channel)` finché l'adapter è attivo.
 
-        Ogni `AudioChunk` del capture source diventa un `RawEvent` con `ts`
-        ereditato dal chunk. Se `stop()` viene chiamato lo stream si interrompe
-        senza emettere altri eventi.
+        Ogni payload della sorgente diventa un `RawEvent` con `ts` ereditato dal
+        payload. Se `stop()` viene chiamato lo stream si interrompe senza
+        estrarre né emettere un ulteriore payload (importante per sorgenti
+        real-time).
         """
-        async for chunk in self._iter_chunks():
+        async for payload in _aiter(self._source):
             # Controlla PRIMA di emettere: dopo stop() non si estrae né si
-            # emette un ulteriore chunk (importante per sorgenti real-time).
+            # emette un ulteriore payload (sorgenti real-time).
             if not self._started:
                 break
-            yield RawEvent(channel="audio", payload=chunk, ts=chunk.ts)
+            yield RawEvent(channel=self._channel, payload=payload, ts=payload.ts)
             if not self._started:
                 break
 
-    async def _iter_chunks(self) -> AsyncIterator[AudioChunk]:
-        """Normalizza il capture source (sync o async) a un async iterator."""
-        source = self._capture_source
-        if hasattr(source, "__aiter__"):
-            async for chunk in source:  # type: ignore[union-attr]
-                yield chunk
-        else:
-            for chunk in source:  # type: ignore[union-attr]
-                yield chunk
+
+def os_audio_capture(source: Captured) -> StreamCaptureAdapter:
+    """Costruttore ergonomico: adapter di cattura audio del SO.
+
+    `AudioChunk` (iniettato via `source`) -> `RawEvent(channel="audio")`.
+    """
+    return StreamCaptureAdapter("audio", source)
+
+
+def os_screen_capture(source: Captured) -> StreamCaptureAdapter:
+    """Costruttore ergonomico: adapter di cattura schermo del SO.
+
+    `VideoFrame` (iniettato via `source`) -> `RawEvent(channel="video")`.
+    """
+    return StreamCaptureAdapter("video", source)
 
 
 def make_device_capture_source(
@@ -113,58 +150,6 @@ def make_device_capture_source(
     )
 
 
-class ScreenCaptureAdapter(SourceAdapter):
-    """Adapter di cattura schermo: `VideoFrame` -> `RawEvent(video)`.
-
-    Specchio dello `OSCaptureAdapter` audio per il canale "video". Il backend di
-    cattura è iniettato (`frame_source`): un iterabile sincrono o asincrono di
-    `VideoFrame`. L'adapter non sa né gli importa da dove vengano i frame; questo
-    lo rende testabile con una sorgente in-memory e disaccoppia il core dal
-    device dello schermo (che AFK non esiste).
-    """
-
-    def __init__(self, frame_source: object) -> None:
-        self._frame_source = frame_source
-        self._started = False
-
-    def channels(self) -> set[str]:
-        return {"video"}
-
-    async def start(self) -> None:
-        """Avvia la cattura. Idempotente."""
-        self._started = True
-
-    async def stop(self) -> None:
-        """Ferma la cattura. Sicura anche se non avviata."""
-        self._started = False
-
-    async def events(self) -> AsyncIterator[RawEvent]:
-        """Stream di `RawEvent(channel="video")` finché l'adapter è attivo.
-
-        Ogni `VideoFrame` del frame source diventa un `RawEvent` con `ts`
-        ereditato dal frame. Se `stop()` viene chiamato lo stream si interrompe
-        senza estrarre né emettere un ulteriore frame (sorgenti real-time).
-        """
-        async for frame in self._iter_frames():
-            # Controlla PRIMA di emettere: dopo stop() non si estrae né si
-            # emette un ulteriore frame.
-            if not self._started:
-                break
-            yield RawEvent(channel="video", payload=frame, ts=frame.ts)
-            if not self._started:
-                break
-
-    async def _iter_frames(self) -> AsyncIterator[VideoFrame]:
-        """Normalizza il frame source (sync o async) a un async iterator."""
-        source = self._frame_source
-        if hasattr(source, "__aiter__"):
-            async for frame in source:  # type: ignore[union-attr]
-                yield frame
-        else:
-            for frame in source:  # type: ignore[union-attr]
-                yield frame
-
-
 def make_device_screen_capture_source(
     *, source_label: str = "screen", fps: float = 1.0
 ) -> AsyncIterator[VideoFrame]:
@@ -191,3 +176,17 @@ def make_device_screen_capture_source(
         "iterabile di VideoFrame, e iniettare un Captioner VLM nel "
         "VideoPerceiver. Non disponibile in ambiente senza schermo/GPU."
     )
+
+
+# Alias sottili di back-compat. La codebase è fresca e i nuovi chiamanti usano
+# i costruttori ergonomici / la classe generica, ma i due nomi storici erano
+# esportati ed esercitati dai test dei perceiver: li manteniamo come alias di
+# costruzione equivalenti per non rompere il cablaggio esistente.
+def OSCaptureAdapter(capture_source: Captured) -> StreamCaptureAdapter:
+    """Alias storico di `os_audio_capture` (canale "audio")."""
+    return StreamCaptureAdapter("audio", capture_source)
+
+
+def ScreenCaptureAdapter(frame_source: Captured) -> StreamCaptureAdapter:
+    """Alias storico di `os_screen_capture` (canale "video")."""
+    return StreamCaptureAdapter("video", frame_source)

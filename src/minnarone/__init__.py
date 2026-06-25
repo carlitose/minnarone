@@ -24,8 +24,11 @@ from .audio import (
 from .capture import (
     OSCaptureAdapter,
     ScreenCaptureAdapter,
+    StreamCaptureAdapter,
     make_device_capture_source,
     make_device_screen_capture_source,
+    os_audio_capture,
+    os_screen_capture,
 )
 from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
@@ -74,6 +77,9 @@ __all__ = [
     "Asr",
     "SpeakerTagger",
     "STREAMER",
+    "StreamCaptureAdapter",
+    "os_audio_capture",
+    "os_screen_capture",
     "OSCaptureAdapter",
     "make_device_capture_source",
     "ScreenCaptureAdapter",
