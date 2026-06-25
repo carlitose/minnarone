@@ -24,6 +24,7 @@ from .capture import (
 from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
 from .console import ConsoleOutputRouter
+from .human import END_CONV_SENTINEL, HumanDecision, HumanLikeness
 from .llm import LLMError, LLMProvider, LLMResult, LLMTimeout
 from .memory import FactsDelta, FileMemory, Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
@@ -78,4 +79,7 @@ __all__ = [
     "ConsoleOutputRouter",
     "Reactor",
     "Summarizer",
+    "HumanLikeness",
+    "HumanDecision",
+    "END_CONV_SENTINEL",
 ]

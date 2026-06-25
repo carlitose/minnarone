@@ -197,3 +197,114 @@ def test_run_loop_reacts_only_when_trigger_fires_then_stops(tmp_path):
 
     # un solo messaggio (la menzione), il "ciao a tutti" non innesca nulla
     assert router.sent == [("ciao enkk!", OutputMode.PUBLIC)]
+
+
+# --- Integrazione HumanLikeness (slice 08) ---------------------------------
+
+
+def test_human_likeness_routes_after_injected_delay(tmp_path):
+    # Con HumanLikeness il messaggio normale è instradato DOPO il typing delay,
+    # applicato via uno sleep asincrono iniettato (deterministico, non reale).
+    from minnarone.human import HumanLikeness
+
+    store, chat, llm, router, _reactor = _build(tmp_path, llm_message="ehi ciao a tutti")
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    human = HumanLikeness(typing_speed=10.0, min_delay=0.5, max_delay=100.0)
+    reactor = Reactor(
+        senser=_reactor._senser,
+        prompt_builder=_reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        human=human,
+        sleep=fake_sleep,
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    # instradato col testo (ripulito) e dopo aver atteso un delay > 0
+    assert router.sent == [("ehi ciao a tutti", OutputMode.PUBLIC)]
+    assert len(slept) == 1 and slept[0] > 0
+
+
+def test_human_likeness_drops_near_duplicate(tmp_path):
+    # Un secondo messaggio quasi-identico al primo viene scartato (non inviato).
+    from minnarone.human import HumanLikeness
+
+    store, chat, llm, router, _reactor = _build(tmp_path, llm_message="ciao a tutti come va")
+
+    async def fake_sleep(seconds: float) -> None:
+        pass
+
+    human = HumanLikeness(dedup_threshold=0.9, min_delay=0.0, max_delay=100.0)
+    reactor = Reactor(
+        senser=_reactor._senser,
+        prompt_builder=_reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        human=human,
+        sleep=fake_sleep,
+    )
+
+    # primo turno: instradato
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+    asyncio.run(reactor.run_once())
+    assert len(router.sent) == 1
+
+    # secondo turno: l'LLM produce lo stesso testo -> scartato dal dedup
+    chat.perceive("minnarone ancora?", speaker="enkk", ts=2.0)
+    asyncio.run(reactor.run_once())
+    assert len(router.sent) == 1  # nessun nuovo invio
+
+
+def test_human_likeness_end_conv_closes_window_and_suppresses_sentinel(tmp_path):
+    # `#end_conv`: la finestra dell'interlocutore viene chiusa via il Senser e
+    # il sentinella non esce come messaggio letterale (esce solo il testo utile).
+    from minnarone.human import END_CONV_SENTINEL, HumanLikeness
+
+    store, chat, llm, router, _reactor = _build(
+        tmp_path, llm_message=f"ok ci vediamo {END_CONV_SENTINEL}"
+    )
+
+    async def fake_sleep(seconds: float) -> None:
+        pass
+
+    human = HumanLikeness(min_delay=0.0, max_delay=100.0)
+    senser = _reactor._senser
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=_reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        human=human,
+        sleep=fake_sleep,
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+    # la menzione apre la finestra di enkk
+    asyncio.run(reactor.run_once())
+
+    # il testo ripulito è uscito senza il sentinella
+    assert router.sent == [("ok ci vediamo", OutputMode.PUBLIC)]
+    assert END_CONV_SENTINEL not in router.sent[0][0]
+    # e la finestra di enkk è stata chiusa
+    assert "enkk" not in senser.open_windows()
+
+
+def test_reactor_unchanged_without_human_likeness(tmp_path):
+    # Controprova: senza HumanLikeness il comportamento è invariato (slice 01).
+    store, chat, llm, router, reactor = _build(tmp_path)
+    chat.perceive("ehi minnarone!", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [("ciao enkk!", OutputMode.PUBLIC)]

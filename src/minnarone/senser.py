@@ -162,6 +162,17 @@ class Senser:
         self._expire_windows(self._clock())
         return dict(self._windows)
 
+    def close_window(self, interlocutor: str) -> bool:
+        """Chiude esplicitamente la finestra di un interlocutore (FR25, UC09).
+
+        Usata dal Reactor quando l'LLM emette `#end_conv`: l'agente ha deciso
+        che non ha più nulla di utile da dire, quindi la conversazione viene
+        chiusa subito senza attendere la scadenza per inattività. Idempotente:
+        ritorna True se una finestra è stata effettivamente chiusa, False se non
+        c'era nulla da chiudere.
+        """
+        return self._windows.pop(interlocutor, None) is not None
+
     def consider_bandwagon(self) -> None:
         """Hook *bandwagon* (FR24, v2): per ora un NO-OP documentato.
 
