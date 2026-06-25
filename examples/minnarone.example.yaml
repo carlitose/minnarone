@@ -1,0 +1,22 @@
+# Config di esempio dell'agente (scenario streamer pubblico).
+# Campi MVP operativi + punti v2 presenti ma INERTI.
+
+mode: public               # "public" | "private" (private operativa in v2)
+soul_path: soul.md         # identità dell'agente
+facts_dir: facts           # cartella dei fatti per interlocutore/canale
+adapter: os_capture        # adapter sorgente (MVP: cattura a livello SO)
+llm_provider: grok         # "grok" | "deepseek" (impl. reale in slice 02)
+
+senser_interval: 0.5       # cadenza del Senser (secondi)
+idle_interval: 150.0       # commento proattivo in assenza di trigger (secondi)
+recent_chat_window: 15     # quanti messaggi di chat recenti nel prompt
+
+llm_params:
+  thinking: low            # parametri passati al provider
+
+# --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
+disclosure:
+  announce_ai: false       # se l'agente dichiara di essere un'AI
+
+retention:
+  perceptions_days: 7      # per quanto conservare le percezioni (null = sempre)

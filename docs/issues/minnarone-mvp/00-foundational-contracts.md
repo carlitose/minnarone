@@ -26,11 +26,19 @@ Snippet decisionale (forma canonica di una percezione — incluso perché fissa 
 
 ## Acceptance criteria
 
-- [ ] Il tipo `Perception` esiste, serializza/deserializza in JSONL senza perdita e copre i 4 `source`.
-- [ ] Esistono interfacce astratte per `SourceAdapter`, `LLMProvider`, `OutputRouter` con fake usabili nei test.
-- [ ] L'hook `Memory.update` esiste come no-op documentato.
-- [ ] Lo schema di config valida un esempio completo, con i punti v2 (`disclosure`, `retention`, auto-memory) presenti ma inerti.
-- [ ] I contratti sono stati rivisti e approvati da un umano.
+- [x] Il tipo `Perception` esiste, serializza/deserializza in JSONL senza perdita e copre i 4 `source`.
+- [x] Esistono interfacce astratte per `SourceAdapter`, `LLMProvider`, `OutputRouter` con fake usabili nei test.
+- [x] L'hook `Memory.update` esiste come no-op documentato.
+- [x] Lo schema di config valida un esempio completo, con i punti v2 (`disclosure`, `retention`, auto-memory) presenti ma inerti.
+- [x] I contratti sono stati rivisti e approvati da un umano.
+
+## Decisioni di review (sign-off)
+
+1. `RawEvent.payload` resta **opaco** (`object`); tipizzazione interna a ogni pipeline.
+2. `SourceAdapter.events()` è **uno stream unico** di `RawEvent` etichettati per canale (ordine temporale preservato; demux a valle).
+3. `VALID_TYPES`: **set minimo** per `event` (`join`/`leave`/`reaction`); vocabolario ricco aggiunto in v2 (additivo).
+4. Config in **YAML** (PyYAML) — *modifica rispetto alla bozza TOML*.
+5. Errori LLM via **eccezioni** (`LLMError`/`LLMTimeout`) → salto-turno nel Reactor.
 
 ## Blocked by
 
