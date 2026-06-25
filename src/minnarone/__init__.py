@@ -32,7 +32,7 @@ from .capture import (
     os_screen_capture,
 )
 from .chat import ChatPerceiver
-from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
+from .config import Config, ConfigError, DisclosureConfig, RetentionConfig, TwitchConfig
 from .console import ConsoleOutputRouter
 from .dashboard import DashboardState, snapshot
 from .human import END_CONV_SENTINEL, HumanDecision, HumanLikeness
@@ -71,6 +71,7 @@ __all__ = [
     "ConfigError",
     "DisclosureConfig",
     "RetentionConfig",
+    "TwitchConfig",
     "PerceptionStore",
     "EventPerceiver",
     "ChatPerceiver",

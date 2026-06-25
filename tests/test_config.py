@@ -33,6 +33,24 @@ MINIMAL_YAML = textwrap.dedent(
     """
 )
 
+TWITCH_YAML = textwrap.dedent(
+    """
+    mode: public
+    soul_path: soul.md
+    facts_dir: facts
+    adapter: twitch
+    llm_provider: grok
+    twitch:
+      channel: "#Minnarone"
+      quality: best
+      chat: true
+      audio: true
+      video: true
+      audio_chunk_seconds: 1.0
+      video_fps: 1.0
+    """
+)
+
 
 def _write(tmp_path, content):
     p = tmp_path / "config.yaml"
@@ -53,6 +71,77 @@ def test_defaults_applied_when_omitted(tmp_path):
     assert cfg.idle_interval == 150.0
     assert cfg.summarizer_interval == 30.0
     assert cfg.recent_chat_window == 15
+    assert cfg.twitch is None
+
+
+def test_config_positional_constructor_contract_is_preserved():
+    cfg = Config(
+        OutputMode.PUBLIC,
+        "soul.md",
+        "facts",
+        "os_capture",
+        "grok",
+        "custom-name",
+        {"thinking": "low"},
+    )
+
+    assert cfg.agent_name == "custom-name"
+    assert cfg.llm_params == {"thinking": "low"}
+    assert cfg.twitch is None
+
+
+def test_twitch_config_parses_and_normalizes_channel(tmp_path):
+    cfg = Config.load(_write(tmp_path, TWITCH_YAML))
+    assert cfg.adapter == "twitch"
+    assert cfg.twitch is not None
+    assert cfg.twitch.channel == "minnarone"
+    assert cfg.twitch.quality == "best"
+    assert cfg.twitch.chat is True
+    assert cfg.twitch.audio is True
+    assert cfg.twitch.video is True
+    assert cfg.twitch.audio_chunk_seconds == 1.0
+    assert cfg.twitch.video_fps == 1.0
+
+
+def test_twitch_adapter_requires_twitch_section(tmp_path):
+    bad = MINIMAL_YAML.replace("adapter: os_capture", "adapter: twitch")
+    with pytest.raises(ConfigError, match="twitch"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_twitch_adapter_rejects_wrong_twitch_object_type():
+    with pytest.raises(ConfigError, match="TwitchConfig"):
+        Config(
+            mode=OutputMode.PUBLIC,
+            soul_path="soul.md",
+            facts_dir="facts",
+            adapter="twitch",
+            llm_provider="grok",
+            twitch="not-a-config",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    "line, replacement, message",
+    [
+        ("channel: \"#Minnarone\"", "channel: '#'", "channel Twitch"),
+        ("quality: best", "quality: ''", "quality"),
+        ("audio_chunk_seconds: 1.0", "audio_chunk_seconds: 0", "audio_chunk_seconds"),
+        (
+            "audio_chunk_seconds: 1.0",
+            "audio_chunk_seconds: true",
+            "audio_chunk_seconds",
+        ),
+        ("video_fps: 1.0", "video_fps: 0", "video_fps"),
+        ("video_fps: 1.0", "video_fps: true", "video_fps"),
+        ("chat: true", "chat: 'yes'", "chat"),
+        ("video_fps: 1.0", "vide_fps: 1.0", "vide_fps"),
+    ],
+)
+def test_invalid_twitch_config_fails_clearly(tmp_path, line, replacement, message):
+    bad = TWITCH_YAML.replace(line, replacement)
+    with pytest.raises(ConfigError, match=message):
+        Config.load(_write(tmp_path, bad))
 
 
 def test_summarizer_interval_parsed_and_validated(tmp_path):

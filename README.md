@@ -67,7 +67,9 @@ motore di reazione + summarizer.
 ### Smoke Twitch capture-only
 
 Lo smoke Twitch e' separato dal CLI dell'agente e non richiede
-`OPENROUTER_API_KEY`. Per la chat servono credenziali bot in ambiente:
+`OPENROUTER_API_KEY`. La guida completa per operatori, artifact, troubleshooting
+e forma futura `adapter: twitch` e' in [docs/twitch-operator.md](docs/twitch-operator.md).
+Per la chat servono credenziali bot in ambiente:
 
 ```bash
 export TWITCH_BOT_USERNAME=nome_bot
