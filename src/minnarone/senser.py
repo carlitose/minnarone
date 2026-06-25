@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import deque
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -58,6 +59,10 @@ _DEFAULT_WINDOW_TTL = 180.0
 _DEFAULT_CONTINUATION_WINDOW = 30.0
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+# Quanti trigger recenti tenere in memoria per la sola osservabilità (dashboard).
+# Coda limitata: vista read-only del passato recente, non influenza il loop.
+_TRIGGER_LOG_SIZE = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,9 @@ class Senser:
         # Quando l'agente ha inviato il suo ultimo messaggio (per la
         # continuazione). `None` finché il Reactor non lo comunica.
         self._last_agent_message_at: float | None = None
+        # Coda limitata dei trigger recenti, SOLO per osservabilità (dashboard).
+        # Non partecipa alla logica del tick: è una vista read-only del passato.
+        self._recent_triggers: deque[Trigger] = deque(maxlen=_TRIGGER_LOG_SIZE)
 
     # -- API pubblica per il Reactor ----------------------------------------
 
@@ -161,6 +169,20 @@ class Senser:
         """Snapshot delle finestre attualmente aperte (interlocutore -> finestra)."""
         self._expire_windows(self._clock())
         return dict(self._windows)
+
+    def recent_triggers(self, n: int | None = None) -> list[Trigger]:
+        """Snapshot read-only degli ultimi trigger emessi (per la dashboard).
+
+        Vista in sola lettura della coda limitata di osservabilità: NON consuma
+        né altera lo stato del Senser (nessun cursore, nessuna finestra toccata).
+        Con `n` restituisce solo gli ultimi `n`; senza, tutti quelli in coda.
+        """
+        items = list(self._recent_triggers)
+        if n is None:
+            return items
+        if n <= 0:
+            return []
+        return items[-n:]
 
     def close_window(self, interlocutor: str) -> bool:
         """Chiude esplicitamente la finestra di un interlocutore (FR25, UC09).
@@ -221,6 +243,8 @@ class Senser:
         if triggers:
             # Qualsiasi trigger (menzione, continuazione, idle) resetta il timer.
             self._last_trigger_at = now
+            # Registra i trigger nella coda di osservabilità (read-only log).
+            self._recent_triggers.extend(triggers)
         return triggers
 
     # -- Logica interna -----------------------------------------------------

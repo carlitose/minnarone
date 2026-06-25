@@ -13,6 +13,9 @@ dependencies = ["pyyaml>=6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Dashboard di osservabilità (TUI). Opzionale: il modello di snapshot
+# (minnarone.dashboard) funziona senza textual; solo la vista live lo richiede.
+tui = ["textual>=0.50"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minnarone"]

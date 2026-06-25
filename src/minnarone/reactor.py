@@ -77,6 +77,21 @@ class Reactor:
         self._summary_provider = summary_provider
         self._running = False
 
+    def recent_messages(self, n: int | None = None) -> list[str]:
+        """Snapshot read-only degli ultimi messaggi instradati dall'agente.
+
+        Vista in sola lettura della memoria scorrevole `_self_messages` (che il
+        Reactor mantiene per il dedup). Serve alla dashboard di osservabilità:
+        copia difensiva, non altera lo stato del Reactor. Con `n` restituisce
+        solo gli ultimi `n`; senza, tutti quelli in memoria.
+        """
+        items = list(self._self_messages)
+        if n is None:
+            return items
+        if n <= 0:
+            return []
+        return items[-n:]
+
     async def run_once(self) -> None:
         """Esegue un singolo tick: rileva trigger e reagisce a ciascuno."""
         triggers = self._senser.tick()

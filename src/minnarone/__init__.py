@@ -24,6 +24,7 @@ from .capture import (
 from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
 from .console import ConsoleOutputRouter
+from .dashboard import DashboardState, snapshot
 from .human import END_CONV_SENTINEL, HumanDecision, HumanLikeness
 from .llm import LLMError, LLMProvider, LLMResult, LLMTimeout
 from .memory import FactsDelta, FileMemory, Memory, MemoryBlocks
@@ -82,4 +83,6 @@ __all__ = [
     "HumanLikeness",
     "HumanDecision",
     "END_CONV_SENTINEL",
+    "DashboardState",
+    "snapshot",
 ]
