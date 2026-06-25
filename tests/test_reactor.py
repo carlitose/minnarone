@@ -140,6 +140,47 @@ def test_no_summary_provider_omits_summary_section(tmp_path):
     assert "RIASSUNTO" not in llm.last_prompt
 
 
+def test_continuation_wired_end_to_end_via_reactor(tmp_path):
+    # Il Reactor deve chiamare note_agent_message dopo un route riuscito, così
+    # la continuazione (UC03) funziona nel sistema assemblato: dopo una
+    # menzione->risposta, un messaggio dell'interlocutore poco dopo innesca una
+    # continuation al tick successivo. Clock deterministico.
+    class FakeClock:
+        def __init__(self, start=0.0):
+            self.t = start
+
+        def __call__(self):
+            return self.t
+
+        def advance(self, dt):
+            self.t += dt
+
+    clock = FakeClock(start=0.0)
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone", clock=clock)
+    builder = PromptBuilder(FakeMemory(soul="Sono Minnarone.", facts="").load())
+    llm = FakeLLMProvider(message="rispondo!")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser, prompt_builder=builder, llm=llm, router=router,
+        store=store, mode=OutputMode.PUBLIC,
+    )
+
+    # 1. menzione -> reazione (apre la finestra di enkk e nota il messaggio agente)
+    chat.perceive("minnarone ciao", speaker="enkk", ts=clock())
+    asyncio.run(reactor.run_once())
+    assert len(router.sent) == 1
+
+    # 2. enkk risponde poco dopo, senza rinominare l'agente
+    clock.advance(3.0)
+    chat.perceive("ah davvero?", speaker="enkk", ts=clock())
+    asyncio.run(reactor.run_once())
+
+    # la continuazione ha prodotto una seconda reazione
+    assert len(router.sent) == 2
+
+
 def test_run_loop_reacts_only_when_trigger_fires_then_stops(tmp_path):
     store, chat, llm, router, reactor = _build(tmp_path)
     chat.perceive("ciao a tutti", speaker="enkk", ts=1.0)

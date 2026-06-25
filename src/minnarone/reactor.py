@@ -75,6 +75,14 @@ class Reactor:
                 # Salta-turno: nessun output stale (EC03).
                 continue
             await self._router.route(result.message, self._mode)
+            # Notifica al Senser che l'agente ha appena parlato, così la
+            # continuazione (UC03) funziona nel sistema assemblato. Si usa lo
+            # STESSO clock del Senser (via `now()`) per restare deterministici.
+            # Guardia `hasattr` per non rompere eventuali senser minimali/fake.
+            if hasattr(self._senser, "note_agent_message") and hasattr(
+                self._senser, "now"
+            ):
+                self._senser.note_agent_message(self._senser.now())
 
     async def run(self, *, interval: float = 0.5) -> None:
         """Esegue il loop finché `stop()` non viene chiamato."""

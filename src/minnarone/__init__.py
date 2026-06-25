@@ -30,7 +30,7 @@ from .output import OutputMode, OutputRouter
 from .perception import Perception, Source
 from .prompt import PromptBuilder
 from .reactor import Reactor
-from .senser import Senser, Trigger
+from .senser import ConversationWindow, Senser, Trigger
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
 from .summarizer import Summarizer
@@ -73,6 +73,7 @@ __all__ = [
     "Captioner",
     "Senser",
     "Trigger",
+    "ConversationWindow",
     "PromptBuilder",
     "ConsoleOutputRouter",
     "Reactor",
