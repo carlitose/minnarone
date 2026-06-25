@@ -6,6 +6,12 @@ verranno implementati negli slice successivi.
 
 from __future__ import annotations
 
+from .app import (
+    Agent,
+    PrivateModeNotImplemented,
+    PrivateNotImplementedRouter,
+    build_agent,
+)
 from .audio import (
     STREAMER,
     Asr,
@@ -85,4 +91,8 @@ __all__ = [
     "END_CONV_SENTINEL",
     "DashboardState",
     "snapshot",
+    "Agent",
+    "build_agent",
+    "PrivateModeNotImplemented",
+    "PrivateNotImplementedRouter",
 ]

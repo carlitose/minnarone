@@ -51,7 +51,15 @@ def test_defaults_applied_when_omitted(tmp_path):
     cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
     assert cfg.senser_interval == 0.5
     assert cfg.idle_interval == 150.0
+    assert cfg.summarizer_interval == 30.0
     assert cfg.recent_chat_window == 15
+
+
+def test_summarizer_interval_parsed_and_validated(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML + "summarizer_interval: 5\n"))
+    assert cfg.summarizer_interval == 5.0
+    with pytest.raises(ConfigError, match="summarizer_interval"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "summarizer_interval: 0\n"))
 
 
 def test_v2_points_present_and_inert_by_default(tmp_path):

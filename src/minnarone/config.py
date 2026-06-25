@@ -49,9 +49,16 @@ class Config:
     facts_dir: str
     adapter: str
     llm_provider: str
+    # Nome a cui l'agente risponde (rilevamento menzioni nel Senser). OPZIONALE
+    # e additivo: se omesso usa un default sensato, così le config minimali
+    # restano valide. È il nome che l'agente riconosce come rivolto a sé.
+    agent_name: str = "minnarone"
     llm_params: dict[str, object] = field(default_factory=dict)
     senser_interval: float = 0.5
     idle_interval: float = 150.0
+    # Cadenza del loop del Summarizer (memoria a breve termine): ogni quanti
+    # secondi rigenerare il riassunto della sessione. Additivo e opzionale.
+    summarizer_interval: float = 30.0
     recent_chat_window: int = 15
     # --- punti di estensione v2 (presenti ma inerti) ---
     disclosure: DisclosureConfig = field(default_factory=DisclosureConfig)
@@ -61,7 +68,7 @@ class Config:
     def __post_init__(self) -> None:
         if not isinstance(self.mode, OutputMode):
             raise ConfigError(f"mode non valido: {self.mode!r}")
-        for name in ("soul_path", "facts_dir", "adapter", "llm_provider"):
+        for name in ("soul_path", "facts_dir", "adapter", "llm_provider", "agent_name"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
@@ -69,6 +76,8 @@ class Config:
             raise ConfigError("senser_interval deve essere > 0")
         if self.idle_interval <= 0:
             raise ConfigError("idle_interval deve essere > 0")
+        if self.summarizer_interval <= 0:
+            raise ConfigError("summarizer_interval deve essere > 0")
         if self.recent_chat_window <= 0:
             raise ConfigError("recent_chat_window deve essere > 0")
 
@@ -96,9 +105,11 @@ class Config:
                 facts_dir=data.get("facts_dir"),  # type: ignore[arg-type]
                 adapter=data.get("adapter"),  # type: ignore[arg-type]
                 llm_provider=data.get("llm_provider"),  # type: ignore[arg-type]
+                agent_name=str(data.get("agent_name", "minnarone")),
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]
                 senser_interval=float(data.get("senser_interval", 0.5)),
                 idle_interval=float(data.get("idle_interval", 150.0)),
+                summarizer_interval=float(data.get("summarizer_interval", 30.0)),
                 recent_chat_window=int(data.get("recent_chat_window", 15)),
                 disclosure=DisclosureConfig(
                     announce_ai=bool(disclosure_raw.get("announce_ai", False))
