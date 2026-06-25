@@ -15,7 +15,12 @@ from .audio import (
     SpeechSegment,
     Vad,
 )
-from .capture import OSCaptureAdapter, make_device_capture_source
+from .capture import (
+    OSCaptureAdapter,
+    ScreenCaptureAdapter,
+    make_device_capture_source,
+    make_device_screen_capture_source,
+)
 from .chat import ChatPerceiver
 from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
 from .console import ConsoleOutputRouter
@@ -29,6 +34,7 @@ from .senser import Senser, Trigger
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
 from .summarizer import Summarizer
+from .video import Captioner, VideoFrame, VideoPerceiver
 
 __all__ = [
     "Perception",
@@ -60,6 +66,11 @@ __all__ = [
     "STREAMER",
     "OSCaptureAdapter",
     "make_device_capture_source",
+    "ScreenCaptureAdapter",
+    "make_device_screen_capture_source",
+    "VideoPerceiver",
+    "VideoFrame",
+    "Captioner",
     "Senser",
     "Trigger",
     "PromptBuilder",

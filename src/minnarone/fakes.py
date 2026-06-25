@@ -13,6 +13,7 @@ from .llm import LLMProvider, LLMResult, LLMTimeout
 from .memory import Memory, MemoryBlocks
 from .output import OutputMode, OutputRouter
 from .source import RawEvent, SourceAdapter
+from .video import VideoFrame
 
 
 class FakeSourceAdapter(SourceAdapter):
@@ -168,3 +169,33 @@ class FakeSpeakerTagger:
         if segment.source_label == self._streamer_label:
             return STREAMER
         return self._other_label
+
+
+class FakeCaptioner:
+    """Captioner (VLM) deterministico: descrive un frame dai suoi `pixels`.
+
+    Per default ritorna `str(frame.pixels)`, così il test controlla la caption
+    fissando i pixel. Si può passare `text` per una caption fissa, o un
+    dizionario `captions` per mappare la rappresentazione dei pixel -> testo.
+    Conta le invocazioni in `calls`, così i test verificano che il captioner NON
+    sia chiamato sui frame saltati (sampling/hashing).
+    """
+
+    def __init__(
+        self,
+        text: str | None = None,
+        *,
+        captions: dict[str, str] | None = None,
+    ) -> None:
+        self._text = text
+        self._captions = captions or {}
+        self.calls = 0
+
+    def caption(self, frame: VideoFrame) -> str:
+        self.calls += 1
+        key = str(frame.pixels)
+        if key in self._captions:
+            return self._captions[key]
+        if self._text is not None:
+            return self._text
+        return key

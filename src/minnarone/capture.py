@@ -25,11 +25,15 @@ from collections.abc import AsyncIterator, Iterable
 
 from .audio import AudioChunk
 from .source import RawEvent, SourceAdapter
+from .video import VideoFrame
 
 # Un capture source può essere un iterabile sincrono o asincrono di AudioChunk.
 # Lo normalizziamo a runtime, così l'iniezione resta semplice per i test
 # (lista in-memory) e flessibile per i backend reali (generatore async).
 CaptureSource = Iterable[AudioChunk]
+
+# Analogamente per il video: una sorgente di frame, iterabile sincrono o async.
+FrameSource = Iterable[VideoFrame]
 
 
 class OSCaptureAdapter(SourceAdapter):
@@ -106,4 +110,84 @@ def make_device_capture_source(
         "cablare un backend di device (es. sounddevice + loopback di sistema) "
         "implementando un iterabile di AudioChunk. Non disponibile in ambiente "
         "senza device."
+    )
+
+
+class ScreenCaptureAdapter(SourceAdapter):
+    """Adapter di cattura schermo: `VideoFrame` -> `RawEvent(video)`.
+
+    Specchio dello `OSCaptureAdapter` audio per il canale "video". Il backend di
+    cattura è iniettato (`frame_source`): un iterabile sincrono o asincrono di
+    `VideoFrame`. L'adapter non sa né gli importa da dove vengano i frame; questo
+    lo rende testabile con una sorgente in-memory e disaccoppia il core dal
+    device dello schermo (che AFK non esiste).
+    """
+
+    def __init__(self, frame_source: object) -> None:
+        self._frame_source = frame_source
+        self._started = False
+
+    def channels(self) -> set[str]:
+        return {"video"}
+
+    async def start(self) -> None:
+        """Avvia la cattura. Idempotente."""
+        self._started = True
+
+    async def stop(self) -> None:
+        """Ferma la cattura. Sicura anche se non avviata."""
+        self._started = False
+
+    async def events(self) -> AsyncIterator[RawEvent]:
+        """Stream di `RawEvent(channel="video")` finché l'adapter è attivo.
+
+        Ogni `VideoFrame` del frame source diventa un `RawEvent` con `ts`
+        ereditato dal frame. Se `stop()` viene chiamato lo stream si interrompe
+        senza estrarre né emettere un ulteriore frame (sorgenti real-time).
+        """
+        async for frame in self._iter_frames():
+            # Controlla PRIMA di emettere: dopo stop() non si estrae né si
+            # emette un ulteriore frame.
+            if not self._started:
+                break
+            yield RawEvent(channel="video", payload=frame, ts=frame.ts)
+            if not self._started:
+                break
+
+    async def _iter_frames(self) -> AsyncIterator[VideoFrame]:
+        """Normalizza il frame source (sync o async) a un async iterator."""
+        source = self._frame_source
+        if hasattr(source, "__aiter__"):
+            async for frame in source:  # type: ignore[union-attr]
+                yield frame
+        else:
+            for frame in source:  # type: ignore[union-attr]
+                yield frame
+
+
+def make_device_screen_capture_source(
+    *, source_label: str = "screen", fps: float = 1.0
+) -> AsyncIterator[VideoFrame]:
+    """Percorso OPZIONALE: backend di cattura schermo reale (NON usato AFK).
+
+    Costruisce un frame source che legge dallo schermo del sistema. Importa la
+    dipendenza pesante (es. `mss`/`PyAV` per i frame, un VLM a valle per le
+    caption) SOLO qui dentro, così il modulo si carica senza device né pacchetti
+    di visione installati e senza scaricare modelli. Questo percorso non è
+    esercitato nei test (richiede uno schermo e permessi); è documentato come lo
+    slot dove innestare la cattura reale.
+
+    Note di permessi macOS:
+        * La cattura dello schermo richiede il permesso "Screen Recording" in
+          Privacy & Security; senza, le API restituiscono frame vuoti/neri.
+        * Il VLM per le caption (es. Qwen2-VL) è una dipendenza pesante a parte,
+          iniettata come `Captioner` nel `VideoPerceiver`, non importata qui.
+
+    Sollevare a chi cabla l'app la scelta del backend concreto.
+    """
+    raise NotImplementedError(
+        "make_device_screen_capture_source è il percorso opzionale di cattura "
+        "schermo reale: cablare un backend (es. mss/PyAV) implementando un "
+        "iterabile di VideoFrame, e iniettare un Captioner VLM nel "
+        "VideoPerceiver. Non disponibile in ambiente senza schermo/GPU."
     )
