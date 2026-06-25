@@ -27,14 +27,13 @@ nomi di dominio per i chiamanti.
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from .audio import AudioChunk
 from .source import RawEvent, SourceAdapter
 from .video import VideoFrame
 
 
-@runtime_checkable
 class Timestamped(Protocol):
     """Payload di cattura: deve esporre l'epoch di cattura `ts` in secondi.
 

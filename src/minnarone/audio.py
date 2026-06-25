@@ -23,8 +23,9 @@ dell'applicazione. Per i test si usano i fake deterministici in `fakes.py`.
 
 Il payload audio (`AudioChunk`) è volutamente opaco rispetto al formato: porta i
 campioni grezzi e i metadati minimi (sample rate, canale di provenienza) di cui
-gli stadi hanno bisogno. È il contratto fra l'`OSCaptureAdapter` (che lo emette
-come `RawEvent.payload`) e questa pipeline.
+gli stadi hanno bisogno. È il contratto fra lo `StreamCaptureAdapter` di canale
+"audio" (costruito via `os_audio_capture`, che lo emette come
+`RawEvent.payload`) e questa pipeline.
 """
 
 from __future__ import annotations
@@ -183,7 +184,7 @@ class AudioPerceiver(EventPerceiver):
     def _perceive_payload(self, payload: AudioChunk) -> list[Perception]:
         """Hook di `EventPerceiver`: delega alla pipeline audio già testata.
 
-        È l'aggancio fra l'`OSCaptureAdapter` e la pipeline: gli eventi di
+        È l'aggancio fra lo `StreamCaptureAdapter` ("audio") e la pipeline: gli eventi di
         canale "audio" portano un `AudioChunk` come payload. La guardia su
         canale e tipo del payload vive in `EventPerceiver`.
         """

@@ -27,8 +27,9 @@ deterministico:
   effettivamente descritto. Così niente caption duplicate su uno schermo fermo.
 
 Il payload video (`VideoFrame`) è volutamente opaco rispetto al formato: porta i
-pixel grezzi e i metadati minimi. È il contratto fra lo `ScreenCaptureAdapter`
-(che lo emette come `RawEvent.payload`) e questa pipeline.
+pixel grezzi e i metadati minimi. È il contratto fra lo `StreamCaptureAdapter`
+("video", costruito via `os_screen_capture`, che lo emette come
+`RawEvent.payload`) e questa pipeline.
 """
 
 from __future__ import annotations
@@ -192,7 +193,7 @@ class VideoPerceiver(EventPerceiver):
     def _perceive_payload(self, payload: VideoFrame) -> list[Perception]:
         """Hook di `EventPerceiver`: delega alla pipeline video già testata.
 
-        È l'aggancio fra lo `ScreenCaptureAdapter` e la pipeline: gli eventi di
+        È l'aggancio fra lo `StreamCaptureAdapter` ("video") e la pipeline: gli eventi di
         canale "video" portano un `VideoFrame` come payload. La guardia su
         canale e tipo del payload vive in `EventPerceiver`.
         """
