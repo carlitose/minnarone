@@ -25,6 +25,19 @@ python -m minnarone path/al/config.yaml --check
 python -m minnarone path/al/config.yaml
 ```
 
+## Controllo qualità
+
+```bash
+uv sync --extra dev
+make quality
+
+# abilita l'hook git pre-commit tracciato nel repo
+git config core.hooksPath .githooks
+```
+
+Il target esegue Ruff, Vulture, Deptry e Pylint limitato a `duplicate-code`
+(`R0801`).
+
 ### Prerequisiti
 
 - **`OPENROUTER_API_KEY`**: esportala nell'ambiente — il provider LLM

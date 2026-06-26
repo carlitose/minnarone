@@ -9,7 +9,6 @@ from minnarone.human import (
     HumanLikeness,
 )
 
-
 # --- Typing delay ----------------------------------------------------------
 
 
