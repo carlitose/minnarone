@@ -19,6 +19,7 @@ from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
 
 _TWITCH_CHANNEL_RE = re.compile(r"^[a-z0-9_]{1,25}$")
+_IRC_CLOSE_TIMEOUT_SECONDS = 5.0
 
 
 class TwitchIRCStream(Protocol):
@@ -82,12 +83,14 @@ class TwitchChatReader(SourceAdapter):
         oauth_token: str,
         connect: ConnectIRC | None = None,
         clock: Callable[[], float] = time.time,
+        close_timeout: float = _IRC_CLOSE_TIMEOUT_SECONDS,
     ) -> None:
         self._channel = _normalize_channel(channel)
         self._username = username
         self._pass = normalize_twitch_oauth_token(oauth_token)
         self._connect = connect or _connect_twitch_irc
         self._clock = clock
+        self._close_timeout = close_timeout
         self._stream: TwitchIRCStream | None = None
         self._running = False
 
@@ -114,7 +117,7 @@ class TwitchChatReader(SourceAdapter):
         stream = self._stream
         self._stream = None
         if stream is not None:
-            await stream.close()
+            await asyncio.wait_for(stream.close(), timeout=self._close_timeout)
 
     async def events(self) -> AsyncIterator[RawEvent]:
         if self._stream is None:
@@ -165,7 +168,7 @@ async def capture_chat_smoke(
     except TimeoutError:
         raise
     finally:
-        await adapter.stop()
+        await asyncio.wait_for(adapter.stop(), timeout=_IRC_CLOSE_TIMEOUT_SECONDS)
     return count
 
 

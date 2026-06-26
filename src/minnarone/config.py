@@ -16,6 +16,9 @@ from pathlib import Path
 import yaml
 
 from .output import OutputMode
+from .twitch_audio import pcm_chunk_size_bytes
+from .twitch_media import normalize_twitch_channel
+from .twitch_video import validate_video_fps
 
 
 class ConfigError(ValueError):
@@ -34,6 +37,96 @@ class RetentionConfig:
     """Punto v2 (inerte in MVP): per quanto tempo conservare i dati percepiti."""
 
     perceptions_days: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TwitchConfig:
+    """Configurazione futura dell'adapter Twitch.
+
+    Le credenziali restano fuori dal file: `TWITCH_BOT_USERNAME` e
+    `TWITCH_OAUTH_TOKEN` sono lette dall'ambiente quando l'integrazione runtime
+    verra' cablata.
+    """
+
+    channel: str
+    quality: str = "best"
+    chat: bool = True
+    audio: bool = False
+    video: bool = False
+    audio_chunk_seconds: float = 1.0
+    video_fps: float = 1.0
+
+    def __post_init__(self) -> None:
+        try:
+            object.__setattr__(self, "channel", normalize_twitch_channel(self.channel))
+        except (AttributeError, ValueError) as exc:
+            raise ConfigError(f"twitch.channel: {exc}") from exc
+
+        if not isinstance(self.quality, str) or not self.quality.strip():
+            raise ConfigError("twitch.quality deve essere una stringa non vuota")
+        object.__setattr__(self, "quality", self.quality.strip())
+
+        for name in ("chat", "audio", "video"):
+            if not isinstance(getattr(self, name), bool):
+                raise ConfigError(f"twitch.{name} deve essere booleano")
+        if not (self.chat or self.audio or self.video):
+            raise ConfigError("twitch deve abilitare almeno chat, audio o video")
+
+        audio_chunk_seconds = self._coerce_float(
+            self.audio_chunk_seconds,
+            "twitch.audio_chunk_seconds",
+        )
+        try:
+            pcm_chunk_size_bytes(audio_chunk_seconds)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"twitch.audio_chunk_seconds: {exc}") from exc
+        object.__setattr__(self, "audio_chunk_seconds", audio_chunk_seconds)
+
+        raw_video_fps = self._coerce_float(self.video_fps, "twitch.video_fps")
+        try:
+            video_fps = validate_video_fps(raw_video_fps)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"twitch.video_fps: {exc}") from exc
+        object.__setattr__(self, "video_fps", video_fps)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "TwitchConfig":
+        """Costruisce e valida il blocco `twitch:` futuro."""
+        allowed = {
+            "channel",
+            "quality",
+            "chat",
+            "audio",
+            "video",
+            "audio_chunk_seconds",
+            "video_fps",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "campi twitch non riconosciuti: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        if "channel" not in data:
+            raise ConfigError("campo obbligatorio 'twitch.channel' mancante")
+        return cls(
+            channel=data["channel"],  # type: ignore[arg-type]
+            quality=data.get("quality", "best"),  # type: ignore[arg-type]
+            chat=data.get("chat", True),  # type: ignore[arg-type]
+            audio=data.get("audio", False),  # type: ignore[arg-type]
+            video=data.get("video", False),  # type: ignore[arg-type]
+            audio_chunk_seconds=data.get("audio_chunk_seconds", 1.0),  # type: ignore[arg-type]
+            video_fps=data.get("video_fps", 1.0),  # type: ignore[arg-type]
+        )
+
+    @staticmethod
+    def _coerce_float(value: object, field_name: str) -> float:
+        if isinstance(value, bool):
+            raise ConfigError(f"{field_name} deve essere numerico")
+        try:
+            return float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"{field_name} deve essere numerico") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +157,7 @@ class Config:
     disclosure: DisclosureConfig = field(default_factory=DisclosureConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     auto_memory: bool = False
+    twitch: TwitchConfig | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, OutputMode):
@@ -72,6 +166,10 @@ class Config:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
+        if self.twitch is not None and not isinstance(self.twitch, TwitchConfig):
+            raise ConfigError("twitch deve essere una TwitchConfig")
+        if self.adapter == "twitch" and self.twitch is None:
+            raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
         if self.senser_interval <= 0:
             raise ConfigError("senser_interval deve essere > 0")
         if self.idle_interval <= 0:
@@ -97,6 +195,10 @@ class Config:
         retention_raw = data.get("retention", {})
         if not isinstance(disclosure_raw, dict) or not isinstance(retention_raw, dict):
             raise ConfigError("'disclosure' e 'retention' devono essere tabelle")
+        twitch_raw = data.get("twitch")
+        if twitch_raw is not None and not isinstance(twitch_raw, dict):
+            raise ConfigError("'twitch' deve essere una tabella")
+        twitch = TwitchConfig.from_dict(twitch_raw) if twitch_raw is not None else None
 
         try:
             return cls(
@@ -105,6 +207,7 @@ class Config:
                 facts_dir=data.get("facts_dir"),  # type: ignore[arg-type]
                 adapter=data.get("adapter"),  # type: ignore[arg-type]
                 llm_provider=data.get("llm_provider"),  # type: ignore[arg-type]
+                twitch=twitch,
                 agent_name=str(data.get("agent_name", "minnarone")),
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]
                 senser_interval=float(data.get("senser_interval", 0.5)),

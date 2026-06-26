@@ -32,7 +32,7 @@ from .capture import (
     os_screen_capture,
 )
 from .chat import ChatPerceiver
-from .config import Config, ConfigError, DisclosureConfig, RetentionConfig
+from .config import Config, ConfigError, DisclosureConfig, RetentionConfig, TwitchConfig
 from .console import ConsoleOutputRouter
 from .dashboard import DashboardState, snapshot
 from .human import END_CONV_SENTINEL, HumanDecision, HumanLikeness
@@ -47,6 +47,7 @@ from .senser import ConversationWindow, Senser, Trigger
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
 from .summarizer import Summarizer
+from .twitch_stream import TwitchStreamAdapter, TwitchStreamStats
 from .video import Captioner, VideoFrame, VideoPerceiver
 
 __all__ = [
@@ -54,6 +55,8 @@ __all__ = [
     "Source",
     "SourceAdapter",
     "RawEvent",
+    "TwitchStreamAdapter",
+    "TwitchStreamStats",
     "LLMProvider",
     "LLMResult",
     "LLMError",
@@ -68,6 +71,7 @@ __all__ = [
     "ConfigError",
     "DisclosureConfig",
     "RetentionConfig",
+    "TwitchConfig",
     "PerceptionStore",
     "EventPerceiver",
     "ChatPerceiver",

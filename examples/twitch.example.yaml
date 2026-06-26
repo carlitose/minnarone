@@ -1,0 +1,37 @@
+# Future-facing Twitch config example.
+# Main CLI runtime wiring for adapter: twitch is intentionally not complete yet.
+# Secrets stay in environment variables:
+#   TWITCH_BOT_USERNAME
+#   TWITCH_OAUTH_TOKEN
+
+mode: public
+soul_path: soul.md
+facts_dir: facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: minnarone
+  quality: best
+  chat: true
+  audio: true
+  video: true
+  audio_chunk_seconds: 1.0
+  video_fps: 1.0
+
+senser_interval: 0.5
+idle_interval: 150.0
+summarizer_interval: 30.0
+recent_chat_window: 15
+
+llm_params:
+  thinking: low
+
+disclosure:
+  announce_ai: false
+
+retention:
+  perceptions_days: 7
+
+auto_memory: false

@@ -64,6 +64,58 @@ richiedono i rispettivi backend (VAD/ASR/VLM) e si attivano solo iniettando
 il **passo manuale** da cablare: senza un adapter iniettato, `run()` gira il solo
 motore di reazione + summarizer.
 
+### Smoke Twitch capture-only
+
+Lo smoke Twitch e' separato dal CLI dell'agente e non richiede
+`OPENROUTER_API_KEY`. La guida completa per operatori, artifact, troubleshooting
+e forma futura `adapter: twitch` e' in [docs/twitch-operator.md](docs/twitch-operator.md).
+Per la chat servono credenziali bot in ambiente:
+
+```bash
+export TWITCH_BOT_USERNAME=nome_bot
+export TWITCH_OAUTH_TOKEN=oauth:token_o_senza_prefisso
+
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-chat
+```
+
+Per abilitare anche la cattura audio raw servono `streamlink` e `ffmpeg`
+installati sul sistema e disponibili su `PATH`:
+
+```bash
+streamlink --version
+ffmpeg -version
+
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-audio \
+  --audio \
+  --audio-chunk-seconds 1.0 \
+  --quality audio_only
+```
+
+Per campionare anche frame video JPEG a bassa frequenza:
+
+```bash
+minnarone-twitch-smoke \
+  --channel nomecanale \
+  --duration 30 \
+  --output ./.smoke/twitch-video \
+  --video \
+  --video-fps 1.0 \
+  --quality best
+```
+
+Gli artifact sono scritti nella directory passata a `--output`:
+`perceptions.jsonl` per la chat, `raw/audio/*.pcm` per un numero limitato di
+sample PCM mono 16 kHz signed 16-bit little-endian, `raw/video/*.jpg` per un
+numero limitato di frame JPEG, e `stats.json` con conteggi ed eventuali failure.
+I file `.pcm` e `.jpg` provano solo la cattura raw da FFmpeg: queste slice non
+implementano ASR, VAD, diarizzazione o captioning VLM.
+
 ### Esempio di config (`config.yaml`)
 
 ```yaml

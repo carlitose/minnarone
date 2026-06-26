@@ -193,6 +193,19 @@ def test_smoke_workflow_writes_chat_perceptions_without_openrouter(tmp_path, mon
     }
 
 
+def test_chat_smoke_preserves_custom_output_file_name(tmp_path):
+    output = tmp_path / "custom-chat.jsonl"
+    adapter = FakeSourceAdapter(
+        [RawEvent(channel="chat", payload={"text": "ciao"}, ts=30.0)]
+    )
+
+    count = asyncio.run(capture_chat_smoke(adapter, output_path=output))
+
+    assert count == 1
+    assert output.exists()
+    assert not (tmp_path / "perceptions.jsonl").exists()
+
+
 def test_smoke_duration_bounds_adapter_start_and_still_stops(tmp_path):
     class HangingStartAdapter(FakeSourceAdapter):
         def __init__(self):
@@ -231,6 +244,23 @@ def test_smoke_reraises_operational_timeout_from_adapter(tmp_path):
         asyncio.run(
             capture_chat_smoke(
                 OperationalTimeoutAdapter([]),
+                output_path=tmp_path / "perceptions.jsonl",
+                duration=1.0,
+            )
+        )
+
+
+def test_chat_smoke_bounds_adapter_stop(tmp_path):
+    class HangingStopAdapter(FakeSourceAdapter):
+        async def stop(self):
+            await asyncio.Event().wait()
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(
+            capture_chat_smoke(
+                HangingStopAdapter(
+                    [RawEvent(channel="chat", payload={"text": "ciao"}, ts=1.0)]
+                ),
                 output_path=tmp_path / "perceptions.jsonl",
                 duration=1.0,
             )
