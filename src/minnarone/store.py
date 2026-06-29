@@ -21,7 +21,7 @@ durevole, il deque è solo una vista in memoria del coda recente.
 from __future__ import annotations
 
 import os
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Iterable
 from pathlib import Path
 from threading import RLock
@@ -43,6 +43,9 @@ class PerceptionStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._recent: deque[Perception] = deque(maxlen=_TAIL_CACHE_SIZE)
+        self._recent_by_source_type: defaultdict[
+            tuple[str, str], deque[Perception]
+        ] = defaultdict(lambda: deque(maxlen=_TAIL_CACHE_SIZE))
         self._prime_recent()
 
     @property
@@ -52,7 +55,7 @@ class PerceptionStore:
     def _prime_recent(self) -> None:
         """Carica le ultime percezioni dal file nel deque (riapertura store)."""
         for perception in self._read_all():
-            self._recent.append(perception)
+            self._remember_recent(perception)
 
     def append(self, perception: Perception) -> None:
         """Aggiunge una percezione come singola riga JSON, durevole."""
@@ -66,7 +69,7 @@ class PerceptionStore:
                 fh.write(line + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            self._recent.append(perception)
+            self._remember_recent(perception)
 
     @staticmethod
     def _parse_or_skip(line: str) -> Perception | None:
@@ -149,3 +152,49 @@ class PerceptionStore:
                 return list(self._recent)[-n:]
         # Richiesta più grande della cache: ricade sulla lettura da file.
         return list(self._read_all())[-n:]
+
+    def tail_matching(
+        self,
+        n: int,
+        *,
+        source: str | None = None,
+        type: str | None = None,  # noqa: A002 - domain field name.
+    ) -> list[Perception]:
+        """Le ultime `n` percezioni che corrispondono a source/type.
+
+        Serve alle viste per-sorgente: una chat molto intensa non deve far
+        sparire trascrizioni audio o caption video solo perché la coda globale
+        è dominata da messaggi chat.
+        """
+        if n <= 0:
+            return []
+        with self._lock:
+            recent_matches = [
+                p for p in self._recent if _matches_perception(p, source, type)
+            ]
+            if len(recent_matches) >= n:
+                return recent_matches[-n:]
+            if source is not None and type is not None:
+                keyed = list(self._recent_by_source_type[(source, type)])
+                return keyed[-n:]
+        return [
+            p for p in self._read_all() if _matches_perception(p, source, type)
+        ][-n:]
+
+    def _remember_recent(self, perception: Perception) -> None:
+        self._recent.append(perception)
+        self._recent_by_source_type[
+            (perception.source.value, perception.type)
+        ].append(perception)
+
+
+def _matches_perception(
+    perception: Perception,
+    source: str | None,
+    type_: str | None,
+) -> bool:
+    if source is not None and perception.source.value != source:
+        return False
+    if type_ is not None and perception.type != type_:
+        return False
+    return True

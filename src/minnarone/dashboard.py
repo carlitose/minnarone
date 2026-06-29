@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 
+from .audio import STREAMER
 from .perception import Perception, format_perception_line
 from .prompt_observation import PromptObservation
 from .senser import ConversationWindow, Trigger
@@ -32,8 +33,6 @@ _DEFAULT_RECENT_PERCEPTIONS = 20
 # Quanti trigger e messaggi recenti includere di default.
 _DEFAULT_RECENT_TRIGGERS = 20
 _DEFAULT_RECENT_MESSAGES = 20
-
-
 @dataclass(frozen=True, slots=True)
 class QueueChannelDiagnostics:
     """Operator-visible bounded queue counters for one local media channel."""
@@ -101,6 +100,14 @@ class AdapterChannelDiagnostics:
 
 
 @dataclass(frozen=True, slots=True)
+class DashboardPanel:
+    """Formatted read-only content for one operator dashboard panel."""
+
+    title: str
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardState:
     """Vista immutabile e pura dello stato osservabile del sistema.
 
@@ -117,6 +124,7 @@ class DashboardState:
     """
 
     perceptions: list[Perception] = field(default_factory=list)
+    chat_messages: list[Perception] = field(default_factory=list)
     audio_transcriptions: list[Perception] = field(default_factory=list)
     video_captions: list[Perception] = field(default_factory=list)
     triggers: list[Trigger] = field(default_factory=list)
@@ -128,12 +136,92 @@ class DashboardState:
     speaker: SpeakerDiagnostics = field(default_factory=SpeakerDiagnostics)
     video: VideoDiagnostics = field(default_factory=VideoDiagnostics)
     latest_prompt: PromptObservation | None = None
+    memory_summary: str = ""
+
+    def render_panels(self) -> list[DashboardPanel]:
+        """Render the screenshot-faithful dashboard panels in visual row order."""
+        return [
+            DashboardPanel("IDLE", self._render_idle_panel()),
+            DashboardPanel("FINESTRA CHAT", self._render_chat_window_panel()),
+            DashboardPanel("STREAMER", self._render_streamer_panel()),
+            DashboardPanel("CHAT", self._render_chat_panel()),
+            DashboardPanel("EVENTI", self._render_events_panel()),
+            DashboardPanel("MINNARONE", self._render_minnarone_panel()),
+            DashboardPanel("TRASCRIZIONE", self._render_transcription_panel()),
+            DashboardPanel("VIDEO", self._render_video_panel()),
+            DashboardPanel("MEMORIA", self._render_memory_panel()),
+        ]
+
+    def _render_idle_panel(self) -> str:
+        idle_triggers = [t for t in self.triggers if t.kind == "idle_comment"]
+        if not idle_triggers:
+            return "(nessun idle)"
+        return "\n".join(f"{t.kind} <- {t.interlocutor or '-'}" for t in idle_triggers)
+
+    def _render_chat_window_panel(self) -> str:
+        lines = [
+            _format_window(window)
+            for who, window in self.windows.items()
+            if who != STREAMER
+        ]
+        return "\n".join(lines) if lines else "(nessuna finestra chat)"
+
+    def _render_streamer_panel(self) -> str:
+        window = self.windows.get(STREAMER)
+        if window is None:
+            return "(nessuna finestra streamer)"
+        return _format_window(window)
+
+    def _render_chat_panel(self) -> str:
+        source = self.chat_messages or [
+            p for p in self.perceptions if p.source.value == "chat"
+        ]
+        lines = [
+            f"{p.ts:.3f} {format_perception_line(p)}"
+            for p in source
+        ]
+        return "\n".join(lines) if lines else "(nessuna chat)"
+
+    def _render_events_panel(self) -> str:
+        lines = [
+            f"{t.kind} <- {t.interlocutor if t.interlocutor else '-'}"
+            for t in self.triggers
+        ]
+        if self.failures:
+            lines.extend(
+                f"{failure.channel}/{failure.stage}: {failure.message}"
+                for failure in self.failures
+            )
+        return "\n".join(lines) if lines else "(nessun evento)"
+
+    def _render_minnarone_panel(self) -> str:
+        return "\n".join(self.messages) if self.messages else "(nessuno)"
+
+    def _render_transcription_panel(self) -> str:
+        lines = [
+            f"{p.ts:.3f} {p.speaker or '?'}: {p.text}"
+            for p in self.audio_transcriptions
+        ]
+        return "\n".join(lines) if lines else "(nessuna trascrizione)"
+
+    def _render_video_panel(self) -> str:
+        diagnostics = (
+            "frames="
+            f"{self.video.frames_seen} sampled={self.video.sampled} "
+            f"captioned={self.video.captioned} failed={self.video.failed}"
+        )
+        captions = [f"{p.ts:.3f} {p.text}" for p in self.video_captions]
+        return "\n".join([diagnostics, *captions])
+
+    def _render_memory_panel(self) -> str:
+        summary = self.memory_summary.strip()
+        return summary if summary else "(nessuna memoria)"
 
     def render_text(self) -> str:
         """Resa testuale dello snapshot, senza alcuna dipendenza da textual.
 
-        È la fonte di verità del *contenuto* da mostrare: la vista Textual la
-        riusa nei suoi pannelli, ma il testo è verificabile in modo headless.
+        Mantiene il dump legacy verificabile in modo headless. La vista Textual
+        principale usa invece `render_panels()` per preservare la griglia.
         """
         lines: list[str] = []
 
@@ -241,6 +329,13 @@ class DashboardState:
         return "\n".join(lines)
 
 
+def _format_window(window: ConversationWindow) -> str:
+    return (
+        f"{window.interlocutor} aperta "
+        f"da {window.opened_at:.3f}; ultimo={window.last_seen:.3f}"
+    )
+
+
 def snapshot(
     *,
     store=None,
@@ -252,6 +347,7 @@ def snapshot(
     video_perceiver=None,
     adapter=None,
     prompt_recorder=None,
+    summarizer=None,
     recent_perceptions: int = _DEFAULT_RECENT_PERCEPTIONS,
     recent_triggers: int = _DEFAULT_RECENT_TRIGGERS,
     recent_messages: int = _DEFAULT_RECENT_MESSAGES,
@@ -270,12 +366,24 @@ def snapshot(
     perceptions: list[Perception] = []
     if store is not None and recent_perceptions > 0:
         perceptions = list(store.tail(recent_perceptions))
-    audio_transcriptions = [
-        p for p in perceptions if p.source.value == "audio" and p.type == "speech"
-    ]
-    video_captions = [
-        p for p in perceptions if p.source.value == "video" and p.type == "caption"
-    ]
+    chat_messages = _tail_matching(
+        store,
+        limit=recent_perceptions,
+        source="chat",
+        type="msg",
+    )
+    audio_transcriptions = _tail_matching(
+        store,
+        limit=recent_perceptions,
+        source="audio",
+        type="speech",
+    )
+    video_captions = _tail_matching(
+        store,
+        limit=recent_perceptions,
+        source="video",
+        type="caption",
+    )
 
     triggers: list[Trigger] = []
     windows: dict[str, ConversationWindow] = {}
@@ -301,9 +409,11 @@ def snapshot(
     speaker = _speaker_diagnostics(speaker_tagger)
     video = _video_diagnostics(video_perceiver)
     latest_prompt = _latest_prompt_observation(prompt_recorder)
+    memory_summary = _current_memory_summary(summarizer)
 
     return DashboardState(
         perceptions=perceptions,
+        chat_messages=chat_messages,
         audio_transcriptions=audio_transcriptions,
         video_captions=video_captions,
         triggers=triggers,
@@ -315,7 +425,32 @@ def snapshot(
         speaker=speaker,
         video=video,
         latest_prompt=latest_prompt,
+        memory_summary=memory_summary,
     )
+
+
+def _current_memory_summary(summarizer) -> str:
+    if summarizer is None:
+        return ""
+    summary = getattr(summarizer, "current_summary", "")
+    return summary if isinstance(summary, str) else ""
+
+
+def _tail_matching(
+    store,
+    *,
+    limit: int,
+    source: str,
+    type: str,  # noqa: A002 - mirrors Perception field.
+) -> list[Perception]:
+    if store is None or limit <= 0:
+        return []
+    tail_matching = getattr(store, "tail_matching", None)
+    if tail_matching is None:
+        return [
+            p for p in store.tail(limit) if p.source.value == source and p.type == type
+        ][-limit:]
+    return list(tail_matching(limit, source=source, type=type))
 
 
 def _latest_prompt_observation(prompt_recorder) -> PromptObservation | None:

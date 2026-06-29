@@ -6,12 +6,14 @@ fallire con un errore chiaro. Lo smoke test della resa è saltato se textual non
 c'è (`importorskip`), così la suite resta verde anche offline.
 """
 
+import asyncio
 import sys
-from types import SimpleNamespace
 
 import pytest
 
+from minnarone.dashboard import DashboardState
 from minnarone.perception import Perception, Source
+from minnarone.senser import ConversationWindow
 from minnarone.store import PerceptionStore
 
 
@@ -72,6 +74,153 @@ def test_view_renders_snapshot_smoke(tmp_path):
     assert app is not None
 
 
+def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState(
+        perceptions=[
+            Perception(
+                ts=1.0,
+                source=Source.CHAT,
+                type="msg",
+                text="chat live separata",
+                speaker="alice",
+            ),
+            Perception(
+                ts=2.0,
+                source=Source.AUDIO,
+                type="speech",
+                text="audio nel pannello",
+                speaker="streamer",
+            ),
+            Perception(
+                ts=3.0,
+                source=Source.VIDEO,
+                type="caption",
+                text="video nel pannello",
+            ),
+        ],
+        audio_transcriptions=[
+            Perception(
+                ts=2.0,
+                source=Source.AUDIO,
+                type="speech",
+                text="audio nel pannello",
+                speaker="streamer",
+            )
+        ],
+        video_captions=[
+            Perception(
+                ts=3.0,
+                source=Source.VIDEO,
+                type="caption",
+                text="video nel pannello",
+            )
+        ],
+        windows={
+            "alice": ConversationWindow("alice", opened_at=1.0, last_seen=1.0)
+        },
+        messages=["Minnarone osserva"],
+        memory_summary="memoria fake",
+    )
+    app = build_dashboard_app(lambda: state)
+
+    assert app.panel_titles == [
+        "IDLE",
+        "FINESTRA CHAT",
+        "STREAMER",
+        "CHAT",
+        "EVENTI",
+        "MINNARONE",
+        "TRASCRIZIONE",
+        "VIDEO",
+        "MEMORIA",
+    ]
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 30)):
+            widgets = list(app.query(".dashboard-panel"))
+            content_widgets = list(app.query(".dashboard-panel-content"))
+            assert [widget.border_title for widget in widgets] == app.panel_titles
+            return {
+                container.border_title: str(content.content)
+                for container, content in zip(widgets, content_widgets, strict=True)
+            }
+
+    updates = asyncio.run(exercise_app())
+    assert "alice aperta" in updates["FINESTRA CHAT"]
+    assert "chat live separata" in updates["CHAT"]
+    assert "audio nel pannello" in updates["TRASCRIZIONE"]
+    assert "video nel pannello" in updates["VIDEO"]
+    assert "Minnarone osserva" in updates["MINNARONE"]
+    assert "memoria fake" in updates["MEMORIA"]
+
+
+def test_view_keeps_long_panel_content_bounded():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    long_line = "contenuto molto lungo " * 200
+    state = DashboardState(
+        perceptions=[
+            Perception(
+                ts=float(index),
+                source=Source.CHAT,
+                type="msg",
+                text=f"{long_line} {index}",
+                speaker="alice",
+            )
+            for index in range(20)
+        ],
+        messages=[long_line],
+        memory_summary=long_line,
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(80, 24)):
+            widgets = list(app.query(".dashboard-panel"))
+            regions = [widget.region for widget in widgets]
+            assert len(widgets) == 9
+            assert len(set(regions)) == 9
+            assert all(widget.can_focus for widget in widgets)
+            assert all(widget.region.height > 0 for widget in widgets)
+            assert any(widget.max_scroll_y > 0 for widget in widgets)
+
+    asyncio.run(exercise_app())
+
+
+def test_view_renders_bracketed_chat_as_plain_text():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    literal = "[red]literal chat tag[/]"
+    state = DashboardState(
+        perceptions=[
+            Perception(
+                ts=1.0,
+                source=Source.CHAT,
+                type="msg",
+                text=literal,
+                speaker="alice",
+            )
+        ]
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(80, 24)):
+            content = app.query_one("#panel-chat .dashboard-panel-content")
+            assert content._render_markup is False
+            assert literal in str(content.content)
+
+    asyncio.run(exercise_app())
+
+
 def test_view_renders_snapshot_not_ready_placeholder():
     pytest.importorskip("textual")
 
@@ -83,12 +232,14 @@ def test_view_renders_snapshot_not_ready_placeholder():
     app = build_dashboard_app(
         lambda: (_ for _ in ()).throw(DashboardSnapshotNotReady("non pronto"))
     )
-    updates = []
-    app._body = SimpleNamespace(update=updates.append)
 
-    app._render_snapshot()
+    async def exercise_app():
+        async with app.run_test(size=(80, 24)):
+            contents = list(app.query(".dashboard-panel-content"))
+            assert contents
+            assert all(str(widget.content) == "non pronto" for widget in contents)
 
-    assert updates == ["non pronto"]
+    asyncio.run(exercise_app())
 
 
 def test_view_does_not_swallow_dashboard_runtime_errors():
@@ -97,7 +248,10 @@ def test_view_does_not_swallow_dashboard_runtime_errors():
     from minnarone.dashboard_tui import build_dashboard_app
 
     app = build_dashboard_app(lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    app._body = SimpleNamespace(update=lambda _text: None)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        app._render_snapshot()
+    async def exercise_app():
+        with pytest.raises(RuntimeError, match="boom"):
+            async with app.run_test(size=(80, 24)):
+                pass
+
+    asyncio.run(exercise_app())

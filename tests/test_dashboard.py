@@ -27,7 +27,7 @@ from minnarone.perception_queue import (
 )
 from minnarone.prompt_observation import PromptObservation, PromptObservationRecorder
 from minnarone.reactor import Reactor
-from minnarone.senser import Senser
+from minnarone.senser import ConversationWindow, Senser, Trigger
 from minnarone.store import PerceptionStore
 
 
@@ -125,6 +125,16 @@ def test_snapshot_exposes_latest_prompt_observation():
     latest = recorder.latest()
     assert latest is not None
     assert latest.token_metadata == {"prompt_tokens": 2}
+
+
+def test_snapshot_exposes_current_memory_summary():
+    class FakeSummarizer:
+        current_summary = "Lo streamer sta preparando la prossima run."
+
+    state = snapshot(summarizer=FakeSummarizer())
+
+    assert state.memory_summary == "Lo streamer sta preparando la prossima run."
+    assert "prossima run" in state.render_panels()[-1].text
 
 
 def test_snapshot_perceptions_limited_to_recent_n(tmp_path):
@@ -294,6 +304,81 @@ def test_snapshot_renders_to_text_without_textual(tmp_path):
     assert isinstance(rendered, str)
     assert "alice" in rendered
     assert "ciao" in rendered
+
+
+def test_dashboard_state_renders_screenshot_faithful_panels():
+    state = DashboardState(
+        perceptions=[
+            _chat_perception("messaggio live della chat", "alice", 1.0),
+            _audio_perception("frase trascritta", "streamer", 2.0),
+            _video_perception("boss visibile sullo schermo", 3.0),
+        ],
+        audio_transcriptions=[
+            _audio_perception("frase trascritta", "streamer", 2.0)
+        ],
+        video_captions=[
+            _video_perception("boss visibile sullo schermo", 3.0)
+        ],
+        triggers=[
+            Trigger(
+                reason="mention",
+                perception=_chat_perception("ehi Minnarone", "alice", 4.0),
+                kind="mention",
+                interlocutor="alice",
+            )
+        ],
+        windows={
+            "alice": ConversationWindow(
+                interlocutor="alice", opened_at=1.0, last_seen=4.0
+            ),
+            "streamer": ConversationWindow(
+                interlocutor="streamer", opened_at=2.0, last_seen=5.0
+            ),
+        },
+        messages=["Commento privato di Minnarone"],
+        memory_summary="Alice sta chiedendo aiuto durante il boss.",
+    )
+
+    panels = state.render_panels()
+
+    assert [panel.title for panel in panels] == [
+        "IDLE",
+        "FINESTRA CHAT",
+        "STREAMER",
+        "CHAT",
+        "EVENTI",
+        "MINNARONE",
+        "TRASCRIZIONE",
+        "VIDEO",
+        "MEMORIA",
+    ]
+    panel_text = {panel.title: panel.text for panel in panels}
+    assert "alice aperta" in panel_text["FINESTRA CHAT"]
+    assert "messaggio live della chat" not in panel_text["FINESTRA CHAT"]
+    assert "messaggio live della chat" in panel_text["CHAT"]
+    assert "streamer aperta" in panel_text["STREAMER"]
+    assert "mention <- alice" in panel_text["EVENTI"]
+    assert "Commento privato di Minnarone" in panel_text["MINNARONE"]
+    assert "streamer: frase trascritta" in panel_text["TRASCRIZIONE"]
+    assert "boss visibile sullo schermo" in panel_text["VIDEO"]
+    assert "Alice sta chiedendo aiuto" in panel_text["MEMORIA"]
+
+
+def test_source_panels_are_not_starved_by_other_busy_sources(tmp_path):
+    store = _store(tmp_path)
+    store.append(_audio_perception("audio ancora rilevante", "streamer", 1.0))
+    store.append(_video_perception("video ancora rilevante", 2.0))
+    for index in range(300):
+        store.append(_chat_perception(f"chat intensa {index}", "alice", 3.0 + index))
+    for index in range(300):
+        store.append(_audio_perception(f"audio intenso {index}", "streamer", 303.0 + index))
+
+    state = snapshot(store=store, recent_perceptions=20)
+    panel_text = {panel.title: panel.text for panel in state.render_panels()}
+
+    assert "audio intenso 299" in panel_text["TRASCRIZIONE"]
+    assert "video ancora rilevante" in panel_text["VIDEO"]
+    assert "chat intensa 299" in panel_text["CHAT"]
 
 
 def test_snapshot_exposes_audio_video_and_queue_diagnostics(tmp_path):

@@ -46,6 +46,7 @@ from .config import (
 from .console import ConsoleOutputRouter
 from .dashboard import (
     AdapterChannelDiagnostics,
+    DashboardPanel,
     DashboardState,
     LocalFailure,
     QueueChannelDiagnostics,
@@ -186,6 +187,7 @@ __all__ = [
     "HumanLikeness",
     "HumanDecision",
     "END_CONV_SENTINEL",
+    "DashboardPanel",
     "DashboardState",
     "QueueChannelDiagnostics",
     "AdapterChannelDiagnostics",

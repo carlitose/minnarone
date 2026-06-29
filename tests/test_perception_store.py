@@ -121,6 +121,55 @@ def test_tail_skips_corrupt_line(tmp_path):
     assert [p.text for p in store.tail(_TAIL_CACHE_SIZE + 1)] == ["prima", "ultima"]
 
 
+def test_tail_matching_returns_recent_source_specific_perceptions(tmp_path):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    store.append(
+        Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio")
+    )
+    store.append(
+        Perception(ts=2.0, source=Source.VIDEO, type="caption", text="video")
+    )
+    for index in range(300):
+        store.append(
+            Perception(
+                ts=3.0 + index,
+                source=Source.CHAT,
+                type="msg",
+                text=f"chat {index}",
+                speaker="alice",
+            )
+        )
+
+    assert [p.text for p in store.tail_matching(1, source="audio", type="speech")] == [
+        "audio"
+    ]
+    assert [p.text for p in store.tail_matching(1, source="video", type="caption")] == [
+        "video"
+    ]
+    assert [p.text for p in store.tail_matching(2, source="chat", type="msg")] == [
+        "chat 298",
+        "chat 299",
+    ]
+
+
+def test_tail_matching_uses_source_cache_when_global_tail_is_busy(tmp_path):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    store.append(
+        Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio")
+    )
+    for index in range(300):
+        store.append(_p(2.0 + index, f"chat {index}"))
+
+    def fail_read_all():
+        raise AssertionError("tail_matching should not rescan the full log")
+
+    store._read_all = fail_read_all
+
+    assert [p.text for p in store.tail_matching(1, source="audio", type="speech")] == [
+        "audio"
+    ]
+
+
 def test_read_from_skips_corrupt_line_and_advances_to_end(tmp_path):
     path = tmp_path / "perceptions.jsonl"
     _write_corrupt_log(path)

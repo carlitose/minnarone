@@ -196,6 +196,7 @@ class Agent:
             video_perceiver=self.video_diagnostics,
             adapter=self.adapter,
             prompt_recorder=self.prompt_recorder,
+            summarizer=self.summarizer,
         )
 
     async def _pump_perceptions(self) -> None:

@@ -39,7 +39,8 @@ def _require_textual():
     """
     try:
         from textual.app import App, ComposeResult  # noqa: F401
-        from textual.widgets import Footer, Header, Static  # noqa: F401
+        from textual.containers import Grid, VerticalScroll  # noqa: F401
+        from textual.widgets import Header, Static  # noqa: F401
     except ImportError as exc:  # pragma: no cover - coperto via importorskip
         raise RuntimeError(_MISSING_TEXTUAL_MSG) from exc
 
@@ -61,21 +62,66 @@ def build_dashboard_app(
     _require_textual()
 
     from textual.app import App, ComposeResult
-    from textual.widgets import Footer, Header, Static
+    from textual.containers import Grid, VerticalScroll
+    from textual.widgets import Header, Static
 
     class _DashboardApp(App):
         TITLE = "Minnarone — Observability"
+        CSS = """
+        Screen {
+            background: #05080a;
+            color: #d7e6e2;
+        }
+
+        #dashboard-grid {
+            layout: grid;
+            grid-size: 3 3;
+            grid-rows: 1fr 1fr 1fr;
+            grid-columns: 1fr 1fr 1fr;
+            grid-gutter: 1 1;
+            height: 1fr;
+            padding: 0 1;
+        }
+
+        .dashboard-panel {
+            border: solid #2f6f73;
+            padding: 0 1;
+            text-style: none;
+        }
+
+        .dashboard-panel-content {
+            width: 1fr;
+            height: auto;
+            text-style: none;
+        }
+        """
 
         def __init__(self) -> None:
             super().__init__()
             self._provider = snapshot_provider
-            self._body: Static | None = None
+            self._panels: dict[str, Static] = {}
+
+        @property
+        def panel_titles(self) -> list[str]:
+            return [panel.title for panel in DashboardState().render_panels()]
 
         def compose(self) -> ComposeResult:
             yield Header()
-            self._body = Static(id="snapshot")
-            yield self._body
-            yield Footer()
+            with Grid(id="dashboard-grid"):
+                for title in self.panel_titles:
+                    with VerticalScroll(
+                        id=_panel_id(title),
+                        classes="dashboard-panel",
+                        can_focus=True,
+                    ) as container:
+                        container.border_title = title
+                        content = Static(
+                            "(in attesa)",
+                            classes="dashboard-panel-content",
+                            markup=False,
+                        )
+                        self._panels[title] = content
+                        yield content
 
         def on_mount(self) -> None:
             self._render_snapshot()
@@ -84,13 +130,22 @@ def build_dashboard_app(
         def _render_snapshot(self) -> None:
             try:
                 state = self._provider()
-                text = state.render_text()
+                panels = state.render_panels()
             except DashboardSnapshotNotReady as exc:
                 text = str(exc)
-            if self._body is not None:
-                self._body.update(text)
+                for panel in self._panels.values():
+                    panel.update(text)
+                return
+            for panel in panels:
+                widget = self._panels.get(panel.title)
+                if widget is not None:
+                    widget.update(panel.text)
 
     return _DashboardApp()
+
+
+def _panel_id(title: str) -> str:
+    return f"panel-{title.lower().replace(' ', '-')}"
 
 
 def run_dashboard(
