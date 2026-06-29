@@ -5,6 +5,7 @@ loop bloccante né toccare rete/device) e che un config invalido dia un errore
 chiaro con exit code != 0.
 """
 
+import builtins
 import textwrap
 
 import minnarone.cli as cli
@@ -119,3 +120,79 @@ def test_cli_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch)
     err = capsys.readouterr().err
     assert "runtime Twitch" in err
     assert "Login authentication failed" in err
+
+
+def test_cli_tui_launches_tui_branch(tmp_path, monkeypatch):
+    class FakeAgent:
+        async def run(self):
+            raise AssertionError("normal live run should not be used for --tui")
+
+    launched = []
+
+    def fake_build_agent(_config):
+        return FakeAgent()
+
+    def fake_run_live_tui(agent):
+        launched.append(agent)
+
+    monkeypatch.setattr(cli, "build_agent", fake_build_agent)
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+    monkeypatch.setattr(cli, "run_live_tui", fake_run_live_tui, raising=False)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 0
+    assert len(launched) == 1
+    assert isinstance(launched[0], FakeAgent)
+
+
+def test_cli_tui_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "build_agent", lambda _config: object())
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+
+    def broken_tui(_agent):
+        raise TwitchStreamRuntimeError("Login authentication failed")
+
+    monkeypatch.setattr(cli, "run_live_tui", broken_tui)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "runtime Twitch" in err
+    assert "Login authentication failed" in err
+
+
+def test_cli_tui_missing_textual_returns_clear_error_before_build(
+    tmp_path, capsys, monkeypatch
+):
+    built = []
+
+    class FakeAgent:
+        async def run(self):
+            raise AssertionError("agent should not run without textual")
+
+        def observability_snapshot(self):
+            return "dashboard-state"
+
+    def fake_build_agent(_config):
+        built.append(True)
+        return FakeAgent()
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "textual" or name.startswith("textual."):
+            raise ImportError("No module named 'textual'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(cli, "build_agent", fake_build_agent)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 1
+    assert built == []
+    err = capsys.readouterr().err
+    assert "textual" in err.lower()
+    assert "minnarone[tui]" in err

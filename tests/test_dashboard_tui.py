@@ -7,6 +7,7 @@ c'è (`importorskip`), così la suite resta verde anche offline.
 """
 
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -69,3 +70,34 @@ def test_view_renders_snapshot_smoke(tmp_path):
     app = build_dashboard_app(lambda: snapshot(store=store))
     # Costruzione senza crash è già il cuore dello smoke headless.
     assert app is not None
+
+
+def test_view_renders_snapshot_not_ready_placeholder():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import (
+        DashboardSnapshotNotReady,
+        build_dashboard_app,
+    )
+
+    app = build_dashboard_app(
+        lambda: (_ for _ in ()).throw(DashboardSnapshotNotReady("non pronto"))
+    )
+    updates = []
+    app._body = SimpleNamespace(update=updates.append)
+
+    app._render_snapshot()
+
+    assert updates == ["non pronto"]
+
+
+def test_view_does_not_swallow_dashboard_runtime_errors():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    app = build_dashboard_app(lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    app._body = SimpleNamespace(update=lambda _text: None)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        app._render_snapshot()

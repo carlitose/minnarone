@@ -263,9 +263,29 @@ class Agent:
             reactor_task.cancel()
             summarizer_task.cancel()
             pump_task.cancel()
-            await asyncio.gather(
+            results = await asyncio.gather(
                 reactor_task, summarizer_task, pump_task, return_exceptions=True
             )
+            errors = _unexpected_shutdown_errors(results)
+            if errors:
+                _raise_shutdown_errors(errors)
+
+
+def _unexpected_shutdown_errors(results: list[object]) -> list[BaseException]:
+    """Return child-task shutdown failures, ignoring expected cancellations."""
+    errors: list[BaseException] = []
+    for result in results:
+        if result is None or isinstance(result, asyncio.CancelledError):
+            continue
+        if isinstance(result, BaseException):
+            errors.append(result)
+    return errors
+
+
+def _raise_shutdown_errors(errors: list[BaseException]) -> None:
+    if len(errors) == 1:
+        raise errors[0]
+    raise BaseExceptionGroup("agent shutdown failures", errors)
 
 
 def _build_router(mode: OutputMode, *, commentator: bool = False) -> OutputRouter:

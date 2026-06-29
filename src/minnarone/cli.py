@@ -20,6 +20,11 @@ from collections.abc import Sequence
 
 from .app import build_agent
 from .config import Config, ConfigError
+from .live_tui import (
+    LiveTuiDependencyError,
+    ensure_live_tui_available,
+    run_live_tui,
+)
 from .twitch_stream import TwitchStreamRuntimeError
 
 
@@ -34,6 +39,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="valida il config e costruisci l'agente senza avviare il loop",
     )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="avvia il runtime live con la dashboard TUI di osservabilità",
+    )
     return parser.parse_args(list(argv))
 
 
@@ -44,10 +54,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         config = Config.load(args.config)
+        if args.tui and not args.check:
+            ensure_live_tui_available()
         agent = build_agent(config)
     except ConfigError as exc:
         print(f"errore di config: {exc}", file=sys.stderr)
         return 2
+    except LiveTuiDependencyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     if args.check:
         print(
@@ -59,9 +74,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Avvio del loop di reazione live. La cattura di percezione (audio/schermo)
     # è il passo manuale documentato: richiede device e permessi macOS.
     try:
-        asyncio.run(agent.run())
+        if args.tui:
+            run_live_tui(agent)
+        else:
+            asyncio.run(agent.run())
     except TwitchStreamRuntimeError as exc:
         print(f"errore runtime Twitch: {exc}", file=sys.stderr)
+        return 1
+    except LiveTuiDependencyError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("arresto richiesto.", file=sys.stderr)

@@ -9,6 +9,7 @@ v2 (disclosure/retention/auto-memory) siano presenti ma inerti.
 import asyncio
 import json
 import textwrap
+from dataclasses import replace
 from threading import Event
 
 import pytest
@@ -1396,5 +1397,118 @@ def test_run_without_adapter_stops_cleanly_on_reactor_stop(tmp_path, monkeypatch
         assert not task.done()  # senza stop, il loop NON termina da solo
         agent.reactor.stop()
         await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(drive())
+
+
+def test_run_surfaces_adapter_cleanup_failure_on_cancellation(tmp_path, monkeypatch):
+    """TUI cancellation must not hide production cleanup failures."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    class FailingStopAdapter(SourceAdapter):
+        def __init__(self) -> None:
+            self.started = Event()
+
+        def channels(self) -> set[str]:
+            return {"chat"}
+
+        async def start(self) -> None:
+            self.started.set()
+
+        async def stop(self) -> None:
+            raise RuntimeError("adapter stop exploded")
+
+        async def events(self):
+            while True:
+                await asyncio.sleep(0.01)
+                if self.started.is_set() and not self.started.is_set():
+                    yield RawEvent(channel="chat", payload={})
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+        )
+    )
+    adapter = FailingStopAdapter()
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+    )
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        assert await asyncio.to_thread(adapter.started.wait, timeout=1.0)
+        task.cancel()
+        with pytest.raises(RuntimeError, match="adapter stop exploded"):
+            await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(drive())
+
+
+def test_run_surfaces_cancelled_child_cleanup_failure(tmp_path, monkeypatch):
+    """Failures from gathered child tasks must not be swallowed."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    class HangingAdapter(SourceAdapter):
+        def __init__(self) -> None:
+            self.started = Event()
+
+        def channels(self) -> set[str]:
+            return {"chat"}
+
+        async def start(self) -> None:
+            self.started.set()
+
+        async def stop(self) -> None:
+            return None
+
+        async def events(self):
+            while True:
+                await asyncio.sleep(0.01)
+                if self.started.is_set() and not self.started.is_set():
+                    yield RawEvent(channel="chat", payload={})
+
+    class FailingSummarizer:
+        async def run(self, *, interval: float) -> None:
+            del interval
+            try:
+                while True:
+                    await asyncio.sleep(0.01)
+            except asyncio.CancelledError as exc:
+                raise RuntimeError("summarizer cleanup exploded") from exc
+
+        def stop(self) -> None:
+            return None
+
+        @property
+        def current_summary(self) -> str:
+            return ""
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+        )
+    )
+    adapter = HangingAdapter()
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+    )
+    agent = replace(agent, summarizer=FailingSummarizer())
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        assert await asyncio.to_thread(adapter.started.wait, timeout=1.0)
+        task.cancel()
+        with pytest.raises(RuntimeError, match="summarizer cleanup exploded"):
+            await asyncio.wait_for(task, timeout=5.0)
 
     asyncio.run(drive())

@@ -26,6 +26,10 @@ _MISSING_TEXTUAL_MSG = (
 )
 
 
+class DashboardSnapshotNotReady(RuntimeError):
+    """Raised by live snapshot providers before the first cached state exists."""
+
+
 def _require_textual():
     """Importa textual on-demand o solleva un errore chiaro se manca.
 
@@ -34,7 +38,8 @@ def _require_textual():
     vista lo richiede.
     """
     try:
-        import textual  # noqa: F401
+        from textual.app import App, ComposeResult  # noqa: F401
+        from textual.widgets import Footer, Header, Static  # noqa: F401
     except ImportError as exc:  # pragma: no cover - coperto via importorskip
         raise RuntimeError(_MISSING_TEXTUAL_MSG) from exc
 
@@ -77,9 +82,13 @@ def build_dashboard_app(
             self.set_interval(refresh_interval, self._render_snapshot)
 
         def _render_snapshot(self) -> None:
-            state = self._provider()
+            try:
+                state = self._provider()
+                text = state.render_text()
+            except DashboardSnapshotNotReady as exc:
+                text = str(exc)
             if self._body is not None:
-                self._body.update(state.render_text())
+                self._body.update(text)
 
     return _DashboardApp()
 
