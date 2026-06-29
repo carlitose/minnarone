@@ -679,22 +679,188 @@ Success signal for the first full run:
 - Console output is prefixed with `[PRIVATE]`.
 - `perceptions.jsonl` receives chat/audio/video perceptions as enabled.
 - `Agent.observability_snapshot()` would show queue counters and failures if you
-  attach a read-only debug/dashboard harness.
+  attach the read-only TUI.
 - No public Twitch messages are sent. Minnarone does not write `PRIVMSG` lines
   to Twitch in this runtime path, and public Twitch output remains out of scope.
 
-The Textual TUI is currently a read-only dashboard component, not a CLI mode.
-Install `--extra tui` when you build a harness around an `Agent` object and pass
-the full diagnostic snapshot into the view:
+## Live Observability TUI
 
-```python
-from minnarone.dashboard_tui import build_dashboard_app
+The live dashboard is the operator view for the normal runtime. It uses the same
+runtime wiring as the console command, plus TUI-specific run artifacts and local
+dashboard output capture, runs the agent in the background, and renders a
+read-only Textual TUI in the foreground. The TUI reads snapshots only; it does
+not tick the agent, mutate queues, or send public Twitch messages.
 
-app = build_dashboard_app(agent.observability_snapshot)
-app.run()
+Prerequisites:
+
+- Install the runtime extras for the channels you enable. For the full local
+  commentator path, use:
+
+  ```bash
+  uv sync --extra audio --extra video --extra vlm --extra tui
+  ```
+
+- Keep `OPENROUTER_API_KEY`, `TWITCH_BOT_USERNAME`, and `TWITCH_OAUTH_TOKEN` in
+  the shell environment as shown above; do not put them in YAML or committed
+  docs. Chat requires the Twitch credentials only for read-only IRC ingestion.
+- If `twitch.audio: true` or `twitch.video: true`, verify `streamlink` and
+  `ffmpeg` on `PATH`, and configure the local ASR, speaker, and VLM model paths
+  before the live run.
+- Use `mode: private` with `commentator.enabled: true` for local operator
+  commentary. No public Twitch send path is enabled by this workflow.
+
+Validate the config first:
+
+```bash
+uv run python -m minnarone path/to/twitch-commentator.local.yaml --check
 ```
 
-The main CLI remains console-only for issue 11.
+Start the live TUI:
+
+```bash
+uv run python -m minnarone path/to/twitch-commentator.local.yaml --tui
+```
+
+The command creates a run directory under `.local/minnarone/runs/run-*` relative
+to the config's `facts_dir` parent. The TUI is intentionally read-only: panels,
+status labels, and the `PROMPT` tab are for operator inspection only. It has no
+input for writing Twitch chat, and this runtime does not send public Twitch
+messages.
+
+Operational safety summary: the live TUI is read-only and does not send public Twitch messages.
+
+Main dashboard panels:
+
+- `IDLE`: recent idle-comment triggers, or `(nessun idle)` when no proactive
+  idle comment was triggered.
+- `FINESTRA CHAT`: open conversation windows for chat interlocutors other than
+  the streamer. This is conversation-window state, not the raw chat log.
+- `STREAMER`: the open conversation window for the diarized `streamer` speaker
+  when the audio clustering path has identified one.
+- `CHAT`: recent Twitch chat `msg` perceptions with timestamps.
+- `EVENTI`: Senser triggers plus technical events such as local failures,
+  queue drops/cancellations, adapter drops, and LLM errors.
+- `MINNARONE`: recent local Minnarone output messages routed through the
+  operator output stream.
+- `TRASCRIZIONE`: recent ASR `audio/speech` transcriptions with speaker labels
+  such as `streamer`, `speaker_N`, or `?`.
+- `VIDEO`: video counters (`frames`, `sampled`, `captioned`, `failed`) followed
+  by recent VLM captions.
+- `MEMORIA`: the current short-term memory summary from the summarizer, or
+  `(nessuna memoria)` before one exists.
+
+The status bar shows source health labels for `chat`, `audio`, `video`, `asr`,
+`speaker`, `vlm`, `llm`, `queue`, and `adapter` when those sources are known.
+The source health labels are:
+
+- `ok`: the source has produced usable output, such as chat messages,
+  transcriptions, captions, clustered speakers, or a successful LLM prompt.
+- `idle`: the source is present but has not produced higher-level output yet,
+  for example raw audio/video events without transcriptions/captions.
+- `busy`: model-backed local work is queued; ASR and VLM busy states come from
+  non-zero queue depth.
+- `failed`: an adapter, queue, ASR, speaker, VLM, or LLM failure was observed.
+- `unknown`: no useful signal has been seen for that source yet.
+
+The same line includes count and failure fields such as `counts chat=...`,
+`audio=...`, `video=...`, `queue_depth=...`, queue `failed`, `dropped`,
+`abandoned`, `cleanup`, `adapter_dropped`, and a compact `latest_failure` when
+available.
+
+The `PROMPT` tab, also referred to as the PROMPT tab in checklist notes, shows
+the latest LLM prompt observation. It preserves the exact redacted prompt body,
+including prompt order and newlines, and shows
+`trigger`, `status`, `model`, token metadata (`prompt_tokens`,
+`completion_tokens`, `total_tokens`), cache metadata (`cached_tokens`,
+`cache_write_tokens`, `cache_read_tokens` when present), `cost`, and `error`
+when present. Token, cache, and cost values are best effort: if the provider did
+not return a field, the TUI shows `unknown`, such as `cost=unknown`.
+
+Prompt capture redaction removes known unsafe values before display and before
+writing debug files. OAuth tokens, OpenRouter-style keys, bearer authorization
+values, secret-looking metadata keys, control characters, raw audio bytes, raw
+frame/pixel/sample payloads, and long binary reprs are redacted. Redaction is
+for operator safety, not a reason to commit debug artifacts.
+
+## Replay TUI
+
+Replay opens saved local artifacts in the same dashboard without starting
+Twitch IRC, Streamlink, ASR, speaker embedding, VLM, or OpenRouter. It accepts a
+run directory:
+
+```bash
+uv run python -m minnarone --replay .local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa
+```
+
+It also accepts a direct perception log path:
+
+```bash
+uv run python -m minnarone --replay .local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa/perceptions.jsonl
+```
+
+Replay reads `perceptions.jsonl`, optional prompt captures under
+`debug/prompts`, and optional replay events from `debug/events.jsonl`. The
+status bar says `mode=replay offline`, shows the source path, reconstructed
+counts, prompt presence, and replay failures. It is safe to use without live
+credentials or model files.
+
+## Run And Prompt Retention
+
+Live TUI runs are local, bounded, and gitignored. The default run root is
+`.local/minnarone/runs/`; `.local/` is in `.gitignore`, and run artifacts are not
+for commits or issue uploads. Each live run gets a directory named
+`.local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa` with a Minnarone ownership
+marker, `perceptions.jsonl`, and `debug/`.
+
+These retention limits are the disk safety guardrails:
+
+- Run retention keeps the latest 20 Minnarone-owned run directories, preserving
+  active runs and pruning older completed runs. It only prunes directories that
+  match Minnarone's run name and marker, so unrelated local folders are left
+  alone.
+- Prompt retention keeps the latest 50 `debug/prompts/prompt-*.json` captures
+  in a run.
+- Each prompt capture is capped at 200 KB. Oversized records are truncated with
+  an explicit truncation marker.
+- `debug/events.jsonl` stores replayable trigger and Minnarone output events,
+  with unsafe text redacted.
+- If disk space is tight, delete old `.local/minnarone/runs/run-*` directories
+  after you finish replay/acceptance; do not copy raw prompt or run artifacts
+  into public tickets.
+
+## Manual Live Acceptance Checklist
+
+Use this checklist on a real live channel after the isolated smoke checks pass.
+It does not require or expect public Twitch output.
+
+- [ ] Start with a local config using `mode: private`,
+  `commentator.enabled: true`, and only the channels you intend to validate.
+- [ ] Run `uv run python -m minnarone path/to/twitch-commentator.local.yaml
+  --check`; it exits successfully without starting capture.
+- [ ] Run `uv run python -m minnarone path/to/twitch-commentator.local.yaml
+  --tui`; the Textual app opens and the status bar updates from the live
+  snapshot.
+- [ ] Confirm the dashboard contains `IDLE`, `FINESTRA CHAT`, `STREAMER`,
+  `CHAT`, `EVENTI`, `MINNARONE`, `TRASCRIZIONE`, `VIDEO`, and `MEMORIA`.
+- [ ] With chat enabled, `CHAT` shows recent chat perceptions and
+  `FINESTRA CHAT` shows conversation windows only when the Senser opens them.
+- [ ] With audio enabled, `TRASCRIZIONE` shows speaker-labelled ASR output, and
+  source health moves through `busy`, `idle`, `ok`, or `failed` according to
+  queue/model state.
+- [ ] With video enabled, `VIDEO` shows frame/caption counters and recent
+  captions, and VLM failures appear as source health or `EVENTI` diagnostics
+  instead of killing the whole run.
+- [ ] `MINNARONE` shows local operator-facing comments only; no public Twitch
+  chat message is sent.
+- [ ] Open the `PROMPT` tab after an LLM call; it shows the exact redacted
+  prompt, status/model, best-effort token/cache/cost metadata, and no raw
+  secrets.
+- [ ] Stop the TUI cleanly, then confirm a bounded run directory exists under
+  `.local/minnarone/runs/run-*` with `perceptions.jsonl`, optional
+  `debug/prompts`, and optional `debug/events.jsonl`.
+- [ ] Replay the saved run with `uv run python -m minnarone --replay
+  .local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa` and verify the offline
+  dashboard labels the session as replay mode.
 
 ## Local Perception Observability
 

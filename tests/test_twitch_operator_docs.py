@@ -4,6 +4,7 @@ import re
 import shlex
 from pathlib import Path
 
+import minnarone.cli as cli
 from minnarone.config import Config
 from minnarone.output import OutputMode
 from minnarone.twitch_smoke import main
@@ -304,6 +305,89 @@ def test_twitch_operator_docs_cover_local_perception_observability():
         assert phrase in text
 
 
+def test_twitch_operator_docs_cover_live_tui_replay_and_acceptance_workflow():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Live Observability TUI",
+        "uv sync --extra audio --extra video --extra vlm --extra tui",
+        "python -m minnarone path/to/twitch-commentator.local.yaml --tui",
+        "python -m minnarone --replay .local/minnarone/runs/run-",
+        "python -m minnarone --replay .local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa/perceptions.jsonl",
+        "IDLE",
+        "FINESTRA CHAT",
+        "STREAMER",
+        "CHAT",
+        "EVENTI",
+        "MINNARONE",
+        "TRASCRIZIONE",
+        "VIDEO",
+        "MEMORIA",
+        "PROMPT tab",
+        "exact redacted prompt",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "cached_tokens",
+        "cache_write_tokens",
+        "cache_read_tokens",
+        "cost=unknown",
+        "best effort",
+        "source health labels",
+        "`ok`",
+        "`idle`",
+        "`busy`",
+        "`failed`",
+        "`unknown`",
+        "counts chat=",
+        "queue_depth=",
+        "failed",
+        "latest 20",
+        "latest 50",
+        "200 KB",
+        ".local/minnarone/runs/run-",
+        "debug/prompts",
+        "debug/events.jsonl",
+        "gitignored",
+        "disk safety",
+        "read-only",
+        "does not send public Twitch messages",
+        "Manual Live Acceptance Checklist",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_documented_live_tui_and_replay_commands_match_cli_contract():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+    commands = [
+        argv
+        for argv in _documented_minnarone_commands(text)
+        if "--tui" in argv or "--replay" in argv
+    ]
+
+    assert ["path/to/twitch-commentator.local.yaml", "--tui"] in commands
+    assert [
+        "--replay",
+        ".local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa",
+    ] in commands
+    assert [
+        "--replay",
+        ".local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa/perceptions.jsonl",
+    ] in commands
+
+    for argv in commands:
+        parsed = cli._parse_args(argv)
+        if "--tui" in argv:
+            assert parsed.config == "path/to/twitch-commentator.local.yaml"
+            assert parsed.tui is True
+            assert parsed.replay is None
+        if "--replay" in argv:
+            assert parsed.config is None
+            assert parsed.tui is False
+            assert parsed.replay is not None
+
+
 def test_twitch_operator_docs_cover_full_commentator_run_workflow():
     text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
 
@@ -321,8 +405,9 @@ def test_twitch_operator_docs_cover_full_commentator_run_workflow():
         "[PRIVATE]",
         "No public Twitch messages are sent",
         "public Twitch output remains out of scope",
-        "build_dashboard_app(agent.observability_snapshot)",
-        "main CLI remains console-only",
+        "Live Observability TUI",
+        "--tui",
+        "Replay TUI",
     ]
     for phrase in required:
         assert phrase in text
@@ -430,7 +515,11 @@ def test_documented_smoke_commands_match_cli_contract(monkeypatch):
 
 def _documented_smoke_commands(text: str) -> list[list[str]]:
     commands = []
-    for block in re.findall(r"```bash\n(.*?)\n```", text, flags=re.DOTALL):
+    for block in re.findall(
+        r"^[ \t]*```bash\n(.*?)\n[ \t]*```",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    ):
         if "minnarone-twitch-smoke" not in block:
             continue
         command = " ".join(
@@ -441,4 +530,26 @@ def _documented_smoke_commands(text: str) -> list[list[str]]:
         parts = shlex.split(command)
         assert parts[0] == "minnarone-twitch-smoke"
         commands.append(parts[1:])
+    return commands
+
+
+def _documented_minnarone_commands(text: str) -> list[list[str]]:
+    commands = []
+    for block in re.findall(
+        r"^[ \t]*```bash\n(.*?)\n[ \t]*```",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    ):
+        if "python -m minnarone" not in block:
+            continue
+        command = " ".join(
+            line.strip().removesuffix("\\").strip()
+            for line in block.splitlines()
+            if line.strip()
+        )
+        parts = shlex.split(command)
+        if parts[:2] == ["uv", "run"]:
+            parts = parts[2:]
+        assert parts[:3] == ["python", "-m", "minnarone"]
+        commands.append(parts[3:])
     return commands
