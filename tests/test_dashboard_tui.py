@@ -124,6 +124,7 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
         },
         messages=["Minnarone osserva"],
         memory_summary="memoria fake",
+        channel="minnarone",
     )
     app = build_dashboard_app(lambda: state)
 
@@ -156,6 +157,44 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
     assert "video nel pannello" in updates["VIDEO"]
     assert "Minnarone osserva" in updates["MINNARONE"]
     assert "memoria fake" in updates["MEMORIA"]
+
+
+def test_view_renders_status_bar_from_snapshot():
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState(
+        perceptions=[
+            Perception(
+                ts=1.0,
+                source=Source.CHAT,
+                type="msg",
+                text="chat live",
+                speaker="alice",
+            )
+        ],
+        chat_messages=[
+            Perception(
+                ts=1.0,
+                source=Source.CHAT,
+                type="msg",
+                text="chat live",
+                speaker="alice",
+            )
+        ],
+        channel="minnarone",
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 30)):
+            status = app.query_one("#status-bar")
+            return str(status.content)
+
+    status_text = asyncio.run(exercise_app())
+    assert "channel=minnarone" in status_text
+    assert "chat=ok" in status_text
 
 
 def test_view_keeps_long_panel_content_bounded():

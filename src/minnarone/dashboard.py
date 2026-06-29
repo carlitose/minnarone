@@ -19,10 +19,38 @@ né muta lo stato osservato.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 
 from .audio import STREAMER
+from .dashboard_health import (
+    SourceCounts,
+    SourceHealth,
+)
+from .dashboard_health import (
+    latest_failure as _latest_failure,
+)
+from .dashboard_health import (
+    render_status_bar as _render_status_bar,
+)
+from .dashboard_health import (
+    safe_message as _safe_message,
+)
+from .dashboard_health import (
+    safe_status_value as _safe_status_value,
+)
+from .dashboard_health import (
+    source_counts as _source_counts,
+)
+from .dashboard_health import (
+    source_health as _source_health,
+)
+from .dashboard_health import (
+    stage_from_error as _stage_from_error,
+)
+from .dashboard_health import (
+    technical_event_lines as _technical_event_lines,
+)
 from .perception import Perception, format_perception_line
 from .prompt_observation import PromptObservation
 from .senser import ConversationWindow, Trigger
@@ -33,6 +61,8 @@ _DEFAULT_RECENT_PERCEPTIONS = 20
 # Quanti trigger e messaggi recenti includere di default.
 _DEFAULT_RECENT_TRIGGERS = 20
 _DEFAULT_RECENT_MESSAGES = 20
+
+
 @dataclass(frozen=True, slots=True)
 class QueueChannelDiagnostics:
     """Operator-visible bounded queue counters for one local media channel."""
@@ -137,6 +167,24 @@ class DashboardState:
     video: VideoDiagnostics = field(default_factory=VideoDiagnostics)
     latest_prompt: PromptObservation | None = None
     memory_summary: str = ""
+    channel: str | None = None
+    started_at: datetime | None = None
+    now: datetime | None = None
+
+    @property
+    def source_counts(self) -> SourceCounts:
+        return _source_counts(self)
+
+    @property
+    def source_health(self) -> dict[str, SourceHealth]:
+        return _source_health(self)
+
+    @property
+    def latest_failure(self) -> str | None:
+        return _latest_failure(self)
+
+    def render_status_bar(self) -> str:
+        return _render_status_bar(self)
 
     def render_panels(self) -> list[DashboardPanel]:
         """Render the screenshot-faithful dashboard panels in visual row order."""
@@ -187,11 +235,7 @@ class DashboardState:
             f"{t.kind} <- {t.interlocutor if t.interlocutor else '-'}"
             for t in self.triggers
         ]
-        if self.failures:
-            lines.extend(
-                f"{failure.channel}/{failure.stage}: {failure.message}"
-                for failure in self.failures
-            )
+        lines.extend(_technical_event_lines(self))
         return "\n".join(lines) if lines else "(nessun evento)"
 
     def _render_minnarone_panel(self) -> str:
@@ -348,6 +392,9 @@ def snapshot(
     adapter=None,
     prompt_recorder=None,
     summarizer=None,
+    channel: str | None = None,
+    started_at: datetime | None = None,
+    now: datetime | None = None,
     recent_perceptions: int = _DEFAULT_RECENT_PERCEPTIONS,
     recent_triggers: int = _DEFAULT_RECENT_TRIGGERS,
     recent_messages: int = _DEFAULT_RECENT_MESSAGES,
@@ -426,6 +473,9 @@ def snapshot(
         video=video,
         latest_prompt=latest_prompt,
         memory_summary=memory_summary,
+        channel=_safe_status_value(channel),
+        started_at=started_at,
+        now=now or (datetime.now(UTC) if started_at is not None else None),
     )
 
 
@@ -467,6 +517,7 @@ def _latest_prompt_observation(prompt_recorder) -> PromptObservation | None:
         response_metadata=dict(observation.response_metadata),
         token_metadata=dict(observation.token_metadata),
         cache_metadata=dict(observation.cache_metadata),
+        error=_safe_message(observation.error),
     )
 
 
@@ -547,27 +598,6 @@ def _adapter_failures(
     return failures
 
 
-def _stage_from_error(channel: str, message: str | None) -> str:
-    lowered = (message or "").lower()
-    stages = (
-        "capture",
-        "vad",
-        "asr",
-        "embedding",
-        "clustering",
-        "pyav",
-        "dedup",
-        "vlm",
-        "output",
-    )
-    for stage in stages:
-        if stage in lowered:
-            return stage
-    if "timeout" in lowered or "queue" in lowered or "cleanup" in lowered:
-        return "queue"
-    return "unknown"
-
-
 def _speaker_diagnostics(speaker_tagger) -> SpeakerDiagnostics:
     if speaker_tagger is None:
         return SpeakerDiagnostics()
@@ -607,37 +637,3 @@ def _video_diagnostics(video_perceiver) -> VideoDiagnostics:
         empty_captions=getattr(stats, "empty_captions", 0),
         failed=getattr(stats, "failed", 0),
     )
-
-
-_SECRET_PATTERNS = (
-    re.compile(r"oauth:[A-Za-z0-9_\-]+", re.IGNORECASE),
-    re.compile(r"bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
-    re.compile(
-        r"(OPENROUTER_API_KEY|TWITCH_OAUTH_TOKEN|api[_-]?key|token)"
-        r"\s*[:=]\s*['\"]?[^'\",\s;]+['\"]?",
-        re.IGNORECASE,
-    ),
-)
-
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_BYTES_REPR = re.compile(r"b(['\"])(?:\\.|(?!\1).){8,}\1")
-_CENTROID_RE = re.compile(
-    r"\b(?:centroid|embedding)\s*[:=]\s*\([^)]{10,}\)",
-    re.IGNORECASE,
-)
-
-
-def _safe_message(message: object) -> str | None:
-    if message is None:
-        return None
-    text = str(message).replace("\x1b", "")
-    text = _CONTROL_CHARS.sub("", text)
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub("[redacted]", text)
-    text = _BYTES_REPR.sub("b'[redacted-bytes]'", text)
-    text = _CENTROID_RE.sub("[redacted-vector]", text)
-    text = text.replace("[", "\\[").replace("]", "\\]")
-    text = " ".join(text.split())
-    if len(text) <= 200:
-        return text
-    return text[:200].rstrip()

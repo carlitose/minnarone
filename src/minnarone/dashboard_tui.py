@@ -94,12 +94,20 @@ def build_dashboard_app(
             height: auto;
             text-style: none;
         }
+
+        #status-bar {
+            height: 1;
+            padding: 0 1;
+            color: #d7e6e2;
+            background: #102528;
+        }
         """
 
         def __init__(self) -> None:
             super().__init__()
             self._provider = snapshot_provider
             self._panels: dict[str, Static] = {}
+            self._status_bar: Static | None = None
 
         @property
         def panel_titles(self) -> list[str]:
@@ -107,6 +115,8 @@ def build_dashboard_app(
 
         def compose(self) -> ComposeResult:
             yield Header()
+            self._status_bar = Static("(in attesa)", id="status-bar", markup=False)
+            yield self._status_bar
             with Grid(id="dashboard-grid"):
                 for title in self.panel_titles:
                     with VerticalScroll(
@@ -133,9 +143,13 @@ def build_dashboard_app(
                 panels = state.render_panels()
             except DashboardSnapshotNotReady as exc:
                 text = str(exc)
+                if self._status_bar is not None:
+                    self._status_bar.update(text)
                 for panel in self._panels.values():
                     panel.update(text)
                 return
+            if self._status_bar is not None:
+                self._status_bar.update(state.render_status_bar())
             for panel in panels:
                 widget = self._panels.get(panel.title)
                 if widget is not None:

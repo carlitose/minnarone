@@ -7,6 +7,7 @@ Tutti i test sono offline e NON richiedono `textual`.
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from minnarone.chat import ChatPerceiver
 from minnarone.dashboard import (
@@ -92,6 +93,10 @@ def _prompt_observation(prompt: str, index: int) -> PromptObservation:
     )
 
 
+def _queue_stats(**channels):
+    return SimpleNamespace(channels=channels)
+
+
 # --- Percezioni recenti ----------------------------------------------------
 
 
@@ -135,6 +140,175 @@ def test_snapshot_exposes_current_memory_summary():
 
     assert state.memory_summary == "Lo streamer sta preparando la prossima run."
     assert "prossima run" in state.render_panels()[-1].text
+
+
+def test_snapshot_health_gracefully_degrades_when_stats_are_missing():
+    state = snapshot(
+        perception_queue=object(),
+        adapter=object(),
+        speaker_tagger=object(),
+        video_perceiver=object(),
+        prompt_recorder=object(),
+    )
+
+    assert set(state.source_health) == {
+        "chat",
+        "audio",
+        "video",
+        "asr",
+        "speaker",
+        "vlm",
+        "llm",
+        "queue",
+        "adapter",
+    }
+    assert all(health.status == "unknown" for health in state.source_health.values())
+    assert "queue_depth=0" in state.render_status_bar()
+
+
+def test_snapshot_marks_missing_video_captions_suspicious_after_active_sources(tmp_path):
+    store = _store(tmp_path)
+    store.append(_chat_perception("ciao chat", "alice", 1.0))
+    store.append(_audio_perception("frase dal microfono", "streamer", 2.0))
+
+    class FakeQueue:
+        def stats(self):
+            return _queue_stats(
+                video=PerceptionQueueChannelStats(queued=3, processed=3)
+            )
+
+    class FakeVideoPerceiver:
+        def stats(self):
+            return VideoDiagnostics(frames_seen=3, sampled=3, captioned=0)
+
+    state = snapshot(
+        store=store,
+        perception_queue=FakeQueue(),
+        video_perceiver=FakeVideoPerceiver(),
+        channel="minnarone",
+        started_at=datetime(2026, 6, 29, 10, 30, tzinfo=UTC),
+        now=datetime(2026, 6, 29, 10, 31, 5, tzinfo=UTC),
+    )
+
+    assert state.source_health["chat"].status == "ok"
+    assert state.source_health["audio"].status == "ok"
+    assert state.source_health["video"].status == "idle"
+    assert "suspicious" in state.source_health["video"].detail
+    status = state.render_status_bar()
+    assert "channel=minnarone" in status
+    assert "uptime=01:05" in status
+    assert "video=idle" in status
+    assert "chat=1 audio=1 video=0" in status
+
+
+def test_status_bar_exposes_asr_busy_and_vlm_failure():
+    state = DashboardState(
+        queue={
+            "audio": QueueChannelDiagnostics(queue_depth=1),
+            "video": QueueChannelDiagnostics(
+                failed=1,
+                last_error="local Qwen2-VL caption failed: vlm exploded",
+            ),
+        }
+    )
+
+    assert state.source_health["asr"].status == "busy"
+    assert state.source_health["vlm"].status == "failed"
+    status = state.render_status_bar()
+    assert "asr=busy" in status
+    assert "vlm=failed" in status
+    assert "latest_failure=video/vlm" in status
+
+
+def test_source_health_failures_do_not_hide_behind_recent_successes():
+    state = DashboardState(
+        chat_messages=[
+            _chat_perception("chat ok", "alice", 1.0),
+        ],
+        audio_transcriptions=[
+            _audio_perception("audio ok", "streamer", 2.0),
+        ],
+        video_captions=[
+            _video_perception("video ok", 3.0),
+        ],
+        adapter={
+            "chat": AdapterChannelDiagnostics(produced=3, failure="irc failed"),
+            "audio": AdapterChannelDiagnostics(produced=3, dropped=2),
+            "video": AdapterChannelDiagnostics(produced=3, dropped=1),
+        },
+    )
+
+    assert state.source_health["chat"].status == "failed"
+    assert state.source_health["audio"].status == "failed"
+    assert state.source_health["video"].status == "failed"
+
+
+def test_asr_and_vlm_health_do_not_claim_unrelated_queue_failures():
+    state = DashboardState(
+        queue={
+            "audio": QueueChannelDiagnostics(
+                failed=1,
+                last_error="speaker embedding failed",
+            ),
+            "video": QueueChannelDiagnostics(
+                failed=1,
+                last_error="pyav decode failed",
+            ),
+        }
+    )
+
+    assert state.source_health["audio"].status == "failed"
+    assert state.source_health["video"].status == "failed"
+    assert state.source_health["asr"].status == "idle"
+    assert state.source_health["vlm"].status == "unknown"
+
+
+def test_status_bar_exposes_loss_counters_and_bounds_dynamic_segments():
+    state = DashboardState(
+        channel="channel-" + ("x" * 200),
+        queue={
+            "audio": QueueChannelDiagnostics(
+                failed=1,
+                dropped=2,
+                abandoned=3,
+                cleanup_failures=4,
+                queue_depth=5,
+            )
+        },
+        adapter={"video": AdapterChannelDiagnostics(dropped=6)},
+    )
+
+    status = state.render_status_bar()
+
+    assert "queue_depth=5" in status
+    assert "queue failed=1 dropped=2 abandoned=3 cleanup=4" in status
+    assert "adapter_dropped=6" in status
+    assert len(status) <= 320
+
+
+def test_dashboard_failure_redaction_handles_base64_like_tokens():
+    class FakeQueue:
+        def stats(self):
+            return _queue_stats(
+                audio=PerceptionQueueChannelStats(
+                    failed=1,
+                    last_error=(
+                        "asr failed oauth:abc/def+ghi= "
+                        "Authorization: Bearer sk-or-secret/plus+value="
+                    ),
+                )
+            )
+
+    state = snapshot(perception_queue=FakeQueue())
+
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    status = state.render_status_bar()
+
+    combined = f"{event_text}\n{status}"
+    assert "abc/def+ghi" not in combined
+    assert "sk-or-secret/plus+value" not in combined
+    assert "[redacted]" not in combined
+    assert "\\[redacted\\]" in combined
 
 
 def test_snapshot_perceptions_limited_to_recent_n(tmp_path):
@@ -250,6 +424,42 @@ def test_snapshot_includes_recent_triggers(tmp_path):
     kinds = [t.kind for t in state.triggers]
     assert "mention" in kinds
     assert any(t.interlocutor == "alice" for t in state.triggers)
+
+
+def test_events_include_senser_triggers_and_redacted_openrouter_failures(tmp_path):
+    store = _store(tmp_path)
+    senser = Senser(store, agent_name="Minnarone")
+    store.append(_chat_perception("ehi Minnarone", "alice", 1.0))
+    senser.tick()
+    recorder = PromptObservationRecorder()
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    recorder.record(
+        PromptObservation(
+            prompt="p",
+            model="openrouter/grok",
+            status="error",
+            started_at=started,
+            completed_at=started + timedelta(seconds=1),
+            error=(
+                "OpenRouter ha risposto con status 401: "
+                "Authorization: Bearer sk-or-secret"
+            ),
+        )
+    )
+
+    state = snapshot(store=store, senser=senser, prompt_recorder=recorder)
+
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    assert "mention <- alice" in event_text
+    assert "llm/openrouter" in event_text
+    assert "OpenRouter ha risposto con status 401" in event_text
+    assert "sk-or-secret" not in event_text
+    status = state.render_status_bar()
+    assert "llm=error" in status
+    assert "model=openrouter/grok" in status
+    assert "latest_failure=OpenRouter ha risposto con status 401" in status
+    assert "sk-or-secret" not in status
+    assert state.source_health["llm"].status == "failed"
 
 
 # --- Sola lettura ----------------------------------------------------------

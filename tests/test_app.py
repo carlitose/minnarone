@@ -275,6 +275,27 @@ def test_build_agent_passes_announce_ai_into_prompt(tmp_path):
     assert "puoi dichiarare apertamente di" in prefix
 
 
+def test_observability_snapshot_includes_run_channel_and_uptime(tmp_path):
+    from minnarone.fakes import FakeOutputRouter
+
+    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    session = create_run_session(root=tmp_path / "runs", channel="minnarone")
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        run_session=session,
+        router=FakeOutputRouter(),
+    )
+
+    state = agent.observability_snapshot()
+
+    assert state.channel == "minnarone"
+    assert state.started_at == session.started_at
+    status = state.render_status_bar()
+    assert "channel=minnarone" in status
+    assert "uptime=" in status
+
+
 def test_build_agent_default_hides_ai_disclosure(tmp_path):
     cfg = Config.load(_write_workspace(tmp_path, announce_ai=False))
     agent = build_agent(cfg, transport=_fake_transport)

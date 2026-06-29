@@ -186,6 +186,13 @@ class Agent:
 
     def observability_snapshot(self) -> DashboardState:
         """Read-only local perception diagnostics for dashboard/debug output."""
+        channel = None
+        started_at = None
+        if self.run_session is not None:
+            channel = self.run_session.channel
+            started_at = self.run_session.started_at
+        elif self.config.twitch is not None:
+            channel = self.config.twitch.channel
         return snapshot(
             store=self.store,
             senser=self.senser,
@@ -197,6 +204,8 @@ class Agent:
             adapter=self.adapter,
             prompt_recorder=self.prompt_recorder,
             summarizer=self.summarizer,
+            channel=channel,
+            started_at=started_at,
         )
 
     async def _pump_perceptions(self) -> None:
