@@ -26,6 +26,7 @@ from minnarone.console import ConsoleOutputRouter
 from minnarone.output import OutputMode
 from minnarone.perception import Perception, Source
 from minnarone.reactor import Reactor
+from minnarone.run_artifacts import create_run_session
 from minnarone.source import RawEvent, SourceAdapter
 from minnarone.twitch_stream import TwitchStreamAdapter, TwitchStreamRuntimeError
 from minnarone.twitch_video import DecodedVideoFrame
@@ -162,6 +163,34 @@ def test_build_agent_wires_all_components(tmp_path):
     assert agent.human is not None
     assert agent.prompt_builder is not None
     assert agent.llm is not None
+
+
+def test_build_agent_uses_run_session_store_path_when_no_store_path_is_supplied(
+    tmp_path,
+):
+    cfg = Config.load(_write_workspace(tmp_path))
+    session = create_run_session(root=tmp_path / ".local" / "minnarone" / "runs")
+
+    agent = build_agent(cfg, transport=_fake_transport, run_session=session)
+
+    assert agent.run_session == session
+    assert agent.store.path == session.perception_log_path
+
+
+def test_build_agent_respects_explicit_store_path_with_run_session(tmp_path):
+    cfg = Config.load(_write_workspace(tmp_path))
+    session = create_run_session(root=tmp_path / ".local" / "minnarone" / "runs")
+    explicit_store = tmp_path / "custom" / "perceptions.jsonl"
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        run_session=session,
+        store_path=explicit_store,
+    )
+
+    assert agent.run_session == session
+    assert agent.store.path == explicit_store
 
 
 def test_build_agent_passes_announce_ai_into_prompt(tmp_path):

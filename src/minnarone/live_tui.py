@@ -293,37 +293,51 @@ def run_live_tui(
     snapshot_interval: float = _DEFAULT_SNAPSHOT_INTERVAL,
 ) -> None:
     """Run the live agent in the background and the Textual app in foreground."""
-    if build_app is None:
-        ensure_live_tui_available()
-        from .dashboard_tui import build_dashboard_app as build_app
-
-    snapshots = _ObservabilitySnapshotBridge(agent.observability_snapshot)
-    app = build_app(snapshots.provider)
-    runtime = _BackgroundAgentRuntime(
-        agent,
-        snapshots=snapshots,
-        snapshot_interval=snapshot_interval,
-        request_shutdown=lambda: _request_app_shutdown(app),
-    )
-    resolved_shutdown_timeout = _shutdown_timeout_for(agent, shutdown_timeout)
-    resolved_startup_timeout = _positive_timeout(startup_timeout, "startup_timeout")
+    run_session = getattr(agent, "run_session", None)
+    runtime: _BackgroundAgentRuntime | None = None
+    runtime_stopped = False
     errors: list[BaseException] = []
     try:
+        if build_app is None:
+            ensure_live_tui_available()
+            from .dashboard_tui import build_dashboard_app as build_app
+
+        resolved_shutdown_timeout = _shutdown_timeout_for(agent, shutdown_timeout)
+        resolved_startup_timeout = _positive_timeout(
+            startup_timeout,
+            "startup_timeout",
+        )
+        snapshots = _ObservabilitySnapshotBridge(agent.observability_snapshot)
+        app = build_app(snapshots.provider)
+        runtime = _BackgroundAgentRuntime(
+            agent,
+            snapshots=snapshots,
+            snapshot_interval=snapshot_interval,
+            request_shutdown=lambda: _request_app_shutdown(app),
+        )
         runtime.start(timeout=resolved_startup_timeout)
         app.run()
     except BaseException as exc:
         errors.append(exc)
     finally:
-        try:
-            runtime.stop(
-                timeout=resolved_shutdown_timeout,
-                ready_timeout=resolved_startup_timeout,
-            )
-        except BaseException as exc:
-            errors.append(exc)
-        try:
-            runtime.raise_if_failed()
-        except BaseException as exc:
-            errors.append(exc)
+        if runtime is not None:
+            try:
+                runtime.stop(
+                    timeout=resolved_shutdown_timeout,
+                    ready_timeout=resolved_startup_timeout,
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            else:
+                runtime_stopped = True
+            try:
+                runtime.raise_if_failed()
+            except BaseException as exc:
+                errors.append(exc)
+        if run_session is not None and (runtime_stopped or runtime is None):
+            try:
+                run_session.mark_completed()
+            except BaseException as exc:  # noqa: BLE001 - preserve cleanup failures.
+                errors.append(exc)
     if errors:
         _raise_errors(errors)

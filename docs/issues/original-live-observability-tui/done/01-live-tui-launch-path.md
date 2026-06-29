@@ -1,6 +1,6 @@
 ## Parent PRD
 
-[original-live-observability-tui.md](../../prds/original-live-observability-tui.md)
+[original-live-observability-tui.md](../../../prds/original-live-observability-tui.md)
 
 ## What to build
 

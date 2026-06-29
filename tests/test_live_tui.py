@@ -5,7 +5,43 @@ from types import SimpleNamespace
 
 import pytest
 
+from minnarone.app import build_agent
+from minnarone.config import Config
+from minnarone.fakes import FakeSourceAdapter
 from minnarone.live_tui import run_live_tui
+from minnarone.run_artifacts import create_run_session
+from minnarone.source import RawEvent
+
+
+def _fake_transport(*, url, headers, body, timeout):
+    from minnarone.openrouter import HttpResponse
+
+    del url, headers, body, timeout
+    return HttpResponse(status=200, body=b'{"choices":[{"message":{"content":"ok"}}]}')
+
+
+def _write_config(tmp_path):
+    soul = tmp_path / "soul.md"
+    soul.write_text("io", encoding="utf-8")
+    facts_dir = tmp_path / "facts"
+    facts_dir.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "\n".join(
+            [
+                "mode: public",
+                f"soul_path: {soul}",
+                f"facts_dir: {facts_dir}",
+                "adapter: os_capture",
+                "llm_provider: grok",
+                "agent_name: minnarone",
+                "senser_interval: 0.01",
+                "summarizer_interval: 60",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return cfg
 
 
 class _FakeLiveAgent:
@@ -58,6 +94,56 @@ def test_run_live_tui_runs_agent_in_background_and_stops_on_app_exit():
     assert agent.snapshot_calls == 1
     assert agent.cancelled.wait(timeout=1.0)
     assert agent.finished.wait(timeout=1.0)
+
+
+def test_run_live_tui_keeps_perception_jsonl_persistence_active(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    cfg = Config.load(_write_config(tmp_path))
+    session = create_run_session(root=tmp_path / ".local" / "minnarone" / "runs")
+    adapter = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="chat",
+                payload={"text": "ordinary stream chatter", "speaker": "viewer"},
+                ts=1.0,
+            )
+        ]
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        run_session=session,
+        adapter=adapter,
+    )
+
+    class FakeApp:
+        def __init__(self, provider):
+            self._provider = provider
+
+        def run(self) -> None:
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if (
+                    session.perception_log_path.exists()
+                    and session.perception_log_path.read_text(encoding="utf-8")
+                ):
+                    return
+                time.sleep(0.01)
+            raise AssertionError("perception log was not written")
+
+        def exit(self) -> None:
+            pass
+
+    def build_app(provider):
+        return FakeApp(provider)
+
+    run_live_tui(agent, build_app=build_app, snapshot_interval=60.0)
+
+    text = session.perception_log_path.read_text(encoding="utf-8")
+    assert "ordinary stream chatter" in text
+    assert (session.run_dir / ".minnarone-run").read_text(encoding="utf-8").endswith(
+        ":completed\n"
+    )
 
 
 def test_run_live_tui_reads_cached_snapshot_from_foreground_thread():
@@ -264,6 +350,46 @@ def test_run_live_tui_bounds_agent_that_stalls_during_cleanup():
     assert agent.finished.wait(timeout=1.0)
 
 
+def test_run_live_tui_leaves_run_active_when_shutdown_times_out(tmp_path):
+    class SlowCleanupAgent:
+        config = SimpleNamespace(perception_shutdown_timeout=0.01)
+
+        def __init__(self) -> None:
+            self.started = Event()
+            self.run_session = create_run_session(root=tmp_path / "runs")
+
+        async def run(self) -> None:
+            self.started.set()
+            try:
+                while True:
+                    await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+
+        def observability_snapshot(self) -> str:
+            return "dashboard-state"
+
+    agent = SlowCleanupAgent()
+
+    class FakeApp:
+        def __init__(self, provider):
+            self._provider = provider
+
+        def run(self) -> None:
+            assert agent.started.wait(timeout=1.0)
+
+    def build_app(provider):
+        return FakeApp(provider)
+
+    with pytest.raises(RuntimeError, match="runtime live non arrestato"):
+        run_live_tui(agent, build_app=build_app, shutdown_timeout=0.01)
+
+    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
+        encoding="utf-8"
+    ).endswith(":active\n")
+
+
 def test_run_live_tui_uses_configured_cleanup_budget_when_timeout_is_implicit():
     class ConfiguredCleanupAgent(_FakeLiveAgent):
         config = SimpleNamespace(perception_shutdown_timeout=0.01)
@@ -431,8 +557,11 @@ def test_run_live_tui_does_not_call_textual_exit_directly_after_thread_hop_failu
     assert not direct_exit_called.is_set()
 
 
-def test_run_live_tui_invalid_startup_timeout_fails_before_thread_start():
+def test_run_live_tui_invalid_startup_timeout_fails_before_thread_start(tmp_path):
     class Agent:
+        def __init__(self) -> None:
+            self.run_session = create_run_session(root=tmp_path / "runs")
+
         async def run(self) -> None:
             raise AssertionError("agent should not start")
 
@@ -449,5 +578,34 @@ def test_run_live_tui_invalid_startup_timeout_fails_before_thread_start():
     def build_app(provider):
         return FakeApp(provider)
 
+    agent = Agent()
     with pytest.raises(ValueError, match="startup_timeout"):
-        run_live_tui(Agent(), build_app=build_app, startup_timeout=0)
+        run_live_tui(agent, build_app=build_app, startup_timeout=0)
+
+    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
+        encoding="utf-8"
+    ).endswith(":completed\n")
+
+
+def test_run_live_tui_marks_run_completed_when_app_construction_fails(tmp_path):
+    class Agent:
+        def __init__(self) -> None:
+            self.run_session = create_run_session(root=tmp_path / "runs")
+
+        async def run(self) -> None:
+            raise AssertionError("agent should not start")
+
+        def observability_snapshot(self) -> str:
+            return "dashboard-state"
+
+    agent = Agent()
+
+    def build_app(_provider):
+        raise RuntimeError("app construction failed")
+
+    with pytest.raises(RuntimeError, match="app construction failed"):
+        run_live_tui(agent, build_app=build_app)
+
+    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
+        encoding="utf-8"
+    ).endswith(":completed\n")

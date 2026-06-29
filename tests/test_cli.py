@@ -10,6 +10,7 @@ import textwrap
 
 import minnarone.cli as cli
 from minnarone.cli import main
+from minnarone.config import ConfigError
 from minnarone.twitch_stream import TwitchStreamRuntimeError
 
 
@@ -129,7 +130,7 @@ def test_cli_tui_launches_tui_branch(tmp_path, monkeypatch):
 
     launched = []
 
-    def fake_build_agent(_config):
+    def fake_build_agent(_config, **_kwargs):
         return FakeAgent()
 
     def fake_run_live_tui(agent):
@@ -146,8 +147,53 @@ def test_cli_tui_launches_tui_branch(tmp_path, monkeypatch):
     assert isinstance(launched[0], FakeAgent)
 
 
+def test_cli_tui_builds_agent_with_run_local_artifacts(tmp_path, monkeypatch):
+    class FakeAgent:
+        pass
+
+    captured = {}
+
+    def fake_build_agent(_config, **kwargs):
+        captured.update(kwargs)
+        return FakeAgent()
+
+    monkeypatch.setattr(cli, "build_agent", fake_build_agent)
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+    monkeypatch.setattr(cli, "run_live_tui", lambda _agent: None, raising=False)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 0
+    session = captured["run_session"]
+    assert session.run_dir.is_dir()
+    assert session.run_dir.parent == tmp_path / ".local" / "minnarone" / "runs"
+    assert session.perception_log_path == session.run_dir / "perceptions.jsonl"
+
+
+def test_cli_tui_marks_run_completed_when_agent_build_fails(
+    tmp_path, capsys, monkeypatch
+):
+    captured = {}
+
+    def fake_build_agent(_config, **kwargs):
+        captured.update(kwargs)
+        raise ConfigError("build failed")
+
+    monkeypatch.setattr(cli, "build_agent", fake_build_agent)
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 2
+    assert "build failed" in capsys.readouterr().err
+    session = captured["run_session"]
+    assert (session.run_dir / ".minnarone-run").read_text(
+        encoding="utf-8"
+    ).endswith(":completed\n")
+
+
 def test_cli_tui_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(cli, "build_agent", lambda _config: object())
+    monkeypatch.setattr(cli, "build_agent", lambda _config, **_kwargs: object())
     monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
 
     def broken_tui(_agent):

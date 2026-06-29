@@ -17,6 +17,8 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Sequence
+from contextlib import suppress
+from pathlib import Path
 
 from .app import build_agent
 from .config import Config, ConfigError
@@ -25,6 +27,7 @@ from .live_tui import (
     ensure_live_tui_available,
     run_live_tui,
 )
+from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
 from .twitch_stream import TwitchStreamRuntimeError
 
 
@@ -47,6 +50,15 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(list(argv))
 
 
+def _create_live_run_session(config: Config) -> RunSession:
+    workspace_root = Path(config.facts_dir).resolve().parent
+    channel = config.twitch.channel if config.twitch is not None else None
+    return create_run_session(
+        root=workspace_root / DEFAULT_RUNS_ROOT,
+        channel=channel,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Punto d'ingresso CLI. Ritorna l'exit code (0 = ok)."""
     raw_args = list(sys.argv[1:] if argv is None else argv)
@@ -54,9 +66,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         config = Config.load(args.config)
+        run_session = None
         if args.tui and not args.check:
             ensure_live_tui_available()
-        agent = build_agent(config)
+            run_session = _create_live_run_session(config)
+        try:
+            agent = (
+                build_agent(config, run_session=run_session)
+                if run_session is not None
+                else build_agent(config)
+            )
+        except Exception:
+            if run_session is not None:
+                with suppress(Exception):
+                    run_session.mark_completed()
+            raise
     except ConfigError as exc:
         print(f"errore di config: {exc}", file=sys.stderr)
         return 2

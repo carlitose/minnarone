@@ -64,6 +64,7 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .reactor import Reactor
+from .run_artifacts import RunSession
 from .senser import Senser
 from .source import RawEvent, SourceAdapter
 from .speaker import (
@@ -151,6 +152,7 @@ class Agent:
     # Audio/video passano da una queue bounded quando hanno backend iniettati;
     # chat resta diretta per non essere penalizzata da ASR/VLM lenti.
     perception_queue: BoundedLocalPerceptionQueue | None = None
+    run_session: RunSession | None = None
     speaker_diagnostics: object | None = None
     video_diagnostics: object | None = None
 
@@ -463,6 +465,7 @@ def build_agent(
     *,
     transport: Transport | None = None,
     store_path: str | Path | None = None,
+    run_session: RunSession | None = None,
     router: OutputRouter | None = None,
     adapter: SourceAdapter | None = None,
     twitch_chat_connect: ConnectIRC | None = None,
@@ -482,10 +485,11 @@ def build_agent(
     """Compone e cabla TUTTI i moduli da una `Config`, restituendo un `Agent`.
 
     `transport` è iniettato nel provider LLM (fake nei test → nessuna rete).
-    `store_path` sovrascrive la posizione dello store (default derivato dalla
-    config); nei test si passa un path sotto `tmp_path`. `router` sovrascrive
-    l'OutputRouter selezionato dalla modalità (per i test che catturano l'output);
-    se None si usa il router della modalità (`public`/`private`).
+    `store_path` sovrascrive la posizione dello store. Senza `store_path`, una
+    `run_session` live usa il suo `perception_log_path`; altrimenti il default
+    resta derivato dalla config. `router` sovrascrive l'OutputRouter selezionato
+    dalla modalità (per i test che catturano l'output); se None si usa il router
+    della modalità (`public`/`private`).
 
     `adapter` è una `SourceAdapter` esplicita da cui la pompa di percezione legge
     i `RawEvent`. Se non è passata e `config.adapter == "twitch"`, il runtime
@@ -509,7 +513,13 @@ def build_agent(
     - `OutputRouter` selezionato dalla modalità (`public`/`private`).
     - `Reactor(...)` che lega tutto insieme.
     """
-    path = Path(store_path) if store_path is not None else _default_store_path(config)
+    path = (
+        Path(store_path)
+        if store_path is not None
+        else run_session.perception_log_path
+        if run_session is not None
+        else _default_store_path(config)
+    )
     store = PerceptionStore(path)
 
     memory = FileMemory(soul_path=config.soul_path, facts_dir=config.facts_dir)
@@ -622,6 +632,7 @@ def build_agent(
     return Agent(
         config=config,
         store=store,
+        run_session=run_session,
         memory=memory,
         prompt_builder=prompt_builder,
         llm=llm,
