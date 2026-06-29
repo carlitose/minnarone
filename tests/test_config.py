@@ -1,11 +1,17 @@
 """Test dello schema di configurazione: caricamento valido, errori chiari, punti v2 inerti."""
 
 import textwrap
+from pathlib import Path
 
 import pytest
 
-from minnarone.config import Config, ConfigError
+from minnarone.asr import AsrConfig
+from minnarone.config import CommentatorConfig, Config, ConfigError
 from minnarone.output import OutputMode
+from minnarone.speaker import SpeakerClusteringConfig, SpeakerEmbeddingConfig
+from minnarone.vad import VadConfig
+from minnarone.video import VideoPerceptionConfig
+from minnarone.vlm import QwenVlConfig
 
 VALID_YAML = textwrap.dedent(
     """
@@ -71,6 +77,8 @@ def test_defaults_applied_when_omitted(tmp_path):
     assert cfg.idle_interval == 150.0
     assert cfg.summarizer_interval == 30.0
     assert cfg.recent_chat_window == 15
+    assert cfg.perception_queue_size == 32
+    assert cfg.perception_shutdown_timeout == 5.0
     assert cfg.twitch is None
 
 
@@ -151,17 +159,301 @@ def test_summarizer_interval_parsed_and_validated(tmp_path):
         Config.load(_write(tmp_path, MINIMAL_YAML + "summarizer_interval: 0\n"))
 
 
+def test_perception_queue_config_is_parsed_and_validated(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + "perception_queue_size: 3\n"
+            + "perception_shutdown_timeout: 0.25\n",
+        )
+    )
+    assert cfg.perception_queue_size == 3
+    assert cfg.perception_shutdown_timeout == 0.25
+
+    with pytest.raises(ConfigError, match="perception_queue_size"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "perception_queue_size: 0\n"))
+    with pytest.raises(ConfigError, match="perception_queue_size"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "perception_queue_size: 1.5\n"))
+    with pytest.raises(ConfigError, match="perception_shutdown_timeout"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "perception_shutdown_timeout: true\n")
+        )
+    with pytest.raises(ConfigError, match="perception_shutdown_timeout"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "perception_shutdown_timeout: 0\n"))
+
+
+def test_vad_config_defaults_overrides_and_validation(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.vad == VadConfig()
+
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                vad:
+                  mode: 3
+                  frame_ms: 20
+                  padding_ms: 200
+                  max_utterance_seconds: 12.5
+                """
+            ),
+        )
+    )
+    assert configured.vad == VadConfig(
+        mode=3,
+        frame_ms=20,
+        padding_ms=200,
+        max_utterance_seconds=12.5,
+    )
+
+    with pytest.raises(ConfigError, match="vad.frame_ms"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vad:\n  frame_ms: 25\n"))
+
+
+def test_asr_config_defaults_overrides_and_validation(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.asr == AsrConfig()
+
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                asr:
+                  model: turbo
+                  device: cpu
+                  compute_type: int8
+                  language: it
+                  beam_size: 3
+                  condition_on_previous_text: true
+                """
+            ),
+        )
+    )
+    assert configured.asr == AsrConfig(
+        model="turbo",
+        device="cpu",
+        compute_type="int8",
+        language="it",
+        beam_size=3,
+        condition_on_previous_text=True,
+    )
+
+    with pytest.raises(ConfigError, match="asr.beam_size"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "asr:\n  beam_size: 0\n"))
+    with pytest.raises(ConfigError, match="asr.model"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "asr:\n  model: ''\n"))
+    with pytest.raises(ConfigError, match="asr.unexpected"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "asr:\n  unexpected: true\n"))
+
+
+def test_speaker_configs_defaults_overrides_and_validation(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.speaker_embedding == SpeakerEmbeddingConfig()
+    assert cfg.speaker_clustering == SpeakerClusteringConfig()
+
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                speaker_embedding:
+                  model_path: /models/campp.onnx
+                  provider: coreml
+                  num_threads: 2
+                  dimension: 256
+                speaker_clustering:
+                  threshold: 0.72
+                  warmup_seconds: 5.0
+                  min_update_seconds: 0.4
+                """
+            ),
+        )
+    )
+    assert configured.speaker_embedding == SpeakerEmbeddingConfig(
+        model_path=Path("/models/campp.onnx"),
+        provider="coreml",
+        num_threads=2,
+        dimension=256,
+    )
+    assert configured.speaker_clustering == SpeakerClusteringConfig(
+        threshold=0.72,
+        warmup_seconds=5.0,
+        min_update_seconds=0.4,
+    )
+
+    with pytest.raises(ConfigError, match="speaker_embedding.num_threads"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "speaker_embedding:\n  num_threads: 0\n")
+        )
+    with pytest.raises(ConfigError, match="speaker_embedding.model_path"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "speaker_embedding:\n  model_path: 123\n")
+        )
+    with pytest.raises(ConfigError, match="speaker_clustering.threshold"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "speaker_clustering:\n  threshold: 1.5\n")
+        )
+    with pytest.raises(ConfigError, match="speaker_clustering.unexpected"):
+        Config.load(
+            _write(
+                tmp_path,
+                MINIMAL_YAML + "speaker_clustering:\n  unexpected: true\n",
+            )
+        )
+
+
+def test_video_config_defaults_overrides_and_validation(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.video == VideoPerceptionConfig()
+
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                video:
+                  sample_every: 3
+                  dedup_change_threshold: 0.25
+                """
+            ),
+        )
+    )
+    assert configured.video == VideoPerceptionConfig(
+        sample_every=3,
+        dedup_change_threshold=0.25,
+    )
+
+    with pytest.raises(ConfigError, match="video.sample_every"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "video:\n  sample_every: 0\n"))
+    with pytest.raises(ConfigError, match="video.dedup_change_threshold"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "video:\n  dedup_change_threshold: 1.5\n")
+        )
+    with pytest.raises(ConfigError, match="video.dedup_change_threshold"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "video:\n  dedup_change_threshold: 1.0\n")
+        )
+    with pytest.raises(ConfigError, match="video.unexpected"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "video:\n  unexpected: true\n"))
+
+
+def test_vlm_config_defaults_overrides_and_validation(tmp_path):
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.vlm == QwenVlConfig()
+
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                vlm:
+                  model: /models/qwen2-vl
+                  device: cpu
+                  device_map: null
+                  torch_dtype: float16
+                  attn_implementation: sdpa
+                  max_new_tokens: 32
+                  timeout_seconds: 12.5
+                  language: en
+                  prompt: Describe the frame briefly in concise English.
+                  max_caption_chars: 120
+                """
+            ),
+        )
+    )
+    assert configured.vlm == QwenVlConfig(
+        model=Path("/models/qwen2-vl"),
+        device="cpu",
+        device_map=None,
+        torch_dtype="float16",
+        attn_implementation="sdpa",
+        max_new_tokens=32,
+        timeout_seconds=12.5,
+        language="en",
+        prompt="Describe the frame briefly in concise English.",
+        max_caption_chars=120,
+    )
+
+    with pytest.raises(ConfigError, match="vlm.max_new_tokens"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  max_new_tokens: 0\n"))
+    with pytest.raises(ConfigError, match="vlm.timeout_seconds"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  timeout_seconds: 0\n"))
+    with pytest.raises(ConfigError, match="vlm.model"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  model: ''\n"))
+    with pytest.raises(ConfigError, match="vlm.unexpected"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  unexpected: true\n"))
+
+
 def test_v2_points_present_and_inert_by_default(tmp_path):
     cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
     assert cfg.disclosure.announce_ai is False
     assert cfg.retention.perceptions_days is None
     assert cfg.auto_memory is False
+    assert cfg.commentator == CommentatorConfig()
 
 
 def test_v2_points_parsed_when_present(tmp_path):
     cfg = Config.load(_write(tmp_path, VALID_YAML))
     assert cfg.disclosure.announce_ai is True
     assert cfg.retention.perceptions_days == 7
+
+
+def test_commentator_config_defaults_overrides_and_validation(tmp_path):
+    configured = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace("mode: public", "mode: private")
+            + textwrap.dedent(
+                """
+                commentator:
+                  enabled: true
+                  language: it
+                  idle_interval: 12.5
+                """
+            ),
+        )
+    )
+
+    assert configured.commentator == CommentatorConfig(
+        enabled=True,
+        language="it",
+        idle_interval=12.5,
+    )
+
+    with pytest.raises(ConfigError, match="commentator.enabled"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  enabled: 1\n"))
+    with pytest.raises(ConfigError, match="commentator.language"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  language: ''\n"))
+    with pytest.raises(ConfigError, match="commentator.idle_interval"):
+        Config.load(
+            _write(tmp_path, MINIMAL_YAML + "commentator:\n  idle_interval: 0\n")
+        )
+    with pytest.raises(ConfigError, match="commentator.unexpected"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  unexpected: 1\n"))
+
+
+def test_commentator_requires_private_mode(tmp_path):
+    with pytest.raises(ConfigError, match="mode: private"):
+        Config.load(
+            _write(
+                tmp_path,
+                MINIMAL_YAML
+                + textwrap.dedent(
+                    """
+                    commentator:
+                      enabled: true
+                    """
+                ),
+            )
+        )
 
 
 def test_invalid_mode_raises_clear_error(tmp_path):

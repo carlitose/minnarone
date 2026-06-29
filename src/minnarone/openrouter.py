@@ -44,7 +44,7 @@ _DEFAULT_TIMEOUT = 30.0
 # "DeepSeek V4 Flash") può cambiare lato OpenRouter, quindi è sovrascrivibile
 # via `llm_params.model` senza toccare il codice.
 _DEFAULT_MODELS: dict[str, str] = {
-    "grok": "x-ai/grok-4",
+    "grok": "x-ai/grok-4.3",
     "deepseek": "deepseek/deepseek-chat",
 }
 

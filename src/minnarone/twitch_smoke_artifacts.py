@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .audio import AudioChunk
+from .audio import AudioChunk, SpeechSegment, Vad
 from .chat import ChatPerceiver
 from .source import RawEvent, SourceAdapter
 from .store import PerceptionStore
@@ -24,6 +24,8 @@ class SmokeStats:
     chat_events: int = 0
     audio_events: int = 0
     audio_samples_saved: int = 0
+    vad_utterances: int = 0
+    vad_utterance_durations_ms: list[float] = field(default_factory=list)
     video_events: int = 0
     video_frames_saved: int = 0
     failures: list[str] = field(default_factory=list)
@@ -33,6 +35,8 @@ class SmokeStats:
             "chat_events": self.chat_events,
             "audio_events": self.audio_events,
             "audio_samples_saved": self.audio_samples_saved,
+            "vad_utterances": self.vad_utterances,
+            "vad_utterance_durations_ms": list(self.vad_utterance_durations_ms),
             "video_events": self.video_events,
             "video_frames_saved": self.video_frames_saved,
             "failures": list(self.failures),
@@ -49,6 +53,7 @@ class TwitchSmokeArtifacts:
         max_audio_samples: int = 3,
         max_video_frames: int = 3,
         perceptions_path: str | Path | None = None,
+        vad: Vad | None = None,
     ) -> None:
         if max_audio_samples < 0:
             raise ValueError("max_audio_samples deve essere >= 0")
@@ -73,6 +78,7 @@ class TwitchSmokeArtifacts:
             stale_frame.unlink()
         self._store = PerceptionStore(self.perceptions_path)
         self._chat = ChatPerceiver(self._store)
+        self._vad = vad
         self._max_audio_samples = max_audio_samples
         self._max_video_frames = max_video_frames
         self.stats = SmokeStats()
@@ -92,6 +98,7 @@ class TwitchSmokeArtifacts:
             return True
         if event.channel == "audio" and isinstance(event.payload, AudioChunk):
             self.stats.audio_events += 1
+            self._record_vad_segments(event.payload)
             if self.stats.audio_samples_saved < self._max_audio_samples:
                 index = self.stats.audio_samples_saved + 1
                 sample_path = self._audio_dir / f"audio-{index:04d}.pcm"
@@ -123,6 +130,32 @@ class TwitchSmokeArtifacts:
             encoding="utf-8",
         )
 
+    def flush_vad(self) -> None:
+        if self._vad is None:
+            return
+        flush = getattr(self._vad, "flush", None)
+        if not callable(flush):
+            return
+        for segment in flush():
+            self._record_vad_segment(segment)
+
+    def _record_vad_segments(self, chunk: AudioChunk) -> None:
+        if self._vad is None:
+            return
+        for segment in self._vad.segments(chunk):
+            self._record_vad_segment(segment)
+
+    def _record_vad_segment(self, segment: SpeechSegment) -> None:
+        self.stats.vad_utterances += 1
+        self.stats.vad_utterance_durations_ms.append(_segment_duration_ms(segment))
+
+
+def _segment_duration_ms(segment: SpeechSegment) -> float:
+    samples = segment.samples
+    if not isinstance(samples, (bytes, bytearray, memoryview)):
+        raise TypeError("SpeechSegment.samples deve essere bytes-like")
+    return round((len(samples) / (segment.sample_rate * 2)) * 1000, 3)
+
 
 async def capture_twitch_smoke(
     adapters: Sequence[SourceAdapter],
@@ -132,6 +165,7 @@ async def capture_twitch_smoke(
     max_audio_samples: int = 3,
     max_video_frames: int = 3,
     stop_timeout: float = _SMOKE_STOP_TIMEOUT_SECONDS,
+    vad: Vad | None = None,
 ) -> SmokeStats:
     """Run enabled adapters for a bounded duration and write smoke artifacts."""
     if not adapters:
@@ -140,6 +174,7 @@ async def capture_twitch_smoke(
         output_dir,
         max_audio_samples=max_audio_samples,
         max_video_frames=max_video_frames,
+        vad=vad,
     )
 
     async def pump(adapter: SourceAdapter) -> None:
@@ -181,5 +216,9 @@ async def capture_twitch_smoke(
                 artifacts.add_failure(f"{label}: cleanup timed out")
             except Exception as exc:  # noqa: BLE001 - smoke records cleanup failures.
                 artifacts.add_failure(f"{label}: {exc}")
+        try:
+            artifacts.flush_vad()
+        except Exception as exc:  # noqa: BLE001 - diagnostic failure is recorded.
+            artifacts.add_failure(f"vad: {exc}")
         artifacts.write_stats()
     return artifacts.stats

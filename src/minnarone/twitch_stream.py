@@ -15,8 +15,12 @@ from dataclasses import dataclass, field
 
 from .source import RawEvent, SourceAdapter
 from .twitch_audio import ProcessRunner, TwitchAudioReader
-from .twitch_chat import TwitchChatReader
-from .twitch_video import TwitchVideoReader
+from .twitch_chat import ConnectIRC, TwitchChatReader
+from .twitch_video import (
+    TwitchPyAvVideoReader,
+    TwitchVideoStreamOpener,
+    VideoFrameDecoder,
+)
 
 _CHANNEL_ORDER = ("chat", "audio", "video")
 
@@ -29,6 +33,10 @@ class TwitchStreamStats:
     produced: dict[str, int] = field(default_factory=dict)
     dropped: dict[str, int] = field(default_factory=dict)
     failures: dict[str, str] = field(default_factory=dict)
+
+
+class TwitchStreamRuntimeError(RuntimeError):
+    """Errore runtime dell'adapter Twitch unificato."""
 
 
 class TwitchStreamAdapter(SourceAdapter):
@@ -48,9 +56,12 @@ class TwitchStreamAdapter(SourceAdapter):
         video_fps: float = 1.0,
         queue_size: int = 100,
         cleanup_timeout: float = 5.0,
+        chat_connect: ConnectIRC | None = None,
         readers: Mapping[str, SourceAdapter] | None = None,
         audio_process_runner: ProcessRunner | None = None,
         video_process_runner: ProcessRunner | None = None,
+        video_stream_opener: TwitchVideoStreamOpener | None = None,
+        video_frame_decoder: VideoFrameDecoder | None = None,
     ) -> None:
         if queue_size <= 0:
             raise ValueError("queue_size deve essere > 0")
@@ -66,8 +77,11 @@ class TwitchStreamAdapter(SourceAdapter):
             video=video,
             audio_chunk_seconds=audio_chunk_seconds,
             video_fps=video_fps,
+            chat_connect=chat_connect,
             audio_process_runner=audio_process_runner,
             video_process_runner=video_process_runner,
+            video_stream_opener=video_stream_opener,
+            video_frame_decoder=video_frame_decoder,
         )
         if not self._readers:
             raise ValueError("abilita almeno un canale Twitch")
@@ -141,6 +155,7 @@ class TwitchStreamAdapter(SourceAdapter):
                     event = self._queue.popleft()
                     self._event_available.notify_all()
                 elif not self._running or not self._active_channels:
+                    self._raise_if_unproductive_failure()
                     return
                 else:  # pragma: no cover - wait_for predicate prevents this.
                     continue
@@ -166,8 +181,11 @@ class TwitchStreamAdapter(SourceAdapter):
         video: bool,
         audio_chunk_seconds: float,
         video_fps: float,
+        chat_connect: ConnectIRC | None,
         audio_process_runner: ProcessRunner | None,
         video_process_runner: ProcessRunner | None,
+        video_stream_opener: TwitchVideoStreamOpener | None,
+        video_frame_decoder: VideoFrameDecoder | None,
     ) -> dict[str, SourceAdapter]:
         readers: dict[str, SourceAdapter] = {}
         if chat:
@@ -177,6 +195,7 @@ class TwitchStreamAdapter(SourceAdapter):
                 channel=channel,
                 username=username,
                 oauth_token=oauth_token,
+                connect=chat_connect,
             )
         if audio:
             readers["audio"] = TwitchAudioReader(
@@ -186,11 +205,12 @@ class TwitchStreamAdapter(SourceAdapter):
                 process_runner=audio_process_runner,
             )
         if video:
-            readers["video"] = TwitchVideoReader(
+            readers["video"] = TwitchPyAvVideoReader(
                 channel=channel,
                 quality=quality,
                 fps=video_fps,
-                process_runner=video_process_runner,
+                stream_opener=video_stream_opener,
+                frame_decoder=video_frame_decoder,
             )
         return readers
 
@@ -261,6 +281,16 @@ class TwitchStreamAdapter(SourceAdapter):
             self._failures[channel] = message
         elif message not in previous:
             self._failures[channel] = f"{previous}; {message}"
+
+    def _raise_if_unproductive_failure(self) -> None:
+        if not self._failures or any(self._produced.values()):
+            return
+        failures = "; ".join(
+            f"{channel}: {message}" for channel, message in sorted(self._failures.items())
+        )
+        raise TwitchStreamRuntimeError(
+            f"Twitch stream failed before producing events: {failures}"
+        )
 
 
 def ordered_twitch_channels(channels: set[str]) -> list[str]:

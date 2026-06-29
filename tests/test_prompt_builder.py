@@ -270,3 +270,51 @@ def test_disclosure_default_matches_no_arg():
         PromptBuilder(_blocks()).stable_prefix()
         == PromptBuilder(_blocks(), announce_ai=False).stable_prefix()
     )
+
+
+def test_commentator_stance_is_private_italian_and_opt_in():
+    default_prefix = PromptBuilder(_blocks()).stable_prefix()
+    commentator_prefix = PromptBuilder(
+        _blocks(),
+        commentator=True,
+        commentator_language="it",
+    ).stable_prefix()
+
+    assert "commentatore locale" not in default_prefix
+    assert "commentatore locale" in commentator_prefix
+    assert "italiano" in commentator_prefix
+    assert "NON inviare messaggi pubblici Twitch" in commentator_prefix
+
+
+def test_commentator_situation_comments_for_operator_not_interlocutor():
+    perception = Perception(
+        ts=1.0,
+        source=Source.CHAT,
+        type="msg",
+        text="minnarone guarda il boss",
+        speaker="viewer",
+    )
+    prompt = PromptBuilder(_blocks(), commentator=True).build(
+        recent=[perception],
+        trigger=Trigger(
+            reason="mention",
+            perception=perception,
+            kind="mention",
+            interlocutor="viewer",
+        ),
+    )
+
+    assert "Commenta per l'operatore questa percezione di viewer" in prompt
+    assert "non rispondere direttamente alla chat o allo streamer" in prompt
+    assert "Reagisci a questo messaggio" not in prompt
+    assert "rivolto a viewer" not in prompt
+
+
+def test_commentator_idle_situation_comments_for_operator():
+    prompt = PromptBuilder(_blocks(), commentator=True).build(
+        recent=[],
+        trigger=Trigger(reason="idle_comment", perception=None, kind="idle_comment"),
+    )
+
+    assert "commenta per l'operatore" in prompt
+    assert "Nessuno ti ha nominato" in prompt

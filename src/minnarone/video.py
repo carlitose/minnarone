@@ -35,6 +35,7 @@ pixel grezzi e i metadati minimi. È il contratto fra lo `StreamCaptureAdapter`
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
@@ -63,6 +64,45 @@ class VideoFrame:
     ts: float = 0.0
 
 
+class VideoConfigError(ValueError):
+    """Configurazione video non valida."""
+
+
+@dataclass(frozen=True, slots=True)
+class VideoPerceptionConfig:
+    """Knob di campionamento e dedup per la percezione video locale."""
+
+    sample_every: int = 1
+    dedup_change_threshold: float = 0.0
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.sample_every, bool)
+            or not isinstance(self.sample_every, int)
+            or self.sample_every < 1
+        ):
+            raise VideoConfigError("sample_every deve essere un intero >= 1")
+        threshold = _finite_float(
+            self.dedup_change_threshold,
+            "dedup_change_threshold",
+        )
+        if not 0.0 <= threshold < 1.0:
+            raise VideoConfigError("dedup_change_threshold deve essere >= 0 e < 1")
+        object.__setattr__(self, "dedup_change_threshold", threshold)
+
+
+@dataclass(frozen=True, slots=True)
+class VideoPerceptionStats:
+    """Diagnostic counters for local video perception."""
+
+    frames_seen: int = 0
+    sampled: int = 0
+    dedup_skipped: int = 0
+    captioned: int = 0
+    empty_captions: int = 0
+    failed: int = 0
+
+
 @runtime_checkable
 class Captioner(Protocol):
     """Visione: descrive un frame in testo (stadio VLM).
@@ -76,6 +116,87 @@ class Captioner(Protocol):
     def caption(self, frame: VideoFrame) -> str:
         """Descrizione testuale del frame; "" se nulla di descrivibile."""
         ...
+
+
+@runtime_checkable
+class FrameDeduper(Protocol):
+    """Decide se un frame è abbastanza nuovo da meritare caption."""
+
+    def should_caption(self, frame: VideoFrame) -> bool:
+        """True quando il frame va descritto."""
+        ...
+
+    def remember(self, frame: VideoFrame) -> None:
+        """Aggiorna il riferimento visuale dopo una caption riuscita."""
+        ...
+
+
+@dataclass(slots=True)
+class _FrameFingerprint:
+    digest: str
+    data: bytes
+
+
+class ByteFrameDeduper:
+    """Dedup visuale semplice basato sui byte dei pixel.
+
+    `change_threshold=0.0` replica il comportamento storico: solo frame
+    byte-identici vengono saltati. Soglie maggiori ignorano micro-variazioni:
+    un nuovo frame passa solo se la frazione di byte cambiati è strettamente
+    maggiore della soglia.
+    """
+
+    def __init__(self, *, change_threshold: float = 0.0) -> None:
+        threshold = _finite_float(change_threshold, "change_threshold")
+        if not 0.0 <= threshold < 1.0:
+            raise ValueError("change_threshold deve essere >= 0 e < 1")
+        self._change_threshold = threshold
+        self._last: _FrameFingerprint | None = None
+
+    def should_caption(self, frame: VideoFrame) -> bool:
+        current = _frame_fingerprint(frame)
+        previous = self._last
+        if previous is None:
+            return True
+        if current.digest == previous.digest:
+            return False
+        if self._change_threshold == 0.0:
+            return True
+        return _byte_change_ratio(previous.data, current.data) > self._change_threshold
+
+    def remember(self, frame: VideoFrame) -> None:
+        self._last = _frame_fingerprint(frame)
+
+
+def _frame_bytes(frame: VideoFrame) -> bytes:
+    """Byte stabili dei pixel, senza timestamp né repr troncati."""
+    pixels = frame.pixels
+    if isinstance(pixels, (bytes, bytearray, memoryview)):
+        return bytes(pixels)
+    if hasattr(pixels, "tobytes"):
+        # numpy ndarray e simili: byte di contenuto, non repr troncato.
+        return pixels.tobytes()  # type: ignore[union-attr]
+    try:
+        return bytes(memoryview(pixels))  # type: ignore[arg-type]
+    except TypeError:
+        # Stand-in di test opachi (str/int): repr come ultima risorsa.
+        return repr(pixels).encode("utf-8")
+
+
+def _frame_fingerprint(frame: VideoFrame) -> _FrameFingerprint:
+    data = _frame_bytes(frame)
+    return _FrameFingerprint(digest=hashlib.sha256(data).hexdigest(), data=data)
+
+
+def _byte_change_ratio(previous: bytes, current: bytes) -> float:
+    width = max(len(previous), len(current))
+    if width == 0:
+        return 0.0
+    changed = abs(len(previous) - len(current))
+    changed += sum(
+        1 for before, after in zip(previous, current, strict=False) if before != after
+    )
+    return changed / width
 
 
 def _frame_hash(frame: VideoFrame) -> str:
@@ -92,19 +213,7 @@ def _frame_hash(frame: VideoFrame) -> str:
     via buffer protocol (`memoryview`) o `tobytes()`. Il fallback `repr()` resta
     SOLO per stand-in di test semplici (str/int) che non espongono byte.
     """
-    pixels = frame.pixels
-    if isinstance(pixels, (bytes, bytearray, memoryview)):
-        data = bytes(pixels)
-    elif hasattr(pixels, "tobytes"):
-        # numpy ndarray e simili: byte di contenuto, non repr troncato.
-        data = pixels.tobytes()  # type: ignore[union-attr]
-    else:
-        try:
-            data = bytes(memoryview(pixels))  # type: ignore[arg-type]
-        except TypeError:
-            # Stand-in di test opachi (str/int): repr come ultima risorsa.
-            data = repr(pixels).encode("utf-8")
-    return hashlib.sha256(data).hexdigest()
+    return _frame_fingerprint(frame).digest
 
 
 class VideoPerceiver(EventPerceiver):
@@ -130,17 +239,50 @@ class VideoPerceiver(EventPerceiver):
         store: PerceptionStore,
         captioner: Captioner,
         *,
-        sample_every: int = 1,
+        config: VideoPerceptionConfig | None = None,
+        sample_every: int | None = None,
+        dedup_change_threshold: float | None = None,
+        deduper: FrameDeduper | None = None,
     ) -> None:
-        if sample_every < 1:
-            raise ValueError("sample_every deve essere >= 1")
+        effective_config = config or VideoPerceptionConfig()
+        if sample_every is not None or dedup_change_threshold is not None:
+            effective_config = VideoPerceptionConfig(
+                sample_every=(
+                    sample_every
+                    if sample_every is not None
+                    else effective_config.sample_every
+                ),
+                dedup_change_threshold=(
+                    dedup_change_threshold
+                    if dedup_change_threshold is not None
+                    else effective_config.dedup_change_threshold
+                ),
+            )
         self._store = store
         self._captioner = captioner
-        self._sample_every = sample_every
+        self._config = effective_config
+        self._sample_every = effective_config.sample_every
+        self._deduper = deduper or ByteFrameDeduper(
+            change_threshold=effective_config.dedup_change_threshold
+        )
         # Contatore dei frame visti, per il campionamento per conteggio.
         self._seen = 0
-        # Hash dell'ultimo frame effettivamente descritto, per il dedup.
-        self._last_hash: str | None = None
+        self._sampled = 0
+        self._dedup_skipped = 0
+        self._captioned = 0
+        self._empty_captions = 0
+        self._failed = 0
+
+    def stats(self) -> VideoPerceptionStats:
+        """Snapshot read-only of video sampling/dedup/caption counters."""
+        return VideoPerceptionStats(
+            frames_seen=self._seen,
+            sampled=self._sampled,
+            dedup_skipped=self._dedup_skipped,
+            captioned=self._captioned,
+            empty_captions=self._empty_captions,
+            failed=self._failed,
+        )
 
     def perceive_frame(self, frame: VideoFrame) -> list[Perception]:
         """Processa un frame e scrive le percezioni risultanti (0 o 1).
@@ -165,24 +307,37 @@ class VideoPerceiver(EventPerceiver):
         #    sono candidati al captioning.
         if index % self._sample_every != 0:
             return []
+        self._sampled += 1
 
-        # 2. Dedup via hashing: salta i frame identici all'ultimo descritto.
-        digest = _frame_hash(frame)
-        if digest == self._last_hash:
+        # 2. Dedup visuale: salta i frame non abbastanza diversi dall'ultimo
+        #    effettivamente descritto.
+        if not self._deduper.should_caption(frame):
+            self._dedup_skipped += 1
             return []
 
         # 3. Caption (stadio VLM).
-        text = self._captioner.caption(frame).strip()
+        try:
+            text = self._captioner.caption(frame).strip()
+        except Exception:
+            # Anche un fallimento VLM diventa riferimento dedup: una scena
+            # statica che manda in errore il modello non deve martellare la GPU
+            # su ogni frame campionato. La queue registra comunque l'errore.
+            self._deduper.remember(frame)
+            self._failed += 1
+            raise
         if not text:
             # Il VLM non ha ricavato nulla di descrivibile: niente percezione.
-            # Non aggiorniamo `_last_hash`: un frame "vuoto" non diventa il
-            # riferimento per il dedup dei successivi.
+            # Il frame diventa comunque riferimento dedup: se una scena statica
+            # resta non descrivibile, non richiamiamo il VLM all'infinito.
+            self._deduper.remember(frame)
+            self._empty_captions += 1
             return []
 
         # Il frame è stato descritto: diventa il riferimento per il dedup.
-        self._last_hash = digest
+        self._deduper.remember(frame)
+        self._captioned += 1
         perception = Perception(
-            ts=frame.ts if frame.ts else time.time(),
+            ts=frame.ts if frame.ts is not None else time.time(),
             source=Source.VIDEO,
             type="caption",
             text=text,
@@ -198,3 +353,15 @@ class VideoPerceiver(EventPerceiver):
         canale e tipo del payload vive in `EventPerceiver`.
         """
         return self.perceive_frame(payload)
+
+
+def _finite_float(value: object, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise VideoConfigError(f"{field_name} deve essere numerico")
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise VideoConfigError(f"{field_name} deve essere numerico") from exc
+    if not math.isfinite(parsed):
+        raise VideoConfigError(f"{field_name} deve essere finito")
+    return parsed

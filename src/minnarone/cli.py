@@ -20,6 +20,7 @@ from collections.abc import Sequence
 
 from .app import build_agent
 from .config import Config, ConfigError
+from .twitch_stream import TwitchStreamRuntimeError
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -59,6 +60,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # è il passo manuale documentato: richiede device e permessi macOS.
     try:
         asyncio.run(agent.run())
+    except TwitchStreamRuntimeError as exc:
+        print(f"errore runtime Twitch: {exc}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print("arresto richiesto.", file=sys.stderr)
     return 0

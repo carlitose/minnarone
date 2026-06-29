@@ -10,7 +10,6 @@ import sys
 
 import pytest
 
-from minnarone.dashboard import DashboardState, snapshot
 from minnarone.perception import Perception, Source
 from minnarone.store import PerceptionStore
 
@@ -21,10 +20,15 @@ def _store(tmp_path):
 
 def test_importing_package_does_not_require_textual():
     # Né il pacchetto né il modello di snapshot devono trascinare textual.
+    for name in list(sys.modules):
+        if name == "textual" or name.startswith("textual."):
+            del sys.modules[name]
+    had_textual = "textual" in sys.modules
     import minnarone  # noqa: F401
     import minnarone.dashboard  # noqa: F401
+    from minnarone.dashboard import DashboardState, snapshot
 
-    assert "textual" not in sys.modules or True  # non lo importiamo noi
+    assert ("textual" in sys.modules) is had_textual
     # Lo snapshot funziona senza textual.
     assert isinstance(snapshot(), DashboardState)
 
@@ -42,6 +46,7 @@ def test_building_view_without_textual_raises_clear_error(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
+    from minnarone.dashboard import DashboardState
     from minnarone.dashboard_tui import build_dashboard_app
 
     with pytest.raises(RuntimeError) as excinfo:
@@ -54,6 +59,7 @@ def test_view_renders_snapshot_smoke(tmp_path):
     # Skippato quando textual non è installato (resa live in terminale reale).
     pytest.importorskip("textual")
 
+    from minnarone.dashboard import snapshot
     from minnarone.dashboard_tui import build_dashboard_app
 
     store = _store(tmp_path)

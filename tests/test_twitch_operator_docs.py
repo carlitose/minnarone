@@ -5,6 +5,7 @@ import shlex
 from pathlib import Path
 
 from minnarone.config import Config
+from minnarone.output import OutputMode
 from minnarone.twitch_smoke import main
 from minnarone.twitch_smoke_artifacts import SmokeStats
 
@@ -23,8 +24,46 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.twitch is not None
     assert cfg.twitch.channel == "minnarone"
     assert cfg.twitch.chat is True
-    assert cfg.twitch.audio is True
-    assert cfg.twitch.video is True
+    assert cfg.twitch.audio is False
+    assert cfg.twitch.video is False
+    assert cfg.vad.mode == 2
+    assert cfg.vad.frame_ms == 30
+    assert cfg.vad.padding_ms == 300
+    assert cfg.asr.model == "large-v3-turbo"
+    assert cfg.asr.condition_on_previous_text is False
+    assert cfg.speaker_embedding.provider == "cpu"
+    assert cfg.speaker_embedding.dimension == 192
+    assert cfg.speaker_clustering.threshold == 0.6
+    assert cfg.speaker_clustering.warmup_seconds == 60.0
+    assert cfg.speaker_clustering.min_update_seconds == 1.0
+    assert cfg.video.sample_every == 1
+    assert cfg.video.dedup_change_threshold == 0.0
+    assert cfg.vlm.model is None
+    assert cfg.vlm.device == "auto"
+    assert cfg.vlm.max_new_tokens == 48
+    assert cfg.vlm.language == "en"
+    assert cfg.commentator.enabled is False
+
+
+def test_twitch_commentator_example_config_loads_console_only_shape():
+    cfg = Config.load(Path("examples/twitch-commentator.example.yaml"))
+
+    assert cfg.mode is OutputMode.PRIVATE
+    assert cfg.adapter == "twitch"
+    assert cfg.twitch is not None
+    assert cfg.twitch.chat is True
+    assert cfg.twitch.audio is False
+    assert cfg.twitch.video is False
+    assert cfg.commentator.enabled is True
+    assert cfg.commentator.language == "it"
+    assert cfg.commentator.idle_interval == 30.0
+
+
+def test_twitch_example_documents_console_only_runtime():
+    text = Path("examples/twitch.example.yaml").read_text(encoding="utf-8")
+
+    assert "console" in text.lower()
+    assert "non invia messaggi" in text.lower()
 
 
 def test_twitch_operator_docs_cover_setup_smoke_artifacts_and_troubleshooting():
@@ -33,10 +72,15 @@ def test_twitch_operator_docs_cover_setup_smoke_artifacts_and_troubleshooting():
     required = [
         "streamlink",
         "ffmpeg",
+        "python --version",
+        "uv --version",
         "TWITCH_BOT_USERNAME",
         "TWITCH_OAUTH_TOKEN",
         "minnarone-twitch-smoke",
         "--no-chat --audio",
+        "--vad-diagnostic",
+        "vad_utterances",
+        "vad_utterance_durations_ms",
         "--no-chat --video",
         "--audio --video",
         "perceptions.jsonl",
@@ -47,6 +91,287 @@ def test_twitch_operator_docs_cover_setup_smoke_artifacts_and_troubleshooting():
         "OPENROUTER_API_KEY",
         "offline",
         "zero eventi",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_python_extras_and_model_setup():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Python Extras Matrix",
+        "uv sync --extra asr",
+        "uv sync --extra speaker",
+        "uv sync --extra audio",
+        "uv sync --extra video",
+        "uv sync --extra vlm",
+        "uv sync --extra tui",
+        "webrtcvad-wheels",
+        "faster-whisper",
+        "sherpa-onnx",
+        "Python `streamlink` package",
+        "`av`",
+        "transformers",
+        "torch",
+        "torchvision",
+        "accelerate",
+        "Pillow",
+        "Model Setup",
+        "large-v3-turbo",
+        "CAM++",
+        "Qwen2-VL-compatible",
+        "vlm.model",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_apple_silicon_recommendations():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Apple Silicon",
+        "M2 Max",
+        "32 GB",
+        "device: cpu",
+        "compute_type: int8",
+        "provider: cpu",
+        "num_threads: 2",
+        "device: mps",
+        "device_map: null",
+        "video_fps: 1.0",
+        "280 GB",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_describe_console_runtime_with_optional_audio():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    assert "chat-only" in text
+    assert "twitch.audio: true" in text
+    assert "console" in text
+    assert "does not send chat messages" in text
+    assert "does not yet wire" not in text
+
+
+def test_twitch_operator_docs_cover_manual_local_asr_smoke():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local ASR Smoke",
+        "faster-whisper",
+        "large-v3-turbo",
+        "condition_on_previous_text: false",
+        "speaker `?`",
+        "audio/speech",
+        "python - <<'PY'",
+        "minnarone.asr",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_manual_speaker_embedding_smoke():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local Speaker Embedding Smoke",
+        "sherpa-onnx",
+        "uv sync --extra audio",
+        "SpeakerEmbeddingConfig",
+        "SherpaOnnxSpeakerEmbeddingBackend",
+        "speaker_embedding:",
+        "speaker_clustering:",
+        "warmup_seconds: 60.0",
+        "min_update_seconds: 1.0",
+        "streamer",
+        "speaker_N",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_manual_speaker_clustering_smoke():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local Speaker Clustering Smoke",
+        "OnlineSpeakerClusterer",
+        "SpeakerClusteringConfig",
+        "threshold=0.6",
+        "warmup_seconds=2.0",
+        "min_update_seconds=1.0",
+        "too short -> ?",
+        "streamer_cluster_id",
+        "speaker_N",
+        "cluster label becomes `streamer`",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_manual_pyav_video_frame_validation():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "PyAV Video Frame Runtime Validation",
+        "uv sync --extra video",
+        "uv run --extra video python",
+        "Python `streamlink` package",
+        "twitch.video: true",
+        "top-level `video:` block",
+        "dedup_change_threshold",
+        "Streamlink + PyAV",
+        "TwitchPyAvVideoReader",
+        "VideoFrame",
+        "not captioning",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_manual_qwen_vl_caption_smoke():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local Qwen2-VL Caption Smoke",
+        "uv sync --extra video --extra vlm",
+        "transformers",
+        "torch",
+        "torchvision",
+        "Pillow",
+        "Qwen2VlCaptioner",
+        "QwenVlConfig",
+        "vlm.model",
+        "concise English",
+        "video/caption",
+        "bounded perception queue",
+        "fake captioners",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_local_commentator_mode():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local Commentator Mode",
+        "commentator.enabled: true",
+        "mode: private",
+        "[PRIVATE]",
+        "TUI/dashboard",
+        "no `PRIVMSG` write",
+        "no public chat write/send scope",
+        "Italian comments",
+        "commentator.idle_interval",
+        "examples/twitch-commentator.example.yaml",
+        "commentator.enabled: false",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_local_perception_observability():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Local Perception Observability",
+        "Agent.observability_snapshot()",
+        "audio transcriptions with speaker labels",
+        "video captions",
+        "bounded media queue counters",
+        "stage-categorized local failures",
+        "speaker cluster diagnostics",
+        "talk time",
+        "streamer cluster id",
+        "raw audio bytes",
+        "raw frame payloads",
+        "Twitch OAuth",
+        "OpenRouter keys",
+        "`vad`",
+        "`asr`",
+        "`embedding`",
+        "`clustering`",
+        "`pyav`",
+        "`dedup`",
+        "`vlm`",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_cover_full_commentator_run_workflow():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Full Commentator Run Workflow",
+        "uv sync --extra audio --extra video --extra vlm --extra tui",
+        "examples/twitch-commentator.example.yaml",
+        "OPENROUTER_API_KEY",
+        "TWITCH_BOT_USERNAME",
+        "TWITCH_OAUTH_TOKEN",
+        "mode: private",
+        "commentator:",
+        "uv run python -m minnarone",
+        "--check",
+        "[PRIVATE]",
+        "No public Twitch messages are sent",
+        "public Twitch output remains out of scope",
+        "build_dashboard_app(agent.observability_snapshot)",
+        "main CLI remains console-only",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_do_not_show_direct_secret_exports():
+    text = (
+        Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+        + "\n"
+        + Path("README.md").read_text(encoding="utf-8")
+    )
+
+    forbidden = [
+        "export OPENROUTER_API_KEY=",
+        "export TWITCH_OAUTH_TOKEN=",
+        "export TWITCH_BOT_USERNAME=",
+    ]
+    for phrase in forbidden:
+        assert phrase not in text
+    assert 'read -r -s -p "OPENROUTER_API_KEY: "' in text
+    assert 'read -r -s -p "TWITCH_OAUTH_TOKEN: "' in text
+
+
+def test_readme_private_commentator_wording_is_not_contradictory():
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "private+commentator = console locale" in text
+    assert "private solo = whisper v2" in text
+    assert "commentatore locale su console" in text
+
+
+def test_twitch_operator_docs_troubleshoot_model_capture_diarization_video_vlm():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Missing ASR model",
+        "Empty ASR output",
+        "vad_utterances",
+        "Speaker over-segmentation",
+        "Speaker under-segmentation",
+        "speaker_embedding.model_path",
+        "No PyAV frames",
+        "Repeated or stale video captions",
+        "dedup_skipped",
+        "VLM setup failure",
+        "VLM timeout",
+        "vlm.max_new_tokens",
+        "queue `failed`, `dropped`, and `abandoned` counters",
+        "Public Twitch output",
     ]
     for phrase in required:
         assert phrase in text
@@ -63,6 +388,10 @@ def test_documented_smoke_commands_match_cli_contract(monkeypatch):
             chat_events=2 if kwargs["enable_chat"] else 0,
             audio_events=1 if kwargs["enable_audio"] else 0,
             audio_samples_saved=1 if kwargs["enable_audio"] else 0,
+            vad_utterances=1 if kwargs["enable_vad_diagnostic"] else 0,
+            vad_utterance_durations_ms=(
+                [300.0] if kwargs["enable_vad_diagnostic"] else []
+            ),
             video_events=1 if kwargs["enable_video"] else 0,
             video_frames_saved=1 if kwargs["enable_video"] else 0,
         )
@@ -84,8 +413,18 @@ def test_documented_smoke_commands_match_cli_contract(monkeypatch):
     ] == [
         (True, False, False),
         (False, True, False),
+        (False, True, False),
+        (False, True, False),
         (False, False, True),
         (True, True, True),
+    ]
+    assert [call["enable_vad_diagnostic"] for call in calls] == [
+        False,
+        False,
+        True,
+        False,
+        False,
+        False,
     ]
 
 

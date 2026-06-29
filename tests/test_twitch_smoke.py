@@ -2,10 +2,23 @@
 
 import asyncio
 
+from minnarone.audio import AudioChunk, SpeechSegment
 from minnarone.fakes import FakeSourceAdapter
 from minnarone.source import RawEvent
 from minnarone.twitch_smoke import chat_main, main, run_twitch_smoke
 from minnarone.twitch_smoke_artifacts import SmokeStats
+
+
+class _OneSegmentVad:
+    def segments(self, chunk: AudioChunk):
+        return [
+            SpeechSegment(
+                samples=chunk.samples,
+                sample_rate=chunk.sample_rate,
+                source_label=chunk.source_label,
+                ts=chunk.ts,
+            )
+        ]
 
 
 def test_twitch_chat_smoke_requires_manual_credentials(tmp_path, monkeypatch, capsys):
@@ -127,6 +140,11 @@ def test_twitch_chat_smoke_command_runs_with_twitch_env_only(
             "quality": "best",
             "audio_chunk_seconds": 1.0,
             "max_audio_samples": 3,
+            "enable_vad_diagnostic": False,
+            "vad_mode": 2,
+            "vad_frame_ms": 30,
+            "vad_padding_ms": 300,
+            "vad_max_utterance_seconds": 30.0,
             "video_fps": 1.0,
             "max_video_frames": 3,
         }
@@ -282,6 +300,91 @@ def test_twitch_smoke_audio_only_does_not_require_chat_credentials(
     assert calls[0]["enable_chat"] is False
     assert calls[0]["enable_audio"] is True
     assert calls[0]["audio_chunk_seconds"] == 0.25
+
+
+def test_twitch_smoke_vad_diagnostic_cli_reports_utterances_without_chat(
+    tmp_path, monkeypatch, capsys
+):
+    calls = []
+
+    async def fake_smoke(**kwargs):
+        calls.append(kwargs)
+        return SmokeStats(
+            audio_events=1,
+            vad_utterances=2,
+            vad_utterance_durations_ms=[300.0, 450.0],
+        )
+
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--no-chat",
+            "--vad-diagnostic",
+            "--vad-mode",
+            "3",
+            "--vad-frame-ms",
+            "20",
+            "--vad-padding-ms",
+            "200",
+            "--vad-max-utterance-seconds",
+            "12.5",
+        ]
+    )
+
+    assert code == 0
+    assert calls[0]["enable_audio"] is True
+    assert calls[0]["enable_vad_diagnostic"] is True
+    assert calls[0]["vad_mode"] == 3
+    assert calls[0]["vad_frame_ms"] == 20
+    assert calls[0]["vad_padding_ms"] == 200
+    assert calls[0]["vad_max_utterance_seconds"] == 12.5
+    out = capsys.readouterr().out
+    assert "vad_utterances=2" in out
+    assert "300.0,450.0" in out
+
+
+def test_run_twitch_smoke_vad_diagnostic_counts_audio_utterances(tmp_path):
+    audio = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="audio",
+                payload=AudioChunk(
+                    samples=b"\0" * 16_000,
+                    sample_rate=16_000,
+                    source_label="stream",
+                    ts=1.0,
+                ),
+                ts=1.0,
+            )
+        ],
+        channels={"audio"},
+    )
+
+    stats = asyncio.run(
+        run_twitch_smoke(
+            channel="minnarone",
+            output_dir=tmp_path / "smoke",
+            duration=1.0,
+            enable_chat=False,
+            enable_audio=True,
+            enable_vad_diagnostic=True,
+            audio_adapter=audio,
+            vad=_OneSegmentVad(),
+        )
+    )
+
+    assert stats.audio_events == 1
+    assert stats.vad_utterances == 1
+    assert stats.vad_utterance_durations_ms == [500.0]
 
 
 def test_twitch_smoke_video_only_does_not_require_chat_credentials(

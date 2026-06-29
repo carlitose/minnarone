@@ -24,8 +24,10 @@ import os
 from collections import deque
 from collections.abc import Iterable
 from pathlib import Path
+from threading import RLock
 
 from .perception import Perception
+from .perception_work import current_perception_work_cancelled
 
 # Quante percezioni recenti tenere in memoria per servire `tail` senza
 # riparsare il file. Limita l'uso di memoria indipendentemente dalla crescita
@@ -39,6 +41,7 @@ class PerceptionStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
         self._recent: deque[Perception] = deque(maxlen=_TAIL_CACHE_SIZE)
         self._prime_recent()
 
@@ -53,12 +56,17 @@ class PerceptionStore:
 
     def append(self, perception: Perception) -> None:
         """Aggiunge una percezione come singola riga JSON, durevole."""
+        if current_perception_work_cancelled():
+            return
         line = perception.to_json()
-        with self._path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        self._recent.append(perception)
+        with self._lock:
+            if current_perception_work_cancelled():
+                return
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            self._recent.append(perception)
 
     @staticmethod
     def _parse_or_skip(line: str) -> Perception | None:
@@ -136,7 +144,8 @@ class PerceptionStore:
         """Le ultime `n` percezioni, in ordine cronologico di scrittura."""
         if n <= 0:
             return []
-        if n <= len(self._recent):
-            return list(self._recent)[-n:]
+        with self._lock:
+            if n <= len(self._recent):
+                return list(self._recent)[-n:]
         # Richiesta più grande della cache: ricade sulla lettura da file.
         return list(self._read_all())[-n:]

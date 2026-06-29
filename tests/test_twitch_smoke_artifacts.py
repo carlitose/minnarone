@@ -3,11 +3,44 @@
 import asyncio
 import json
 
-from minnarone.audio import AudioChunk
+from minnarone.audio import AudioChunk, SpeechSegment
 from minnarone.fakes import FakeSourceAdapter
 from minnarone.source import RawEvent
 from minnarone.twitch_smoke_artifacts import TwitchSmokeArtifacts, capture_twitch_smoke
 from minnarone.video import VideoFrame
+
+
+class _OneSegmentVad:
+    def segments(self, chunk: AudioChunk):
+        return [
+            SpeechSegment(
+                samples=chunk.samples,
+                sample_rate=chunk.sample_rate,
+                source_label=chunk.source_label,
+                ts=chunk.ts,
+            )
+        ]
+
+
+class _FlushOnlyVad:
+    def __init__(self) -> None:
+        self.flushed = False
+
+    def segments(self, _chunk: AudioChunk):
+        return []
+
+    def flush(self):
+        if self.flushed:
+            return []
+        self.flushed = True
+        return [
+            SpeechSegment(
+                samples=b"\0" * 3_200,
+                sample_rate=16_000,
+                source_label="stream",
+                ts=1.0,
+            )
+        ]
 
 
 def test_smoke_artifacts_write_chat_audio_samples_and_stats(tmp_path):
@@ -63,6 +96,8 @@ def test_smoke_artifacts_write_chat_audio_samples_and_stats(tmp_path):
         "chat_events": 1,
         "audio_events": 2,
         "audio_samples_saved": 1,
+        "vad_utterances": 0,
+        "vad_utterance_durations_ms": [],
         "video_events": 0,
         "video_frames_saved": 0,
         "failures": ["audio: ffmpeg exited"],
@@ -121,6 +156,28 @@ def test_smoke_artifacts_write_capped_video_frames(tmp_path):
     assert stats["video_frames_saved"] == 1
 
 
+def test_smoke_artifacts_report_vad_utterance_counts_and_durations(tmp_path):
+    artifacts = TwitchSmokeArtifacts(tmp_path / "smoke", vad=_OneSegmentVad())
+
+    artifacts.record(
+        RawEvent(
+            channel="audio",
+            payload=AudioChunk(
+                samples=b"\0" * 32_000,
+                sample_rate=16_000,
+                source_label="stream",
+                ts=1.0,
+            ),
+            ts=1.0,
+        )
+    )
+    artifacts.write_stats()
+
+    stats = json.loads(artifacts.stats_path.read_text())
+    assert stats["vad_utterances"] == 1
+    assert stats["vad_utterance_durations_ms"] == [1000.0]
+
+
 def test_capture_twitch_smoke_bounds_cleanup_and_writes_stats(tmp_path):
     class HangingStopAdapter(FakeSourceAdapter):
         async def stop(self):
@@ -142,3 +199,34 @@ def test_capture_twitch_smoke_bounds_cleanup_and_writes_stats(tmp_path):
     assert any("cleanup timed out" in failure for failure in stats.failures)
     written = json.loads((tmp_path / "smoke" / "stats.json").read_text())
     assert any("cleanup timed out" in failure for failure in written["failures"])
+
+
+def test_capture_twitch_smoke_flushes_vad_diagnostic_at_end(tmp_path):
+    vad = _FlushOnlyVad()
+    audio = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="audio",
+                payload=AudioChunk(
+                    samples=b"\0" * 960,
+                    sample_rate=16_000,
+                    source_label="stream",
+                    ts=1.0,
+                ),
+                ts=1.0,
+            )
+        ],
+        channels={"audio"},
+    )
+
+    stats = asyncio.run(
+        capture_twitch_smoke(
+            [audio],
+            output_dir=tmp_path / "smoke",
+            duration=1.0,
+            vad=vad,
+        )
+    )
+
+    assert stats.vad_utterances == 1
+    assert stats.vad_utterance_durations_ms == [100.0]

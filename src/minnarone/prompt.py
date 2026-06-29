@@ -68,6 +68,15 @@ _DISCLOSURE_ANNOUNCE = (
     "essere un'AI; resta comunque in personaggio nello stile.\n"
 )
 
+_COMMENTATOR_RULES_TEMPLATE = (
+    "- Modalità commentatore locale: parla all'operatore in {language}, non alla "
+    "chat pubblica. Usa chat, audio e video percepiti come contesto per "
+    "commentare cosa sta succedendo nello stream.\n"
+    "- Produci commenti brevi, naturali e utili per chi guarda da questa "
+    "macchina. NON inviare messaggi pubblici Twitch, non chiedere di scrivere "
+    "in chat e non fingere che l'output sia visibile al pubblico.\n"
+)
+
 
 class PromptBuilder:
     """Costruisce il prompt da memoria stabile + messaggi recenti + trigger.
@@ -78,17 +87,32 @@ class PromptBuilder:
     configurazione, non per-turno: il prefisso resta byte-invariante.
     """
 
-    def __init__(self, blocks: MemoryBlocks, *, announce_ai: bool = False) -> None:
+    def __init__(
+        self,
+        blocks: MemoryBlocks,
+        *,
+        announce_ai: bool = False,
+        commentator: bool = False,
+        commentator_language: str = "it",
+    ) -> None:
         self._blocks = blocks
         self._announce_ai = announce_ai
+        self._commentator = commentator
+        self._commentator_language = commentator_language
 
     def stable_prefix(self) -> str:
         """La parte cacheable del prompt: dati stabili (regole + soul + facts)."""
         disclosure = _DISCLOSURE_ANNOUNCE if self._announce_ai else _DISCLOSURE_HIDE
+        commentator = ""
+        if self._commentator:
+            commentator = _COMMENTATOR_RULES_TEMPLATE.format(
+                language=_language_name(self._commentator_language)
+            )
         return (
             "## REGOLE\n"
             f"{_ROBUSTNESS_RULES}"
             f"{disclosure}"
+            f"{commentator}"
             "\n"
             "## IDENTITÀ\n"
             f"{self._blocks.soul}\n\n"
@@ -142,18 +166,36 @@ class PromptBuilder:
             f" (rivolto a {trigger.interlocutor})" if trigger.interlocutor else ""
         )
         if situation_perception is None:
-            situation_line = (
-                f"Nessuno ti ha nominato di recente{addressee}: "
-                f"commenta spontaneamente il contesto ({trigger.reason})."
-            )
+            if self._commentator:
+                situation_line = (
+                    "Nessuno ti ha nominato di recente: commenta per "
+                    f"l'operatore cosa sta succedendo nel contesto "
+                    f"({trigger.reason})."
+                )
+            else:
+                situation_line = (
+                    f"Nessuno ti ha nominato di recente{addressee}: "
+                    f"commenta spontaneamente il contesto ({trigger.reason})."
+                )
         else:
             # Il messaggio del trigger è contenuto percepito: lo si racchiude in
             # un fence di dati non fidati così un finto header non impersona una
             # sezione reale. L'istruzione ("Reagisci a...") resta FUORI dal fence.
-            situation_line = (
-                f"Reagisci a questo messaggio ({trigger.reason}){addressee}:\n"
-                f"{self._fence(format_perception_line(situation_perception))}"
-            )
+            if self._commentator:
+                interlocutor = (
+                    f" di {trigger.interlocutor}" if trigger.interlocutor else ""
+                )
+                situation_line = (
+                    "Commenta per l'operatore questa percezione"
+                    f"{interlocutor} ({trigger.reason}); non rispondere "
+                    "direttamente alla chat o allo streamer:\n"
+                    f"{self._fence(format_perception_line(situation_perception))}"
+                )
+            else:
+                situation_line = (
+                    f"Reagisci a questo messaggio ({trigger.reason}){addressee}:\n"
+                    f"{self._fence(format_perception_line(situation_perception))}"
+                )
         return (
             f"{self.stable_prefix()}\n"
             f"{summary_block}"
@@ -179,3 +221,18 @@ class PromptBuilder:
             f"{_DATA_LINE_PREFIX}{line}" for line in content.split("\n")
         )
         return f"{_UNTRUSTED_OPEN}\n{body}\n{_UNTRUSTED_CLOSE}"
+
+
+def _language_name(language: str) -> str:
+    names = {
+        "it": "italiano",
+        "ita": "italiano",
+        "italian": "italiano",
+        "en": "inglese",
+        "eng": "inglese",
+        "english": "inglese",
+        "es": "spagnolo",
+        "spa": "spagnolo",
+        "spanish": "spagnolo",
+    }
+    return names.get(language.lower(), language)

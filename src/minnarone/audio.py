@@ -43,6 +43,7 @@ from .store import PerceptionStore
 # sorgenti audio (video riprodotti, ospiti, ecc.) NON devono mai ricevere questa
 # etichetta: è il discrimine di EC02.
 STREAMER = "streamer"
+UNKNOWN_SPEAKER = "?"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,14 @@ class SpeakerTagger(Protocol):
         ...
 
 
+class UnknownSpeakerTagger:
+    """Minimal speaker tagger for the pre-diarization ASR slice."""
+
+    def tag(self, segment: SpeechSegment) -> str:
+        """Return an explicit unknown label until speaker clustering exists."""
+        return UNKNOWN_SPEAKER
+
+
 class AudioPerceiver(EventPerceiver):
     """Orchestra VAD -> ASR -> speaker tagging e scrive percezioni audio.
 
@@ -147,6 +156,11 @@ class AudioPerceiver(EventPerceiver):
         self._asr = asr
         self._tagger = speaker_tagger
 
+    @property
+    def speaker_diagnostics(self) -> object:
+        """Speaker tagger/clusterer diagnostics boundary for observability."""
+        return self._tagger
+
     def perceive_chunk(self, chunk: AudioChunk) -> list[Perception]:
         """Processa un chunk audio e scrive le percezioni risultanti.
 
@@ -169,7 +183,7 @@ class AudioPerceiver(EventPerceiver):
                 # ASR non ha ricavato nulla di utilizzabile (vuoto o soli
                 # spazi/whitespace): niente percezione.
                 continue
-            speaker = self._tagger.tag(segment)
+            speaker = self._tagger.tag(segment) or UNKNOWN_SPEAKER
             perception = Perception(
                 ts=segment.ts if segment.ts else time.time(),
                 source=Source.AUDIO,

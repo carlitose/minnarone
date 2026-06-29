@@ -9,7 +9,10 @@ description = "Framework per agenti percettivi multimodali real-time (percezione
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
-dependencies = ["pyyaml>=6"]
+dependencies = [
+    "pyyaml>=6",
+    "webrtcvad-wheels>=2.0.14",
+]
 
 [project.scripts]
 minnarone = "minnarone.cli:main"
@@ -23,6 +26,28 @@ dev = [
     "pytest>=8",
     "ruff>=0.15.19",
     "vulture>=2.16",
+]
+asr = ["faster-whisper>=1.1.0"]
+speaker = [
+    "sherpa-onnx>=1.12.40,<1.13",
+    "sherpa-onnx-core>=1.12.40,<1.13",
+]
+audio = [
+    "faster-whisper>=1.1.0",
+    "sherpa-onnx>=1.12.40,<1.13",
+    "sherpa-onnx-core>=1.12.40,<1.13",
+]
+video = [
+    "av>=13",
+    "numpy>=1.26",
+    "streamlink>=6",
+]
+vlm = [
+    "accelerate>=0.26",
+    "pillow>=10",
+    "torch>=2.5",
+    "torchvision>=0.20",
+    "transformers>=4.57",
 ]
 # Dashboard di osservabilità (TUI). Opzionale: il modello di snapshot
 # (minnarone.dashboard) funziona senza textual; solo la vista live lo richiede.
@@ -51,7 +76,8 @@ sort_by_size = true
 [tool.deptry]
 known_first_party = ["minnarone"]
 optional_dependencies_dev_groups = ["dev"]
-package_module_name_map = { textual = ["textual"] }
+package_module_name_map = { textual = ["textual"], "webrtcvad-wheels" = ["webrtcvad"], "faster-whisper" = ["faster_whisper"], "sherpa-onnx" = ["sherpa_onnx"], "sherpa-onnx-core" = ["sherpa_onnx"], pillow = ["PIL"] }
+per_rule_ignores = { DEP002 = ["accelerate", "sherpa-onnx", "sherpa-onnx-core", "torchvision"] }
 
 [tool.pylint.main]
 jobs = 0

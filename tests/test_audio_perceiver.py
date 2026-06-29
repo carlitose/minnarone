@@ -5,6 +5,7 @@ Le parti async usano `asyncio.run` per non dipendere da plugin pytest.
 """
 
 import asyncio
+import struct
 
 import pytest
 
@@ -20,6 +21,11 @@ from minnarone.capture import OSCaptureAdapter, make_device_capture_source
 from minnarone.fakes import FakeAsr, FakeSpeakerTagger, FakeVad
 from minnarone.perception import Source
 from minnarone.source import RawEvent
+from minnarone.speaker import (
+    EmbeddingSpeakerTagger,
+    OnlineSpeakerClusterer,
+    SpeakerClusteringConfig,
+)
 from minnarone.store import PerceptionStore
 
 
@@ -122,6 +128,79 @@ def test_empty_asr_text_produces_no_perception(tmp_path):
 
     assert created == []
     assert store.read_since(0.0) == []
+
+
+def test_asr_and_speaker_label_use_same_vad_utterance(tmp_path):
+    class RecordingAsr:
+        def __init__(self):
+            self.segments = []
+
+        def transcribe(self, segment):
+            self.segments.append(segment)
+            return "stessa utterance"
+
+    class RecordingEmbeddingBackend:
+        def __init__(self):
+            self.segments = []
+
+        def embed(self, segment):
+            self.segments.append(segment)
+            return (1.0, 0.0)
+
+    asr = RecordingAsr()
+    backend = RecordingEmbeddingBackend()
+    tagger = EmbeddingSpeakerTagger(
+        backend,
+        OnlineSpeakerClusterer(
+            SpeakerClusteringConfig(
+                threshold=0.8,
+                warmup_seconds=0.0,
+                min_update_seconds=0.0,
+            )
+        ),
+    )
+    perceiver, store = _perceiver(
+        tmp_path,
+        FakeVad(always_speech=True),
+        asr,
+        tagger,
+    )
+
+    created = perceiver.perceive_chunk(
+        AudioChunk(
+            samples=struct.pack("<h", 0) * 16_000,
+            sample_rate=16_000,
+            source_label="twitch",
+            ts=8.0,
+        )
+    )
+
+    assert len(created) == 1
+    assert created[0].text == "stessa utterance"
+    assert created[0].speaker == STREAMER
+    assert asr.segments == backend.segments
+    assert store.read_since(0.0)[0] == created[0]
+
+
+def test_none_speaker_label_is_written_as_unknown(tmp_path):
+    class NoneSpeakerTagger:
+        def tag(self, segment):
+            return None
+
+    perceiver, store = _perceiver(
+        tmp_path,
+        FakeVad(always_speech=True),
+        FakeAsr(text="chi parla"),
+        NoneSpeakerTagger(),
+    )
+
+    created = perceiver.perceive_chunk(
+        AudioChunk(samples="parlato", source_label="mic", ts=9.0)
+    )
+
+    assert len(created) == 1
+    assert created[0].speaker == "?"
+    assert store.read_since(0.0)[0].speaker == "?"
 
 
 def test_perceive_event_ignores_non_audio_channels(tmp_path):

@@ -1,0 +1,93 @@
+# Local Twitch commentator example.
+# Output is private/local console only: Minnarone does not send PRIVMSG lines to
+# Twitch and does not need a chat write/send scope.
+# Chat capture still needs read-only IRC credentials in environment if
+# `twitch.chat: true`:
+#   TWITCH_BOT_USERNAME
+#   TWITCH_OAUTH_TOKEN
+
+mode: private
+soul_path: soul.md
+facts_dir: facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: minnarone
+  quality: best
+  chat: true
+  # Enable after installing/configuring local audio models.
+  audio: false
+  # Enable after installing/configuring the local VLM model.
+  video: false
+  audio_chunk_seconds: 1.0
+  video_fps: 1.0
+
+commentator:
+  enabled: true
+  language: it
+  # More proactive than the public-chat default, but still bounded.
+  idle_interval: 30.0
+
+senser_interval: 0.5
+idle_interval: 150.0
+summarizer_interval: 30.0
+recent_chat_window: 20
+perception_queue_size: 32
+perception_shutdown_timeout: 5.0
+
+vad:
+  mode: 2
+  frame_ms: 30
+  padding_ms: 300
+  max_utterance_seconds: 30.0
+
+asr:
+  model: large-v3-turbo
+  device: auto
+  compute_type: default
+  language: null
+  beam_size: 5
+  condition_on_previous_text: false
+
+speaker_embedding:
+  model_path: null
+  provider: cpu
+  num_threads: 1
+  dimension: 192
+
+speaker_clustering:
+  threshold: 0.6
+  warmup_seconds: 60.0
+  min_update_seconds: 1.0
+
+video:
+  sample_every: 1
+  dedup_change_threshold: 0.0
+
+vlm:
+  model: null
+  device: auto
+  device_map: auto
+  torch_dtype: auto
+  attn_implementation: null
+  max_new_tokens: 48
+  timeout_seconds: 30.0
+  language: en
+  prompt: >-
+    Describe the visible Twitch stream scene in one concise English sentence.
+    Mention only observable gameplay, UI, people, and readable text.
+    Do not speculate.
+  max_caption_chars: 240
+
+llm_params:
+  thinking: low
+
+disclosure:
+  announce_ai: false
+
+retention:
+  perceptions_days: 7
+
+auto_memory: false

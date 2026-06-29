@@ -8,6 +8,7 @@ import pytest
 from minnarone.fakes import FakeSourceAdapter
 from minnarone.source import RawEvent
 from minnarone.twitch_chat import (
+    TwitchChatError,
     TwitchChatReader,
     capture_chat_smoke,
     normalize_twitch_oauth_token,
@@ -160,6 +161,35 @@ def test_reader_closes_stream_when_handshake_write_fails():
     async def run():
         with pytest.raises(OSError, match="write failed"):
             await reader.start()
+
+    asyncio.run(run())
+
+    assert stream.closed is True
+
+
+def test_reader_raises_clear_error_on_auth_notice():
+    stream = _FakeIRCStream(
+        [
+            ":tmi.twitch.tv NOTICE * :Improperly formatted auth\r\n",
+        ]
+    )
+
+    async def connect():
+        return stream
+
+    reader = TwitchChatReader(
+        channel="minnarone",
+        username="bot_user",
+        oauth_token="bad",
+        connect=connect,
+    )
+
+    async def run():
+        await reader.start()
+        with pytest.raises(TwitchChatError, match="Improperly formatted auth"):
+            async for _event in reader.events():
+                pass
+        await reader.stop()
 
     asyncio.run(run())
 

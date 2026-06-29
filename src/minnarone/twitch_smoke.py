@@ -15,11 +15,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from .audio import Vad
 from .source import SourceAdapter
 from .twitch_audio import ProcessRunner, TwitchAudioReader, pcm_chunk_size_bytes
 from .twitch_chat import TwitchChatReader, capture_chat_smoke
 from .twitch_smoke_artifacts import SmokeStats, capture_twitch_smoke
 from .twitch_video import TwitchVideoReader, validate_video_fps
+from .vad import StreamingVad, VadConfig, WebRtcVadDetector
 
 
 def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
@@ -70,6 +72,35 @@ def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
         type=int,
         default=3,
         help="numero massimo di sample .pcm da salvare",
+    )
+    parser.add_argument(
+        "--vad-diagnostic",
+        action="store_true",
+        help="segmenta l'audio con VAD e riporta conteggi/durate senza ASR",
+    )
+    parser.add_argument(
+        "--vad-mode",
+        type=int,
+        default=2,
+        help="aggressività WebRTC VAD: 0 meno aggressivo, 3 più aggressivo",
+    )
+    parser.add_argument(
+        "--vad-frame-ms",
+        type=int,
+        default=30,
+        help="durata frame VAD in ms: 10, 20 o 30",
+    )
+    parser.add_argument(
+        "--vad-padding-ms",
+        type=int,
+        default=300,
+        help="padding/hangover VAD in millisecondi",
+    )
+    parser.add_argument(
+        "--vad-max-utterance-seconds",
+        type=float,
+        default=30.0,
+        help="durata massima di un utterance VAD prima del flush",
     )
     parser.add_argument(
         "--video-fps",
@@ -177,16 +208,23 @@ async def run_twitch_smoke(
     quality: str = "audio_only",
     audio_chunk_seconds: float = 1.0,
     max_audio_samples: int = 3,
+    enable_vad_diagnostic: bool = False,
+    vad_mode: int = 2,
+    vad_frame_ms: int = 30,
+    vad_padding_ms: int = 300,
+    vad_max_utterance_seconds: float = 30.0,
     video_fps: float = 1.0,
     max_video_frames: int = 3,
     chat_adapter: SourceAdapter | None = None,
     audio_adapter: SourceAdapter | None = None,
     video_adapter: SourceAdapter | None = None,
+    vad: Vad | None = None,
     audio_process_runner: ProcessRunner | None = None,
     video_process_runner: ProcessRunner | None = None,
 ) -> SmokeStats:
     """Build enabled Twitch readers and write bounded smoke artifacts."""
     adapters: list[SourceAdapter] = []
+    vad_diagnostic = None
     if enable_chat:
         if username is None or oauth_token is None:
             raise ValueError("credenziali Twitch chat mancanti")
@@ -209,6 +247,15 @@ async def run_twitch_smoke(
                 process_runner=audio_process_runner,
             )
         )
+        if enable_vad_diagnostic:
+            vad_diagnostic = vad or _build_streaming_vad(
+                mode=vad_mode,
+                frame_ms=vad_frame_ms,
+                padding_ms=vad_padding_ms,
+                max_utterance_seconds=vad_max_utterance_seconds,
+            )
+    elif enable_vad_diagnostic:
+        raise ValueError("diagnostica VAD richiede audio abilitato")
     if enable_video:
         validate_video_fps(video_fps)
         adapters.append(
@@ -226,7 +273,24 @@ async def run_twitch_smoke(
         duration=duration,
         max_audio_samples=max_audio_samples,
         max_video_frames=max_video_frames,
+        vad=vad_diagnostic,
     )
+
+
+def _build_streaming_vad(
+    *,
+    mode: int,
+    frame_ms: int,
+    padding_ms: int,
+    max_utterance_seconds: float,
+) -> StreamingVad:
+    config = VadConfig(
+        mode=mode,
+        frame_ms=frame_ms,
+        padding_ms=padding_ms,
+        max_utterance_seconds=max_utterance_seconds,
+    )
+    return StreamingVad(config=config, detector=WebRtcVadDetector(config))
 
 
 async def run_twitch_chat_smoke(
@@ -279,12 +343,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.max_audio_samples < 0:
         print("--max-audio-samples deve essere >= 0", file=sys.stderr)
         return 2
+    if args.vad_mode not in {0, 1, 2, 3}:
+        print("--vad-mode deve essere 0, 1, 2 o 3", file=sys.stderr)
+        return 2
+    if args.vad_frame_ms not in {10, 20, 30}:
+        print("--vad-frame-ms deve essere 10, 20 o 30", file=sys.stderr)
+        return 2
+    if args.vad_padding_ms <= 0:
+        print("--vad-padding-ms deve essere > 0", file=sys.stderr)
+        return 2
+    if (
+        not math.isfinite(args.vad_max_utterance_seconds)
+        or args.vad_max_utterance_seconds <= 0
+    ):
+        print("--vad-max-utterance-seconds deve essere > 0", file=sys.stderr)
+        return 2
     if args.max_video_frames < 0:
         print("--max-video-frames deve essere >= 0", file=sys.stderr)
         return 2
 
     enable_chat = not args.no_chat
-    enable_audio = bool(args.audio)
+    enable_audio = bool(args.audio or args.vad_diagnostic)
     enable_video = bool(args.video)
     if not enable_chat and not enable_audio and not enable_video:
         print("abilita almeno chat, audio o video", file=sys.stderr)
@@ -312,6 +391,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 quality=args.quality,
                 audio_chunk_seconds=args.audio_chunk_seconds,
                 max_audio_samples=args.max_audio_samples,
+                enable_vad_diagnostic=args.vad_diagnostic,
+                vad_mode=args.vad_mode,
+                vad_frame_ms=args.vad_frame_ms,
+                vad_padding_ms=args.vad_padding_ms,
+                vad_max_utterance_seconds=args.vad_max_utterance_seconds,
                 video_fps=args.video_fps,
                 max_video_frames=args.max_video_frames,
             )
@@ -344,6 +428,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"chat={stats.chat_events}, "
         f"audio={stats.audio_events}, "
         f"audio_samples={stats.audio_samples_saved}, "
+        f"vad_utterances={stats.vad_utterances}, "
+        "vad_durations_ms="
+        f"{','.join(str(value) for value in stats.vad_utterance_durations_ms)}, "
         f"video={stats.video_events}, "
         f"video_frames={stats.video_frames_saved}, "
         f"stats={Path(args.output) / 'stats.json'}"

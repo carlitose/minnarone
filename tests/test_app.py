@@ -9,6 +9,7 @@ v2 (disclosure/retention/auto-memory) siano presenti ma inerti.
 import asyncio
 import json
 import textwrap
+from threading import Event
 
 import pytest
 
@@ -18,12 +19,17 @@ from minnarone.app import (
     PrivateNotImplementedRouter,
     build_agent,
 )
+from minnarone.audio import AudioChunk
 from minnarone.config import Config, ConfigError
 from minnarone.console import ConsoleOutputRouter
 from minnarone.output import OutputMode
 from minnarone.perception import Perception, Source
 from minnarone.reactor import Reactor
-from minnarone.source import RawEvent
+from minnarone.source import RawEvent, SourceAdapter
+from minnarone.twitch_stream import TwitchStreamAdapter, TwitchStreamRuntimeError
+from minnarone.twitch_video import DecodedVideoFrame
+from minnarone.video import VideoFrame
+from minnarone.vlm import QwenVlCaptionError
 
 
 def _fake_transport(*, url, headers, body, timeout):
@@ -36,7 +42,14 @@ def _fake_transport(*, url, headers, body, timeout):
 
 
 def _write_workspace(
-    tmp_path, *, mode="public", announce_ai=False, auto_memory=True, extra=""
+    tmp_path,
+    *,
+    mode="public",
+    adapter="os_capture",
+    announce_ai=False,
+    auto_memory=True,
+    twitch_block="",
+    extra="",
 ):
     """Crea soul/facts su disco e un config YAML; ritorna il path del config."""
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -53,9 +66,10 @@ def _write_workspace(
         mode: {mode}
         soul_path: {soul}
         facts_dir: {facts_dir}
-        adapter: os_capture
+        adapter: {adapter}
         llm_provider: grok
         agent_name: minnarone
+        {twitch_block}
         disclosure:
           announce_ai: {announce_ai}
         retention:
@@ -70,6 +84,8 @@ def _write_workspace(
             mode=mode,
             soul=soul,
             facts_dir=facts_dir,
+            adapter=adapter,
+            twitch_block=twitch_block,
             announce_ai=str(announce_ai).lower(),
             auto_memory=str(auto_memory).lower(),
             extra=extra,
@@ -77,6 +93,54 @@ def _write_workspace(
         encoding="utf-8",
     )
     return cfg
+
+
+class _FakeVideoStream:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeVideoStreamOpener:
+    def __init__(self, stream: _FakeVideoStream) -> None:
+        self._stream = stream
+        self.calls = []
+
+    def open(self, *, channel: str, quality: str):
+        self.calls.append({"channel": channel, "quality": quality})
+        return self._stream
+
+
+class _FakeVideoFrameDecoder:
+    def __init__(self, frames: list[DecodedVideoFrame]) -> None:
+        self._frames = list(frames)
+
+    def decode(self, stream):
+        yield from self._frames
+
+
+class _CollectingVideoPerceiver:
+    def __init__(self) -> None:
+        self.payloads = []
+
+    def perceive_event(self, event: RawEvent) -> None:
+        self.payloads.append(event.payload)
+
+
+class _FakeCaptioner:
+    def __init__(self) -> None:
+        self.frames: list[VideoFrame] = []
+
+    def caption(self, frame: VideoFrame) -> str:
+        self.frames.append(frame)
+        return "A game menu is visible on the stream."
+
+
+class _FailingCaptioner:
+    def caption(self, _frame: VideoFrame) -> str:
+        raise QwenVlCaptionError("vlm exploded")
 
 
 # --- 1. build_agent compone un agente eseguibile ---------------------------
@@ -123,6 +187,665 @@ def test_build_agent_loads_soul_and_facts_from_config(tmp_path):
     assert "Canale Twitch di test." in prefix
 
 
+def test_build_agent_constructs_twitch_chat_adapter_from_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+        )
+    )
+
+    agent = build_agent(cfg, transport=_fake_transport)
+
+    assert agent.adapter is not None
+    assert isinstance(agent.adapter, TwitchStreamAdapter)
+    assert agent.adapter.channels() == {"chat"}
+    assert set(agent.perceivers) == {"chat"}
+
+
+def test_twitch_chat_runtime_requires_clear_credentials(tmp_path, monkeypatch):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+        )
+    )
+
+    with pytest.raises(ConfigError, match="TWITCH_BOT_USERNAME.*TWITCH_OAUTH_TOKEN"):
+        build_agent(cfg, transport=_fake_transport)
+
+
+def test_twitch_chat_runtime_reacts_to_console_without_sending_chat(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+
+    class FakeIRCStream:
+        def __init__(self):
+            self.writes: list[str] = []
+            self.closed = False
+            self._incoming = [
+                (
+                    "@display-name=Viewer "
+                    ":viewer!viewer@viewer.tmi.twitch.tv "
+                    "PRIVMSG #minnarone :ehi minnarone ci sei?\r\n"
+                ),
+                "",
+            ]
+
+        async def readline(self):
+            return self._incoming.pop(0)
+
+        async def write(self, line):
+            self.writes.append(line)
+
+        async def close(self):
+            self.closed = True
+
+    stream = FakeIRCStream()
+
+    async def connect():
+        return stream
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        twitch_chat_connect=connect,
+    )
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    tail = agent.store.tail(10)
+    assert any(
+        p.source is Source.CHAT
+        and p.text == "ehi minnarone ci sei?"
+        and p.speaker == "Viewer"
+        for p in tail
+    )
+    assert "[PUBLIC] ciao" in capsys.readouterr().out
+    assert stream.closed is True
+    assert not any(line.startswith("PRIVMSG ") for line in stream.writes)
+
+
+def test_twitch_runtime_rejects_audio_until_backends_are_cabled(tmp_path, monkeypatch):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+
+    audio_cfg = Config.load(
+        _write_workspace(
+            tmp_path / "audio",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: false
+                  audio: true
+                  video: false
+                """
+            ),
+        )
+    )
+    with pytest.raises(ConfigError, match="twitch.audio"):
+        build_agent(
+            audio_cfg,
+            transport=_fake_transport,
+            asr_model_factory=lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("no local model")
+            ),
+        )
+
+
+def test_twitch_audio_runtime_writes_clustered_speaker_speech_perception(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    class PrefixDetector:
+        def is_speech(self, frame: bytes, sample_rate: int) -> bool:
+            return frame.startswith(b"S")
+
+    class FakeWhisperModel:
+        def transcribe(self, audio, **kwargs):
+            return iter([type("Segment", (), {"text": " ciao stream "})()]), object()
+
+    constructed = {}
+
+    def model_factory(name: str, *, device: str, compute_type: str):
+        constructed.update(
+            {"name": name, "device": device, "compute_type": compute_type}
+        )
+        return FakeWhisperModel()
+
+    speaker_model_path = tmp_path / "speaker.onnx"
+    speaker_model_path.write_bytes(b"fake")
+    speaker_constructed = {}
+
+    class FakeSpeakerEmbeddingBackend:
+        def __init__(self):
+            self.calls = []
+
+        def embed(self, segment):
+            self.calls.append(segment)
+            return (1.0, 0.0)
+
+    speaker_backend = FakeSpeakerEmbeddingBackend()
+
+    def speaker_embedding_factory(config):
+        speaker_constructed.update(
+            {
+                "model_path": config.model_path,
+                "provider": config.provider,
+                "num_threads": config.num_threads,
+                "dimension": config.dimension,
+            }
+        )
+        return speaker_backend
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: false
+                  audio: true
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                f"""
+                vad:
+                  padding_ms: 30
+                asr:
+                  device: cpu
+                  compute_type: int8
+                  language: it
+                speaker_embedding:
+                  model_path: {speaker_model_path}
+                  provider: cpu
+                  num_threads: 2
+                  dimension: 2
+                speaker_clustering:
+                  threshold: 0.8
+                  warmup_seconds: 0
+                  min_update_seconds: 0
+                """
+            ),
+        )
+    )
+    frame_bytes = cfg.vad.frame_bytes
+    adapter = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="audio",
+                payload=AudioChunk(
+                    samples=(b"S" * frame_bytes) + (b"_" * frame_bytes),
+                    sample_rate=16_000,
+                    source_label="twitch",
+                    ts=10.0,
+                ),
+                ts=10.0,
+            )
+        ],
+        channels={"audio"},
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+        vad_detector=PrefixDetector(),
+        asr_model_factory=model_factory,
+        speaker_embedding_factory=speaker_embedding_factory,
+    )
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    tail = agent.store.tail(10)
+    assert len(tail) == 1
+    perception = tail[0]
+    assert perception.source is Source.AUDIO
+    assert perception.type == "speech"
+    assert perception.text == "ciao stream"
+    assert perception.speaker == "streamer"
+    assert perception.ts == 10.0
+    assert constructed == {
+        "name": "large-v3-turbo",
+        "device": "cpu",
+        "compute_type": "int8",
+    }
+    assert speaker_constructed == {
+        "model_path": speaker_model_path,
+        "provider": "cpu",
+        "num_threads": 2,
+        "dimension": 2,
+    }
+    assert len(speaker_backend.calls) == 1
+    diagnostics = agent.observability_snapshot()
+    assert diagnostics.audio_transcriptions[0].speaker == "streamer"
+    assert diagnostics.speaker.total_utterances == 1
+    assert diagnostics.speaker.clustered_utterances == 1
+
+
+def test_twitch_audio_runtime_builds_real_adapter_without_injected_adapter(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+
+    class FakeWhisperModel:
+        def transcribe(self, audio, **kwargs):
+            return iter([]), object()
+
+    class FakeSpeakerEmbeddingBackend:
+        def embed(self, segment):
+            return (1.0, 0.0)
+
+    class SilentDetector:
+        def is_speech(self, frame: bytes, sample_rate: int) -> bool:
+            return False
+
+    speaker_model_path = tmp_path / "speaker.onnx"
+    speaker_model_path.write_bytes(b"fake")
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: false
+                  audio: true
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                f"""
+                speaker_embedding:
+                  model_path: {speaker_model_path}
+                  dimension: 2
+                speaker_clustering:
+                  warmup_seconds: 0
+                  min_update_seconds: 0
+                """
+            ),
+        )
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        vad_detector=SilentDetector(),
+        asr_model_factory=lambda *args, **kwargs: FakeWhisperModel(),
+        speaker_embedding_factory=lambda config: FakeSpeakerEmbeddingBackend(),
+    )
+
+    assert isinstance(agent.adapter, TwitchStreamAdapter)
+    assert agent.adapter.channels() == {"audio"}
+    assert set(agent.perceivers) == {"chat", "audio"}
+    assert agent.perception_queue is not None
+    assert set(agent.perception_queue_stats().channels) == {"audio"}
+
+
+def test_twitch_video_runtime_builds_pyav_adapter_and_bounded_queue(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    stream = _FakeVideoStream()
+    opener = _FakeVideoStreamOpener(stream)
+    decoder = _FakeVideoFrameDecoder(
+        [DecodedVideoFrame(pixels="video-frame", time_seconds=0.0)]
+    )
+    video_perceiver = _CollectingVideoPerceiver()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  quality: 720p
+                  chat: false
+                  audio: false
+                  video: true
+                  video_fps: 10.0
+                """
+            ),
+            extra="perception_queue_size: 1\n",
+        )
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        video_perceiver=video_perceiver,  # type: ignore[arg-type]
+        video_stream_opener=opener,
+        video_frame_decoder=decoder,
+    )
+
+    assert isinstance(agent.adapter, TwitchStreamAdapter)
+    assert agent.adapter.channels() == {"video"}
+    assert agent.perception_queue is not None
+    assert set(agent.perception_queue_stats().channels) == {"video"}
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    assert opener.calls == [{"channel": "minnarone", "quality": "720p"}]
+    assert stream.closed is True
+    assert [payload.pixels for payload in video_perceiver.payloads] == ["video-frame"]
+    assert agent.perception_queue_stats().channels["video"].processed == 1
+
+
+def test_twitch_video_runtime_builds_default_qwen_captioner_when_enabled(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    stream = _FakeVideoStream()
+    opener = _FakeVideoStreamOpener(stream)
+    decoder = _FakeVideoFrameDecoder(
+        [DecodedVideoFrame(pixels="video-frame", time_seconds=0.0)]
+    )
+    captioner = _FakeCaptioner()
+    constructed = []
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  quality: best
+                  chat: false
+                  audio: false
+                  video: true
+                  video_fps: 1.0
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                vlm:
+                  model: /models/qwen2-vl
+                  device: cpu
+                """
+            ),
+        )
+    )
+
+    def captioner_factory(config):
+        constructed.append(config)
+        return captioner
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        qwen_captioner_factory=captioner_factory,
+        video_stream_opener=opener,
+        video_frame_decoder=decoder,
+    )
+
+    assert isinstance(agent.adapter, TwitchStreamAdapter)
+    assert agent.adapter.channels() == {"video"}
+    assert agent.perception_queue is not None
+    assert set(agent.perception_queue_stats().channels) == {"video"}
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    tail = agent.store.tail(10)
+    assert len(tail) == 1
+    assert tail[0].source is Source.VIDEO
+    assert tail[0].type == "caption"
+    assert tail[0].text == "A game menu is visible on the stream."
+    assert tail[0].ts > 0
+    assert [frame.pixels for frame in captioner.frames] == ["video-frame"]
+    assert constructed == [cfg.vlm]
+    assert agent.perception_queue_stats().channels["video"].processed == 1
+    diagnostics = agent.observability_snapshot()
+    assert diagnostics.video.frames_seen == 1
+    assert diagnostics.video.captioned == 1
+    assert diagnostics.queue["video"].processed == 1
+    assert diagnostics.adapter["video"].produced == 1
+    assert diagnostics.video_captions[0].text == "A game menu is visible on the stream."
+
+
+def test_twitch_video_caption_failures_are_recorded_without_killing_chat(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: true
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                vlm:
+                  model: /models/qwen2-vl
+                """
+            ),
+        )
+    )
+    adapter = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="chat",
+                payload={"speaker": "Viewer", "text": "ciao chat"},
+                ts=1.0,
+            ),
+            RawEvent(
+                channel="video",
+                payload=VideoFrame(pixels="frame", source_label="stream", ts=2.0),
+                ts=2.0,
+            ),
+        ],
+        channels={"chat", "video"},
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+        qwen_captioner_factory=lambda _config: _FailingCaptioner(),
+    )
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    tail = agent.store.tail(10)
+    assert [(p.source, p.type, p.text) for p in tail] == [
+        (Source.CHAT, "msg", "ciao chat")
+    ]
+    stats = agent.perception_queue_stats().channels["video"]
+    assert stats.failed == 1
+    assert stats.processed == 0
+    assert stats.last_error == "vlm exploded"
+
+
+def test_twitch_video_caption_setup_failure_is_recorded_without_killing_chat(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: true
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                vlm:
+                  model: /models/qwen2-vl
+                """
+            ),
+        )
+    )
+    adapter = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="chat",
+                payload={"speaker": "Viewer", "text": "ciao chat"},
+                ts=1.0,
+            ),
+            RawEvent(
+                channel="video",
+                payload=VideoFrame(pixels="frame", source_label="stream", ts=2.0),
+                ts=2.0,
+            ),
+        ],
+        channels={"chat", "video"},
+    )
+
+    def broken_factory(_config):
+        raise QwenVlCaptionError("vlm setup exploded")
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+        qwen_captioner_factory=broken_factory,
+    )
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    tail = agent.store.tail(10)
+    assert [(p.source, p.type, p.text) for p in tail] == [
+        (Source.CHAT, "msg", "ciao chat")
+    ]
+    stats = agent.perception_queue_stats().channels["video"]
+    assert stats.failed == 1
+    assert stats.last_error == "vlm setup exploded"
+
+
+def test_twitch_chat_runtime_fails_clearly_on_auth_notice(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:bad")
+
+    class NoticeIRCStream:
+        def __init__(self):
+            self.closed = False
+            self._incoming = [
+                ":tmi.twitch.tv NOTICE * :Login authentication failed\r\n",
+                "",
+            ]
+
+        async def readline(self):
+            return self._incoming.pop(0)
+
+        async def write(self, _line):
+            return None
+
+        async def close(self):
+            self.closed = True
+
+    stream = NoticeIRCStream()
+
+    async def connect():
+        return stream
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        twitch_chat_connect=connect,
+    )
+
+    with pytest.raises(TwitchStreamRuntimeError, match="Login authentication failed"):
+        asyncio.run(agent.run())
+    assert stream.closed is True
+
+
 # --- 2. config invalido -> errore chiaro -----------------------------------
 
 
@@ -150,6 +873,88 @@ def test_private_mode_builds_without_crashing(tmp_path):
     agent = build_agent(cfg, transport=_fake_transport)
     assert agent.mode is OutputMode.PRIVATE
     assert isinstance(agent.router, PrivateNotImplementedRouter)
+
+
+def test_commentator_mode_routes_private_output_to_console_and_changes_prompt(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter, FakeSourceAdapter
+    from minnarone.openrouter import HttpResponse
+
+    prompts = []
+
+    def capture_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        payload = json.loads(body.decode("utf-8"))
+        prompts.append(payload["messages"][0]["content"])
+        return HttpResponse(
+            status=200,
+            body=b'{"choices":[{"message":{"content":"Commento privato per l\'operatore."}}]}',
+        )
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                idle_interval: 999
+                commentator:
+                  enabled: true
+                  language: it
+                  idle_interval: 0.01
+                """
+            ),
+        )
+    )
+    adapter = FakeSourceAdapter([], channels=set())
+    agent = build_agent(
+        cfg,
+        transport=capture_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+        router=router,
+    )
+    console_agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p-console.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+    )
+    assert isinstance(console_agent.router, ConsoleOutputRouter)
+
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="minnarone, sta entrando nel boss finale",
+            speaker="streamer",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert router.sent == [("Commento privato per l'operatore.", OutputMode.PRIVATE)]
+    assert "commentatore locale" in prompts[0]
+    assert "italiano" in prompts[0].lower()
+    assert "NON inviare messaggi pubblici Twitch" in prompts[0]
+    assert agent.senser.idle_interval == 0.01
 
 
 def test_private_router_signals_not_implemented_on_route(tmp_path):
@@ -469,6 +1274,100 @@ def test_run_pumps_chat_perception_end_to_end(tmp_path, monkeypatch):
     assert any(p.text == "ehi minnarone come va?" for p in tail)
     # E il Reactor ha reagito instradando la risposta del (fake) LLM in PUBLIC.
     assert ("ciao", OutputMode.PUBLIC) in capture.sent
+
+
+def test_run_queues_slow_media_without_dropping_chat(tmp_path, monkeypatch):
+    """Slow model-backed media work is bounded while chat stays direct."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    class YieldingAdapter(SourceAdapter):
+        def __init__(self, events: list[RawEvent]) -> None:
+            self._events = events
+            self.stopped = False
+
+        def channels(self) -> set[str]:
+            return {event.channel for event in self._events}
+
+        async def start(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+        async def events(self):
+            for event in self._events:
+                yield event
+                await asyncio.sleep(0)
+
+    class SlowAudioProcessor:
+        def __init__(self) -> None:
+            self.started = Event()
+            self.release = Event()
+            self.seen: list[str] = []
+
+        async def perceive_event(self, event: RawEvent) -> None:
+            self.seen.append(str(event.payload))
+            self.started.set()
+            while not self.release.is_set():
+                await asyncio.sleep(0.001)
+
+    audio = SlowAudioProcessor()
+    adapter = YieldingAdapter(
+        [
+            RawEvent(channel="audio", payload="a1", ts=1.0),
+            RawEvent(channel="audio", payload="a2", ts=2.0),
+            RawEvent(channel="audio", payload="a3", ts=3.0),
+            RawEvent(
+                channel="chat",
+                payload={"text": "ciao chat", "speaker": "viewer"},
+                ts=4.0,
+            ),
+        ]
+    )
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra=(
+                "summarizer_interval: 0.01\n"
+                "senser_interval: 0.01\n"
+                "perception_queue_size: 1\n"
+                "perception_shutdown_timeout: 1.0\n"
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+        audio_perceiver=audio,
+    )
+
+    async def drive() -> None:
+        task = asyncio.create_task(agent.run())
+        assert await asyncio.to_thread(audio.started.wait, timeout=1.0)
+        for _ in range(200):
+            if any(p.text == "ciao chat" for p in agent.store.tail(10)):
+                break
+            await asyncio.sleep(0.01)
+
+        assert any(p.text == "ciao chat" for p in agent.store.tail(10))
+        stats = agent.perception_queue_stats().channels["audio"]
+        assert stats.queued == 2
+        assert stats.dropped == 1
+        assert stats.processed == 0
+
+        audio.release.set()
+        await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(drive())
+
+    stats = agent.perception_queue_stats().channels["audio"]
+    assert audio.seen == ["a1", "a2"]
+    assert stats.processed == 2
+    assert stats.dropped == 1
+    assert adapter.stopped is True
 
 
 def test_run_without_adapter_stops_cleanly_on_reactor_stop(tmp_path, monkeypatch):

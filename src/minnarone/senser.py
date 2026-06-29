@@ -150,6 +150,11 @@ class Senser:
         """
         return self._clock()
 
+    @property
+    def idle_interval(self) -> float:
+        """Intervallo idle effettivo usato per i commenti proattivi."""
+        return self._idle_interval
+
     def note_agent_message(self, ts: float) -> None:
         """Informa il Senser che l'agente ha appena inviato un messaggio.
 
@@ -169,6 +174,19 @@ class Senser:
         """Snapshot delle finestre attualmente aperte (interlocutore -> finestra)."""
         self._expire_windows(self._clock())
         return dict(self._windows)
+
+    def window_snapshot(self) -> dict[str, ConversationWindow]:
+        """Snapshot non-mutante delle finestre non scadute.
+
+        A differenza di `open_windows()`, non elimina le finestre scadute dallo
+        stato vivo. Serve a dashboard/debug output, che devono restare read-only.
+        """
+        now = self._clock()
+        return {
+            who: window
+            for who, window in self._windows.items()
+            if (now - window.last_seen) <= self._window_ttl
+        }
 
     def recent_triggers(self, n: int | None = None) -> list[Trigger]:
         """Snapshot read-only degli ultimi trigger emessi (per la dashboard).

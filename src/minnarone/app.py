@@ -41,31 +41,52 @@ i modelli audio/video restano il passo manuale documentato nel README.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 
+from .asr import AsrModelSetupError, FasterWhisperAsr
 from .audio import AudioPerceiver
 from .chat import ChatPerceiver
-from .config import Config
+from .config import Config, ConfigError
 from .console import ConsoleOutputRouter
+from .dashboard import DashboardState, snapshot
 from .human import HumanLikeness
 from .llm import LLMProvider
 from .memory import FileMemory, Memory
 from .openrouter import Transport, build_provider
 from .output import OutputMode, OutputRouter
+from .perception_queue import (
+    BoundedLocalPerceptionQueue,
+    PerceptionQueueStats,
+)
 from .prompt import PromptBuilder
 from .reactor import Reactor
 from .senser import Senser
 from .source import RawEvent, SourceAdapter
+from .speaker import (
+    EmbeddingSpeakerTagger,
+    OnlineSpeakerClusterer,
+    SherpaOnnxSpeakerEmbeddingBackend,
+    SpeakerEmbeddingBackend,
+    SpeakerEmbeddingConfig,
+    SpeakerEmbeddingError,
+)
 from .store import PerceptionStore
 from .summarizer import Summarizer
-from .video import VideoPerceiver
+from .twitch_chat import ConnectIRC
+from .twitch_stream import TwitchStreamAdapter
+from .twitch_video import TwitchVideoStreamOpener, VideoFrameDecoder
+from .vad import StreamingVad, WebRtcVadDetector
+from .video import Captioner, VideoPerceiver
+from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
 # canale è cablare una entry, non un ramo nel core.
-PerceiveFn = Callable[[RawEvent], object]
+PerceiveFn = Callable[[RawEvent], object | Awaitable[object]]
 
 
 class PrivateModeNotImplemented(NotImplementedError):
@@ -127,6 +148,11 @@ class Agent:
     # "audio"/"video" compaiono solo se i loro backend sono iniettati.
     adapter: SourceAdapter | None = None
     perceivers: dict[str, PerceiveFn] = field(default_factory=dict)
+    # Audio/video passano da una queue bounded quando hanno backend iniettati;
+    # chat resta diretta per non essere penalizzata da ASR/VLM lenti.
+    perception_queue: BoundedLocalPerceptionQueue | None = None
+    speaker_diagnostics: object | None = None
+    video_diagnostics: object | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -144,6 +170,24 @@ class Agent:
             return None
         return perceive(event)
 
+    def perception_queue_stats(self) -> PerceptionQueueStats:
+        """Snapshot diagnostico della queue audio/video, se configurata."""
+        if self.perception_queue is None:
+            return PerceptionQueueStats(channels={})
+        return self.perception_queue.stats()
+
+    def observability_snapshot(self) -> DashboardState:
+        """Read-only local perception diagnostics for dashboard/debug output."""
+        return snapshot(
+            store=self.store,
+            senser=self.senser,
+            reactor=self.reactor,
+            perception_queue=self.perception_queue,
+            speaker_tagger=self.speaker_diagnostics,
+            video_perceiver=self.video_diagnostics,
+            adapter=self.adapter,
+        )
+
     async def _pump_perceptions(self) -> None:
         """Consuma lo stream dell'adapter, instradando ogni evento al canale.
 
@@ -154,12 +198,22 @@ class Agent:
         adapter = self.adapter
         if adapter is None:
             return
-        await adapter.start()
+        queue = self.perception_queue
+        if queue is not None:
+            await queue.start()
         try:
-            async for event in adapter.events():
-                self.dispatch(event)
+            await adapter.start()
+            try:
+                async for event in adapter.events():
+                    if queue is not None and queue.handles(event.channel):
+                        queue.submit(event)
+                    else:
+                        self.dispatch(event)
+            finally:
+                await adapter.stop()
         finally:
-            await adapter.stop()
+            if queue is not None:
+                await queue.stop()
 
     async def run(self) -> None:
         """Avvia, CONCORRENTEMENTE, reazione + summarizer + pompa di percezione.
@@ -214,9 +268,11 @@ class Agent:
             )
 
 
-def _build_router(mode: OutputMode) -> OutputRouter:
+def _build_router(mode: OutputMode, *, commentator: bool = False) -> OutputRouter:
     """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice)."""
     if mode is OutputMode.PUBLIC:
+        return ConsoleOutputRouter()
+    if commentator:
         return ConsoleOutputRouter()
     # private: accettata, ma il percorso di output segnala not-implemented.
     return PrivateNotImplementedRouter()
@@ -232,6 +288,156 @@ def _default_store_path(config: Config) -> Path:
     return Path(config.facts_dir).resolve().parent / "perceptions.jsonl"
 
 
+def _required_twitch_chat_credentials() -> tuple[str, str]:
+    missing = [
+        name
+        for name in ("TWITCH_BOT_USERNAME", "TWITCH_OAUTH_TOKEN")
+        if not os.environ.get(name)
+    ]
+    if missing:
+        raise ConfigError(
+            "credenziali Twitch chat mancanti: esporta " + ", ".join(missing)
+        )
+    return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
+
+
+def _configured_adapter(
+    config: Config,
+    *,
+    twitch_chat_connect: ConnectIRC | None = None,
+    audio_perceiver: AudioPerceiver | None = None,
+    video_perceiver: VideoPerceiver | None = None,
+    video_stream_opener: TwitchVideoStreamOpener | None = None,
+    video_frame_decoder: VideoFrameDecoder | None = None,
+) -> SourceAdapter | None:
+    """Costruisce l'adapter runtime dichiarato in config, se oggi operativo."""
+    if config.adapter != "twitch" or config.twitch is None:
+        return None
+    if config.twitch.audio and audio_perceiver is None:
+        raise ConfigError(
+            "twitch.audio richiede un backend audio locale non ancora cablato "
+            "nel runtime main: imposta twitch.audio: false per la path chat-only"
+        )
+    if config.twitch.video and video_perceiver is None:
+        raise ConfigError(
+            "twitch.video richiede un backend video locale non ancora cablato "
+            "nel runtime main: imposta twitch.video: false per la path chat-only"
+        )
+    username: str | None = None
+    oauth_token: str | None = None
+    if config.twitch.chat:
+        username, oauth_token = _required_twitch_chat_credentials()
+    return TwitchStreamAdapter(
+        channel=config.twitch.channel,
+        quality=config.twitch.quality,
+        chat=config.twitch.chat,
+        audio=config.twitch.audio,
+        video=config.twitch.video,
+        audio_chunk_seconds=config.twitch.audio_chunk_seconds,
+        video_fps=config.twitch.video_fps,
+        username=username,
+        oauth_token=oauth_token,
+        chat_connect=twitch_chat_connect,
+        video_stream_opener=video_stream_opener,
+        video_frame_decoder=video_frame_decoder,
+    )
+
+
+def _build_default_audio_perceiver(
+    config: Config,
+    store: PerceptionStore,
+    *,
+    asr_model_factory: Callable[..., object] | None = None,
+    vad_detector: object | None = None,
+    speaker_embedding_factory: Callable[
+        [SpeakerEmbeddingConfig], SpeakerEmbeddingBackend
+    ]
+    | None = None,
+) -> AudioPerceiver:
+    """Build the local Twitch audio path from VAD + ASR + speaker config."""
+    try:
+        detector = vad_detector or WebRtcVadDetector(config.vad)
+        vad = StreamingVad(config=config.vad, detector=detector)
+    except Exception as exc:  # noqa: BLE001 - wrap backend setup for operators.
+        raise ConfigError(f"twitch.audio VAD setup failed: {exc}") from exc
+    try:
+        asr = FasterWhisperAsr(config.asr, model_factory=asr_model_factory)
+    except AsrModelSetupError as exc:
+        raise ConfigError(f"twitch.audio ASR setup failed: {exc}") from exc
+    try:
+        if speaker_embedding_factory is None:
+            embedding_backend = SherpaOnnxSpeakerEmbeddingBackend(
+                config.speaker_embedding
+            )
+        else:
+            embedding_backend = speaker_embedding_factory(config.speaker_embedding)
+        speaker_tagger = EmbeddingSpeakerTagger(
+            embedding_backend,
+            OnlineSpeakerClusterer(config.speaker_clustering),
+        )
+    except SpeakerEmbeddingError as exc:
+        raise ConfigError(
+            f"twitch.audio speaker embedding setup failed: {exc}"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - wrap injected/backend setup failures.
+        raise ConfigError(
+            f"twitch.audio speaker embedding setup failed: {exc}"
+        ) from exc
+    return AudioPerceiver(store, vad, asr, speaker_tagger)
+
+
+class _LazyCaptioner:
+    """Construct the heavy VLM backend only when the first frame needs it."""
+
+    def __init__(self, factory: Callable[[], Captioner]) -> None:
+        self._factory = factory
+        self._captioner: Captioner | None = None
+        self._failure: QwenVlCaptionError | None = None
+        self._lock = Lock()
+
+    def caption(self, frame):
+        return self._get().caption(frame)
+
+    def _get(self) -> Captioner:
+        if self._captioner is not None:
+            return self._captioner
+        if self._failure is not None:
+            raise self._failure
+        with self._lock:
+            if self._captioner is not None:
+                return self._captioner
+            if self._failure is not None:
+                raise self._failure
+            try:
+                self._captioner = self._factory()
+            except QwenVlCaptionError as exc:
+                self._failure = exc
+                raise
+            except Exception as exc:  # noqa: BLE001 - preserve queue isolation.
+                self._failure = QwenVlCaptionError(
+                    f"local Qwen2-VL setup failed: {exc}"
+                )
+                raise self._failure from exc
+            return self._captioner
+
+
+def _build_default_video_perceiver(
+    config: Config,
+    store: PerceptionStore,
+    *,
+    qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
+) -> VideoPerceiver:
+    """Build the local Twitch video path from Qwen2-VL + video config."""
+    def build_captioner() -> Captioner:
+        return (
+            qwen_captioner_factory(config.vlm)
+            if qwen_captioner_factory is not None
+            else Qwen2VlCaptioner(config.vlm)
+        )
+
+    return VideoPerceiver(store, _LazyCaptioner(build_captioner), config=config.video)
+
+
 def build_agent(
     config: Config,
     *,
@@ -239,8 +445,19 @@ def build_agent(
     store_path: str | Path | None = None,
     router: OutputRouter | None = None,
     adapter: SourceAdapter | None = None,
+    twitch_chat_connect: ConnectIRC | None = None,
     audio_perceiver: AudioPerceiver | None = None,
     video_perceiver: VideoPerceiver | None = None,
+    perception_queue: BoundedLocalPerceptionQueue | None = None,
+    asr_model_factory: Callable[..., object] | None = None,
+    vad_detector: object | None = None,
+    speaker_embedding_factory: Callable[
+        [SpeakerEmbeddingConfig], SpeakerEmbeddingBackend
+    ]
+    | None = None,
+    qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
+    video_stream_opener: TwitchVideoStreamOpener | None = None,
+    video_frame_decoder: VideoFrameDecoder | None = None,
 ) -> Agent:
     """Compone e cabla TUTTI i moduli da una `Config`, restituendo un `Agent`.
 
@@ -250,11 +467,12 @@ def build_agent(
     l'OutputRouter selezionato dalla modalità (per i test che catturano l'output);
     se None si usa il router della modalità (`public`/`private`).
 
-    `adapter` è la `SourceAdapter` da cui la pompa di percezione legge i
-    `RawEvent`. È INIETTABILE perché il backend device reale (`os_capture`) è
-    differito (passo manuale live); nei test si passa un `FakeSourceAdapter`. Se
-    None, `Agent.run()` non pompa percezioni (gira solo il motore di reazione +
-    summarizer): è il percorso live documentato.
+    `adapter` è una `SourceAdapter` esplicita da cui la pompa di percezione legge
+    i `RawEvent`. Se non è passata e `config.adapter == "twitch"`, il runtime
+    costruisce il reader Twitch chat-only dalla config e dalle credenziali in
+    ambiente. Per `os_capture`, senza adapter esplicito, `Agent.run()` non pompa
+    percezioni (gira solo il motore di reazione + summarizer): la cattura device
+    resta il passo manuale documentato.
 
     Canali di percezione:
     - "chat" è SEMPRE cablato (nessun modello richiesto): `ChatPerceiver`.
@@ -278,7 +496,10 @@ def build_agent(
     blocks = memory.load()
     # announce_ai è l'UNICO punto v2 cablato (coerente): fluisce nello stance.
     prompt_builder = PromptBuilder(
-        blocks, announce_ai=config.disclosure.announce_ai
+        blocks,
+        announce_ai=config.disclosure.announce_ai,
+        commentator=config.commentator.enabled,
+        commentator_language=config.commentator.language,
     )
 
     llm = build_provider(config, transport=transport)
@@ -286,12 +507,48 @@ def build_agent(
     senser = Senser(
         store,
         agent_name=config.agent_name,
-        idle_interval=config.idle_interval,
+        idle_interval=(
+            config.commentator.idle_interval
+            if config.commentator.enabled
+            and config.commentator.idle_interval is not None
+            else config.idle_interval
+        ),
     )
 
     summarizer = Summarizer(llm=llm, store=store)
     human = HumanLikeness()
-    out_router = router if router is not None else _build_router(config.mode)
+    out_router = (
+        router
+        if router is not None
+        else _build_router(config.mode, commentator=config.commentator.enabled)
+    )
+
+    if (
+        config.adapter == "twitch"
+        and config.twitch is not None
+        and config.twitch.audio
+        and audio_perceiver is None
+    ):
+        audio_perceiver = _build_default_audio_perceiver(
+            config,
+            store,
+            asr_model_factory=asr_model_factory,
+            vad_detector=vad_detector,
+            speaker_embedding_factory=speaker_embedding_factory,
+        )
+    speaker_diagnostics = _speaker_diagnostics_from_audio_perceiver(audio_perceiver)
+
+    if (
+        config.adapter == "twitch"
+        and config.twitch is not None
+        and config.twitch.video
+        and video_perceiver is None
+    ):
+        video_perceiver = _build_default_video_perceiver(
+            config,
+            store,
+            qwen_captioner_factory=qwen_captioner_factory,
+        )
 
     reactor = Reactor(
         senser=senser,
@@ -317,6 +574,29 @@ def build_agent(
     if video_perceiver is not None:
         perceivers["video"] = video_perceiver.perceive_event
 
+    if perception_queue is None:
+        media_processors = {
+            channel: perceivers[channel]
+            for channel in ("audio", "video")
+            if channel in perceivers
+        }
+        if media_processors:
+            perception_queue = BoundedLocalPerceptionQueue(
+                media_processors,
+                capacity=config.perception_queue_size,
+                shutdown_timeout=config.perception_shutdown_timeout,
+            )
+
+    if adapter is None:
+        adapter = _configured_adapter(
+            config,
+            twitch_chat_connect=twitch_chat_connect,
+            audio_perceiver=audio_perceiver,
+            video_perceiver=video_perceiver,
+            video_stream_opener=video_stream_opener,
+            video_frame_decoder=video_frame_decoder,
+        )
+
     # NB: `config.retention` e `config.auto_memory` sono ACCETTATI ma INERTI:
     # non vengono cablati ad alcun comportamento nell'MVP (punti v2).
     return Agent(
@@ -332,4 +612,13 @@ def build_agent(
         reactor=reactor,
         adapter=adapter,
         perceivers=perceivers,
+        perception_queue=perception_queue,
+        speaker_diagnostics=speaker_diagnostics,
+        video_diagnostics=video_perceiver,
     )
+
+
+def _speaker_diagnostics_from_audio_perceiver(audio_perceiver: object | None) -> object | None:
+    if audio_perceiver is None:
+        return None
+    return getattr(audio_perceiver, "speaker_diagnostics", None)

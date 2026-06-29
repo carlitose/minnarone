@@ -5,7 +5,13 @@ import asyncio
 import pytest
 
 from minnarone.source import RawEvent, SourceAdapter
-from minnarone.twitch_stream import TwitchStreamAdapter, ordered_twitch_channels
+from minnarone.twitch_stream import (
+    TwitchStreamAdapter,
+    TwitchStreamRuntimeError,
+    ordered_twitch_channels,
+)
+from minnarone.twitch_video import DecodedVideoFrame
+from minnarone.video import VideoFrame
 
 
 class _FakeReader(SourceAdapter):
@@ -48,6 +54,56 @@ class _FakeReader(SourceAdapter):
 
 def _event(channel: str, text: str) -> RawEvent:
     return RawEvent(channel=channel, payload={"text": text}, ts=float(len(text)))
+
+
+class _FakeVideoStream:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeVideoStreamOpener:
+    def __init__(self, stream: _FakeVideoStream) -> None:
+        self._stream = stream
+        self.calls = []
+
+    def open(self, *, channel: str, quality: str):
+        self.calls.append({"channel": channel, "quality": quality})
+        return self._stream
+
+
+class _FakeVideoFrameDecoder:
+    def __init__(self, frames: list[DecodedVideoFrame]) -> None:
+        self._frames = list(frames)
+
+    def decode(self, stream):
+        yield from self._frames
+
+
+class _FailingVideoFrameDecoder:
+    def decode(self, stream):
+        yield from ()
+        raise RuntimeError("pyav decode failed")
+
+
+class _FakeIRCStream:
+    def __init__(self, incoming: list[str]) -> None:
+        self._incoming = list(incoming)
+        self.closed = False
+        self.writes = []
+
+    async def readline(self):
+        if not self._incoming:
+            return ""
+        return self._incoming.pop(0)
+
+    async def write(self, line):
+        self.writes.append(line)
+
+    async def close(self):
+        self.closed = True
 
 
 def test_channels_reflect_enabled_reader_set():
@@ -190,10 +246,96 @@ def test_reader_failure_is_recorded_while_other_reader_continues():
     assert stats.produced["chat"] == 1
 
 
+def test_unproductive_reader_failure_is_raised_after_stream_finishes():
+    adapter = TwitchStreamAdapter(
+        channel="minnarone",
+        readers={
+            "chat": _FakeReader(
+                "chat",
+                [_event("chat", "c")],
+                fail_after=0,
+            ),
+        },
+    )
+
+    async def run():
+        await adapter.start()
+        with pytest.raises(TwitchStreamRuntimeError, match="chat failed"):
+            async for _event in adapter.events():
+                pass
+
+    asyncio.run(run())
+
+
 def test_constructor_requires_credentials_only_when_chat_reader_is_built():
     TwitchStreamAdapter(channel="minnarone", chat=False, audio=True)
     with pytest.raises(ValueError, match="credenziali"):
         TwitchStreamAdapter(channel="minnarone", chat=True, audio=False)
+
+
+def test_video_runtime_reader_uses_pyav_boundaries():
+    stream = _FakeVideoStream()
+    opener = _FakeVideoStreamOpener(stream)
+    adapter = TwitchStreamAdapter(
+        channel="Minnarone",
+        quality="720p",
+        chat=False,
+        audio=False,
+        video=True,
+        video_fps=10.0,
+        video_stream_opener=opener,
+        video_frame_decoder=_FakeVideoFrameDecoder(
+            [DecodedVideoFrame(pixels="frame-a", time_seconds=0.0)]
+        ),
+    )
+
+    async def run():
+        await adapter.start()
+        return [event async for event in adapter.events()]
+
+    events = asyncio.run(run())
+
+    assert opener.calls == [{"channel": "minnarone", "quality": "720p"}]
+    assert stream.closed is True
+    assert [event.payload for event in events] == [
+        VideoFrame(pixels="frame-a", source_label="stream", ts=events[0].ts)
+    ]
+
+
+def test_pyav_video_failure_is_recorded_while_chat_continues():
+    stream = _FakeVideoStream()
+    irc = _FakeIRCStream(
+        [
+            ":viewer!viewer@viewer.tmi.twitch.tv PRIVMSG #minnarone :hello\r\n",
+        ]
+    )
+
+    async def connect():
+        return irc
+
+    adapter = TwitchStreamAdapter(
+        channel="minnarone",
+        username="bot_user",
+        oauth_token="oauth:token",
+        chat=True,
+        audio=False,
+        video=True,
+        chat_connect=connect,
+        video_stream_opener=_FakeVideoStreamOpener(stream),
+        video_frame_decoder=_FailingVideoFrameDecoder(),
+    )
+
+    async def run():
+        await adapter.start()
+        return [event async for event in adapter.events()]
+
+    events = asyncio.run(run())
+
+    assert [event.channel for event in events] == ["chat"]
+    assert events[0].payload["text"] == "hello"
+    assert irc.closed is True
+    assert stream.closed is True
+    assert "pyav decode failed" in adapter.stats().failures["video"]
 
 
 def test_injected_reader_must_match_mapping_channel():

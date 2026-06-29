@@ -18,7 +18,13 @@ from minnarone.fakes import FakeCaptioner
 from minnarone.perception import Source
 from minnarone.source import RawEvent
 from minnarone.store import PerceptionStore
-from minnarone.video import Captioner, VideoFrame, VideoPerceiver
+from minnarone.video import (
+    ByteFrameDeduper,
+    Captioner,
+    VideoFrame,
+    VideoPerceiver,
+    VideoPerceptionConfig,
+)
 
 
 def _perceiver(tmp_path, captioner, **kwargs):
@@ -72,7 +78,7 @@ def test_changed_frame_after_identical_run_produces_new_caption(tmp_path):
     perceiver.perceive_frame(VideoFrame(pixels="b", ts=3.0))  # nuovo
 
     assert captioner.calls == 2
-    texts = [p.text for p in store.read_since(0.0)]
+    texts = [p.text for p in store.read_since(-1.0)]
     assert texts == ["a", "b"]
 
 
@@ -88,8 +94,80 @@ def test_sampling_reduces_captioner_calls(tmp_path):
 
     # Campionati gli indici 0 e 3 -> 2 caption.
     assert captioner.calls == 2
-    texts = [p.text for p in store.read_since(0.0)]
+    texts = [p.text for p in store.read_since(-1.0)]
     assert texts == ["f0", "f3"]
+
+
+def test_configured_sample_every_reduces_captioner_calls(tmp_path):
+    captioner = FakeCaptioner()
+    perceiver, store = _perceiver(
+        tmp_path,
+        captioner,
+        config=VideoPerceptionConfig(sample_every=2),
+    )
+
+    for i in range(5):
+        perceiver.perceive_frame(VideoFrame(pixels=f"f{i}", ts=float(i)))
+
+    assert captioner.calls == 3
+    assert [p.text for p in store.read_since(-1.0)] == ["f0", "f2", "f4"]
+
+
+def test_video_perceiver_stats_track_sampling_dedup_and_failures(tmp_path):
+    class SometimesFailingCaptioner:
+        def caption(self, frame: VideoFrame) -> str:
+            if frame.pixels == "fail":
+                raise RuntimeError("vlm failed")
+            return str(frame.pixels)
+
+    perceiver, _store_obj = _perceiver(
+        tmp_path,
+        SometimesFailingCaptioner(),
+        sample_every=2,
+    )
+
+    perceiver.perceive_frame(VideoFrame(pixels="a", ts=1.0))  # captioned
+    perceiver.perceive_frame(VideoFrame(pixels="ignored", ts=2.0))  # sampled out
+    perceiver.perceive_frame(VideoFrame(pixels="a", ts=3.0))  # dedup skip
+    perceiver.perceive_frame(VideoFrame(pixels="skipped", ts=4.0))  # sampled out
+    with pytest.raises(RuntimeError, match="vlm failed"):
+        perceiver.perceive_frame(VideoFrame(pixels="fail", ts=5.0))
+
+    stats = perceiver.stats()
+    assert stats.frames_seen == 5
+    assert stats.sampled == 3
+    assert stats.dedup_skipped == 1
+    assert stats.captioned == 1
+    assert stats.failed == 1
+
+
+def test_dedup_threshold_skips_micro_changes_before_captioning(tmp_path):
+    captioner = FakeCaptioner()
+    perceiver, store = _perceiver(
+        tmp_path,
+        captioner,
+        dedup_change_threshold=0.2,
+    )
+
+    perceiver.perceive_frame(VideoFrame(pixels=b"\x00" * 10, ts=1.0))
+    perceiver.perceive_frame(VideoFrame(pixels=b"\x01" + (b"\x00" * 9), ts=2.0))
+    perceiver.perceive_frame(VideoFrame(pixels=b"\xff" * 10, ts=3.0))
+
+    assert captioner.calls == 2
+    assert [p.ts for p in store.read_since(0.0)] == [1.0, 3.0]
+
+
+def test_byte_frame_deduper_is_testable_without_captioner_or_pyav():
+    deduper = ByteFrameDeduper(change_threshold=0.5)
+    first = VideoFrame(pixels=b"\x00" * 4, ts=1.0)
+    tiny_change = VideoFrame(pixels=b"\x01" + (b"\x00" * 3), ts=2.0)
+    big_change = VideoFrame(pixels=b"\xff" * 4, ts=3.0)
+
+    assert deduper.should_caption(first) is True
+    deduper.remember(first)
+    assert deduper.should_caption(first) is False
+    assert deduper.should_caption(tiny_change) is False
+    assert deduper.should_caption(big_change) is True
 
 
 def test_empty_caption_produces_no_perception(tmp_path):
@@ -101,6 +179,55 @@ def test_empty_caption_produces_no_perception(tmp_path):
 
     assert created == []
     assert store.read_since(0.0) == []
+
+
+def test_empty_caption_still_updates_dedup_reference(tmp_path):
+    captioner = FakeCaptioner(text="   \n\t")
+    perceiver, store = _perceiver(tmp_path, captioner)
+
+    perceiver.perceive_frame(VideoFrame(pixels="static", ts=1.0))
+    perceiver.perceive_frame(VideoFrame(pixels="static", ts=2.0))
+
+    assert captioner.calls == 1
+    assert store.read_since(0.0) == []
+
+
+def test_caption_failure_still_updates_dedup_reference(tmp_path):
+    class FailingCaptioner:
+        def __init__(self):
+            self.calls = 0
+
+        def caption(self, _frame: VideoFrame) -> str:
+            self.calls += 1
+            raise RuntimeError("vlm failed")
+
+    captioner = FailingCaptioner()
+    perceiver, store = _perceiver(tmp_path, captioner)
+
+    with pytest.raises(RuntimeError, match="vlm failed"):
+        perceiver.perceive_frame(VideoFrame(pixels="static", ts=1.0))
+
+    assert perceiver.perceive_frame(VideoFrame(pixels="static", ts=2.0)) == []
+    assert captioner.calls == 1
+    assert store.read_since(0.0) == []
+
+
+def test_zero_timestamp_is_preserved(tmp_path):
+    captioner = FakeCaptioner(text="zero")
+    perceiver, store = _perceiver(tmp_path, captioner)
+
+    created = perceiver.perceive_frame(VideoFrame(pixels="frame", ts=0.0))
+
+    assert len(created) == 1
+    assert created[0].ts == 0.0
+    assert store.read_since(-1.0)[0].ts == 0.0
+
+
+def test_dedup_threshold_rejects_one_point_zero():
+    with pytest.raises(ValueError, match="change_threshold"):
+        ByteFrameDeduper(change_threshold=1.0)
+    with pytest.raises(ValueError, match="dedup_change_threshold"):
+        VideoPerceptionConfig(dedup_change_threshold=1.0)
 
 
 def test_perceive_event_ignores_non_video_channels(tmp_path):

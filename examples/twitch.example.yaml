@@ -1,5 +1,5 @@
-# Future-facing Twitch config example.
-# Main CLI runtime wiring for adapter: twitch is intentionally not complete yet.
+# Chat-only Twitch runtime example.
+# Output stays on the console public router; this slice non invia messaggi Twitch.
 # Secrets stay in environment variables:
 #   TWITCH_BOT_USERNAME
 #   TWITCH_OAUTH_TOKEN
@@ -15,8 +15,14 @@ twitch:
   channel: minnarone
   quality: best
   chat: true
-  audio: true
-  video: true
+  # Set audio: true for local audio perception after:
+  #   uv sync --extra audio
+  # and after configuring speaker_embedding.model_path below.
+  audio: false
+  # Set video: true to enable Twitch video frame events. The top-level
+  # `video:` block below tunes perception sampling/dedup after frames arrive;
+  # `vlm.model` must point at a local Qwen2-VL-compatible model.
+  video: false
   audio_chunk_seconds: 1.0
   video_fps: 1.0
 
@@ -24,6 +30,64 @@ senser_interval: 0.5
 idle_interval: 150.0
 summarizer_interval: 30.0
 recent_chat_window: 15
+perception_queue_size: 32
+perception_shutdown_timeout: 5.0
+
+vad:
+  mode: 2
+  frame_ms: 30
+  padding_ms: 300
+  max_utterance_seconds: 30.0
+
+asr:
+  model: large-v3-turbo
+  device: auto
+  compute_type: default
+  language: null
+  beam_size: 5
+  condition_on_previous_text: false
+
+speaker_embedding:
+  # Point this at a local sherpa-onnx speaker embedding ONNX model
+  # (for example a CAM++ 192-dimensional model). No model is downloaded by
+  # Minnarone.
+  model_path: null
+  provider: cpu
+  num_threads: 1
+  dimension: 192
+
+speaker_clustering:
+  threshold: 0.6
+  warmup_seconds: 60.0
+  min_update_seconds: 1.0
+
+video:
+  sample_every: 1
+  dedup_change_threshold: 0.0
+
+vlm:
+  # Point this at a local Hugging Face Qwen2-VL-compatible model directory or
+  # model id after installing the optional VLM runtime:
+  #   uv sync --extra video --extra vlm
+  model: null
+  device: auto
+  device_map: auto
+  torch_dtype: auto
+  attn_implementation: null
+  max_new_tokens: 48
+  timeout_seconds: 30.0
+  language: en
+  prompt: >-
+    Describe the visible Twitch stream scene in one concise English sentence.
+    Mention only observable gameplay, UI, people, and readable text.
+    Do not speculate.
+  max_caption_chars: 240
+
+commentator:
+  # Default public-chat persona remains available when this is false.
+  enabled: false
+  language: it
+  idle_interval: null
 
 llm_params:
   thinking: low

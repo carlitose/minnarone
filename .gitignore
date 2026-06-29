@@ -22,6 +22,9 @@ dist/
 
 # Runtime data
 perceptions.jsonl
+.local/
+.smoke/
+.serena/
 
 # Agent worktrees
 .claude/worktrees/

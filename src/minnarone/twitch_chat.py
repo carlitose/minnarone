@@ -20,6 +20,16 @@ from .store import PerceptionStore
 
 _TWITCH_CHANNEL_RE = re.compile(r"^[a-z0-9_]{1,25}$")
 _IRC_CLOSE_TIMEOUT_SECONDS = 5.0
+_FATAL_NOTICE_FRAGMENTS = (
+    "authentication failed",
+    "improperly formatted auth",
+    "error logging in",
+    "invalid nick",
+)
+
+
+class TwitchChatError(RuntimeError):
+    """Errore runtime del reader IRC Twitch."""
 
 
 class TwitchIRCStream(Protocol):
@@ -132,6 +142,9 @@ class TwitchChatReader(SourceAdapter):
             if line.startswith("PING "):
                 await stream.write(f"PONG {line[5:].strip()}")
                 continue
+            fatal_notice = _fatal_notice_message(line)
+            if fatal_notice is not None:
+                raise TwitchChatError(f"Twitch IRC notice: {fatal_notice}")
             event = parse_twitch_chat_event(line, ts=self._clock())
             if event is not None:
                 yield event
@@ -229,6 +242,21 @@ def _parse_irc_tags(raw_tags: str) -> dict[str, str]:
         if key:
             tags[key] = _unescape_irc_tag_value(value)
     return tags
+
+
+def _fatal_notice_message(line: str) -> str | None:
+    message = _parse_irc_message(line)
+    if (
+        message is None
+        or message.command.upper() != "NOTICE"
+        or message.trailing is None
+    ):
+        return None
+    text = message.trailing.strip()
+    lowered = text.lower()
+    if any(fragment in lowered for fragment in _FATAL_NOTICE_FRAGMENTS):
+        return text
+    return None
 
 
 def _speaker_from_tags(tags: dict[str, str]) -> str | None:
