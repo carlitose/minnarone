@@ -8,11 +8,13 @@ c'è (`importorskip`), così la suite resta verde anche offline.
 
 import asyncio
 import sys
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from minnarone.dashboard import DashboardState
 from minnarone.perception import Perception, Source
+from minnarone.prompt_observation import PromptObservation
 from minnarone.senser import ConversationWindow
 from minnarone.store import PerceptionStore
 
@@ -157,6 +159,142 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
     assert "video nel pannello" in updates["VIDEO"]
     assert "Minnarone osserva" in updates["MINNARONE"]
     assert "memoria fake" in updates["MEMORIA"]
+
+
+def test_view_has_separate_prompt_tab():
+    textual_widgets = pytest.importorskip("textual.widgets")
+    TabbedContent = textual_widgets.TabbedContent
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    app = build_dashboard_app(lambda: DashboardState())
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 30)):
+            tabbed = app.query_one("#main-tabs", TabbedContent)
+            assert tabbed.active == "dashboard-tab"
+            assert app.query_one("#dashboard-grid") is not None
+            assert app.query_one("#prompt-view") is not None
+
+    asyncio.run(exercise_app())
+
+
+def test_prompt_tab_renders_latest_prompt_and_metadata():
+    textual_widgets = pytest.importorskip("textual.widgets")
+    TabbedContent = textual_widgets.TabbedContent
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    prompt = (
+        "## IDENTITA\n"
+        "Sono Minnarone.\n"
+        "\n"
+        "## FATTI\n"
+        "- token=[redacted-secret]\n"
+        "\n"
+        "## SITUAZIONE\n"
+        "Reagisci a questo messaggio."
+    )
+    state = DashboardState(
+        latest_prompt=PromptObservation(
+            prompt=prompt,
+            model="openrouter/fake-model",
+            status="success",
+            started_at=started,
+            completed_at=started + timedelta(milliseconds=42),
+            context="reactor:mention",
+            token_metadata={"prompt_tokens": 123, "completion_tokens": 7},
+            cache_metadata={"cached_tokens": 80, "cache_write_tokens": 20},
+            cost=0.0007,
+        )
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(120, 40)):
+            app.query_one("#main-tabs", TabbedContent).active = "prompt-tab"
+            content = app.query_one("#prompt-content")
+            return str(content.content)
+
+    rendered = asyncio.run(exercise_app())
+
+    assert "trigger=reactor:mention" in rendered
+    assert "status=success" in rendered
+    assert "model=openrouter/fake-model" in rendered
+    assert "prompt_tokens=123" in rendered
+    assert "completion_tokens=7" in rendered
+    assert "cached_tokens=80" in rendered
+    assert "cache_write_tokens=20" in rendered
+    assert "cost=0.0007" in rendered
+    assert rendered.endswith(prompt)
+    assert "token=[redacted-secret]" in rendered
+
+
+def test_prompt_tab_adds_no_runtime_mutating_controls():
+    textual_widgets = pytest.importorskip("textual.widgets")
+    Button = textual_widgets.Button
+    Input = textual_widgets.Input
+    Select = textual_widgets.Select
+    Switch = textual_widgets.Switch
+    TabbedContent = textual_widgets.TabbedContent
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    app = build_dashboard_app(lambda: DashboardState())
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 30)):
+            app.query_one("#main-tabs", TabbedContent).active = "prompt-tab"
+            prompt_view = app.query_one("#prompt-view")
+            assert list(prompt_view.query(Button)) == []
+            assert list(prompt_view.query(Input)) == []
+            assert list(prompt_view.query(Select)) == []
+            assert list(prompt_view.query(Switch)) == []
+
+    asyncio.run(exercise_app())
+
+
+def test_prompt_tab_css_preserves_line_boundaries_with_horizontal_scroll():
+    from minnarone import dashboard_tui
+
+    assert "#prompt-view" in dashboard_tui._DASHBOARD_CSS
+    assert "overflow-x: auto;" in dashboard_tui._DASHBOARD_CSS
+    assert "#prompt-content" in dashboard_tui._DASHBOARD_CSS
+    assert "width: auto;" in dashboard_tui._DASHBOARD_CSS
+    assert "text-wrap: nowrap;" in dashboard_tui._DASHBOARD_CSS
+
+
+def test_prompt_tab_long_lines_are_horizontally_scrollable():
+    textual_widgets = pytest.importorskip("textual.widgets")
+    TabbedContent = textual_widgets.TabbedContent
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    state = DashboardState(
+        latest_prompt=PromptObservation(
+            prompt="A" * 300,
+            model="fake",
+            status="success",
+            started_at=started,
+            completed_at=started,
+        )
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.query_one("#main-tabs", TabbedContent).active = "prompt-tab"
+            await pilot.pause()
+            prompt_view = app.query_one("#prompt-view")
+            prompt_content = app.query_one("#prompt-content")
+
+            assert prompt_content.styles.text_wrap == "nowrap"
+            assert prompt_content.region.width > prompt_view.region.width
+            assert prompt_view.max_scroll_x > 0
+
+    asyncio.run(exercise_app())
 
 
 def test_view_renders_status_bar_from_snapshot():

@@ -52,7 +52,7 @@ from .dashboard_health import (
     technical_event_lines as _technical_event_lines,
 )
 from .perception import Perception, format_perception_line
-from .prompt_observation import PromptObservation
+from .prompt_observation import PromptObservation, sanitize_observation
 from .senser import ConversationWindow, Trigger
 
 # Quante percezioni recenti includere di default nello snapshot.
@@ -61,6 +61,9 @@ _DEFAULT_RECENT_PERCEPTIONS = 20
 # Quanti trigger e messaggi recenti includere di default.
 _DEFAULT_RECENT_TRIGGERS = 20
 _DEFAULT_RECENT_MESSAGES = 20
+_PROMPT_TOKEN_METADATA_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
+_PROMPT_CACHE_REQUIRED_METADATA_KEYS = ("cached_tokens", "cache_write_tokens")
+_PROMPT_CACHE_OPTIONAL_METADATA_KEYS = ("cache_read_tokens",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +264,42 @@ class DashboardState:
         summary = self.memory_summary.strip()
         return summary if summary else "(nessuna memoria)"
 
+    def render_prompt_view(self) -> str:
+        """Render the latest redacted prompt observation for the TUI prompt tab."""
+        latest = self.latest_prompt
+        if latest is None:
+            return "(nessun prompt catturato)"
+        latest = sanitize_observation(latest)
+
+        lines = [
+            "== PROMPT ==",
+            (
+                f"trigger={latest.context or 'unknown'} "
+                f"status={latest.status or 'unknown'} "
+                f"model={latest.model or 'unknown'}"
+            ),
+        ]
+        lines.extend(
+            _format_schema_metadata(
+                "tokens",
+                latest.token_metadata,
+                required_keys=_PROMPT_TOKEN_METADATA_KEYS,
+            )
+        )
+        lines.extend(
+            _format_schema_metadata(
+                "cache",
+                latest.cache_metadata,
+                required_keys=_PROMPT_CACHE_REQUIRED_METADATA_KEYS,
+                optional_keys=_PROMPT_CACHE_OPTIONAL_METADATA_KEYS,
+            )
+        )
+        lines.append(f"cost={latest.cost}" if latest.cost is not None else "cost=unknown")
+        if latest.error:
+            lines.append(f"error={latest.error}")
+        lines.extend(["", "== BODY ==", latest.prompt])
+        return "\n".join(lines)
+
     def render_text(self) -> str:
         """Resa testuale dello snapshot, senza alcuna dipendenza da textual.
 
@@ -378,6 +417,46 @@ def _format_window(window: ConversationWindow) -> str:
         f"{window.interlocutor} aperta "
         f"da {window.opened_at:.3f}; ultimo={window.last_seen:.3f}"
     )
+
+
+def _format_schema_metadata(
+    label: str,
+    metadata: dict[str, object],
+    *,
+    required_keys: tuple[str, ...],
+    optional_keys: tuple[str, ...] = (),
+) -> list[str]:
+    canonical_keys = (*required_keys, *optional_keys)
+    lines = [
+        f"{label} "
+        + " ".join(
+            f"{key}={_canonical_metadata_value(metadata, key)}"
+            for key in required_keys
+        )
+    ]
+    optional_parts = [
+        f"{key}={_canonical_metadata_value(metadata, key)}"
+        for key in optional_keys
+        if key in metadata
+    ]
+    if optional_parts:
+        lines[0] = f"{lines[0]} {' '.join(optional_parts)}"
+
+    extra_parts = [
+        f"{key}={value}"
+        for key, value in metadata.items()
+        if key not in canonical_keys
+    ]
+    if extra_parts:
+        lines.append(f"{label}_extra " + " ".join(extra_parts))
+    return lines
+
+
+def _canonical_metadata_value(metadata: dict[str, object], key: str) -> object:
+    value = metadata.get(key)
+    if value is None:
+        return "unknown"
+    return value
 
 
 def snapshot(
@@ -512,6 +591,7 @@ def _latest_prompt_observation(prompt_recorder) -> PromptObservation | None:
     observation = latest()
     if observation is None:
         return None
+    observation = sanitize_observation(observation)
     return replace(
         observation,
         response_metadata=dict(observation.response_metadata),

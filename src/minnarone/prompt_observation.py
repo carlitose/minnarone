@@ -21,6 +21,36 @@ PROMPT_TRUNCATION_MARKER = "\n[TRUNCATED: prompt debug record exceeded 200 KB]\n
 _TOKEN_METADATA_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 _CACHE_METADATA_KEYS = ("cached_tokens", "cache_write_tokens", "cache_read_tokens")
 _COST_KEYS = ("cost", "total_cost")
+_REDACTED_SECRET_METADATA_VALUE = "[redacted]"
+_TOKEN_USAGE_METADATA_KEYS = frozenset((*_TOKEN_METADATA_KEYS, *_CACHE_METADATA_KEYS))
+_SECRET_METADATA_KEY_PARTS = {
+    "auth",
+    "authentication",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "credentials",
+    "csrf",
+    "header",
+    "headers",
+    "oauth",
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "signature",
+    "token",
+}
+_SECRET_METADATA_KEY_COMPACT_FRAGMENTS = (
+    "apikey",
+    "apisecret",
+    "clientsecret",
+    "csrftoken",
+    "privatekey",
+    "secretkey",
+    "setcookie",
+)
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -351,8 +381,42 @@ def sanitize_metadata(meta: Mapping[str, object]) -> dict[str, object]:
         safe_key = redact_unsafe_text(key)
         if safe_key in sanitized:
             safe_key = f"{safe_key}#{len(sanitized)}"
-        sanitized[safe_key] = _sanitize_metadata_value(value)
+        if _is_secret_metadata_key(key):
+            sanitized[safe_key] = _REDACTED_SECRET_METADATA_VALUE
+        else:
+            sanitized[safe_key] = _sanitize_metadata_value(value)
     return sanitized
+
+
+def _is_secret_metadata_key(key: object) -> bool:
+    raw = str(key)
+    camel_split = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", raw)
+    camel_split = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", camel_split)
+    normalized = re.sub(r"[^a-z0-9]+", "_", camel_split.lower()).strip("_")
+    compact = re.sub(r"[^a-z0-9]+", "", raw.lower())
+    parts = [part for part in normalized.split("_") if part]
+
+    if normalized in _TOKEN_USAGE_METADATA_KEYS:
+        return False
+    if any(part in _SECRET_METADATA_KEY_PARTS for part in parts):
+        return True
+    if any(fragment in compact for fragment in _SECRET_METADATA_KEY_COMPACT_FRAGMENTS):
+        return True
+    if compact.endswith(
+        (
+            "cookie",
+            "credential",
+            "credentials",
+            "csrf",
+            "header",
+            "headers",
+            "secret",
+            "signature",
+            "token",
+        )
+    ):
+        return not compact.endswith("tokens")
+    return False
 
 
 def _sanitize_metadata_value(value: object) -> object:
@@ -379,6 +443,6 @@ def _first_metadata_value(
     keys: tuple[str, ...],
 ) -> object | None:
     for key in keys:
-        if key in meta:
+        if key in meta and meta[key] is not None:
             return meta[key]
     return None

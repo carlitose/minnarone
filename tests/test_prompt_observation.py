@@ -12,6 +12,7 @@ from minnarone.prompt_observation import (
     ObservedLLMProvider,
     PromptObservation,
     PromptObservationRecorder,
+    sanitize_metadata,
 )
 from minnarone.run_artifacts import create_run_session
 
@@ -86,6 +87,26 @@ def test_success_observation_includes_token_cache_and_cost_metadata():
     }
     assert observation.cost == 0.0012
     assert observation.response_metadata["provider"] == "fake"
+
+
+def test_success_observation_uses_total_cost_when_cost_is_none():
+    recorder = PromptObservationRecorder()
+    llm = ObservedLLMProvider(
+        FakeLLMProvider(
+            message="ok",
+            meta={
+                "cost": None,
+                "total_cost": 0.12,
+            },
+        ),
+        recorder=recorder,
+    )
+
+    asyncio.run(llm.complete("prompt"))
+
+    observation = recorder.latest()
+    assert observation is not None
+    assert observation.cost == 0.12
 
 
 class SecretFailingLLM(LLMProvider):
@@ -281,6 +302,98 @@ def test_metadata_keys_are_redacted_before_display_and_persistence(tmp_path):
 
     assert "sk-or-key-in-key-name" not in combined
     assert "[redacted-openrouter-key]" in combined
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "access_token",
+        "ACCESS-TOKEN",
+        "refreshToken",
+        "api_key",
+        "x-api-key",
+        "openrouter_api_key",
+        "authorization",
+        "Authorization",
+        "password",
+        "user-password",
+        "secret",
+        "secretToken",
+        "apiSecret",
+        "client_secret",
+        "private_key",
+        "cookie",
+        "set-cookie",
+        "csrf_token",
+        "anthropic_token",
+        "provider_token",
+        "credential",
+        "credentials",
+        "request_header",
+        "response_headers",
+        "authorizationHeader",
+        "signature",
+        "x-signature",
+    ],
+)
+def test_sanitize_metadata_redacts_secret_key_variants(key):
+    sanitized = sanitize_metadata({key: "raw-secret-value"})
+
+    assert list(sanitized.values()) == ["[redacted]"]
+
+
+def test_sanitize_metadata_does_not_redact_usage_token_counters():
+    sanitized = sanitize_metadata(
+        {
+            "prompt_tokens": 3,
+            "completion_tokens": 4,
+            "total_tokens": 7,
+            "cached_tokens": 2,
+            "cache_write_tokens": 1,
+            "cache_read_tokens": 5,
+        }
+    )
+
+    assert sanitized == {
+        "prompt_tokens": 3,
+        "completion_tokens": 4,
+        "total_tokens": 7,
+        "cached_tokens": 2,
+        "cache_write_tokens": 1,
+        "cache_read_tokens": 5,
+    }
+
+
+def test_sanitize_metadata_redacts_secret_keys_recursively():
+    sanitized = sanitize_metadata(
+        {
+            "safe": {
+                "access_token": "nested-secret",
+                "secretToken": "nested-secret-token",
+            },
+            "headers": {
+                "authorization": "nested-header-secret",
+            },
+            "items": [
+                {"openrouter_api_key": "list-secret"},
+                {"cookie": "list-cookie-secret"},
+                {"safe": "visible"},
+            ],
+        }
+    )
+
+    assert sanitized == {
+        "safe": {
+            "access_token": "[redacted]",
+            "secretToken": "[redacted]",
+        },
+        "headers": "[redacted]",
+        "items": [
+            {"openrouter_api_key": "[redacted]"},
+            {"cookie": "[redacted]"},
+            {"safe": "visible"},
+        ],
+    }
 
 
 def test_oversized_non_prompt_fields_are_capped_without_raising(tmp_path):

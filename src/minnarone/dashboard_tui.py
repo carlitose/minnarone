@@ -25,6 +25,58 @@ _MISSING_TEXTUAL_MSG = (
     "Nota: il modello di snapshot (minnarone.dashboard) funziona senza textual."
 )
 
+_DASHBOARD_CSS = """
+Screen {
+    background: #05080a;
+    color: #d7e6e2;
+}
+
+#dashboard-grid {
+    layout: grid;
+    grid-size: 3 3;
+    grid-rows: 1fr 1fr 1fr;
+    grid-columns: 1fr 1fr 1fr;
+    grid-gutter: 1 1;
+    height: 1fr;
+    padding: 0 1;
+}
+
+.dashboard-panel {
+    border: solid #2f6f73;
+    padding: 0 1;
+    text-style: none;
+}
+
+.dashboard-panel-content {
+    width: 1fr;
+    height: auto;
+    text-style: none;
+}
+
+#status-bar {
+    height: 1;
+    padding: 0 1;
+    color: #d7e6e2;
+    background: #102528;
+}
+
+#main-tabs {
+    height: 1fr;
+}
+
+#prompt-view {
+    height: 1fr;
+    padding: 0 1;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+#prompt-content {
+    width: auto;
+    text-wrap: nowrap;
+}
+"""
+
 
 class DashboardSnapshotNotReady(RuntimeError):
     """Raised by live snapshot providers before the first cached state exists."""
@@ -40,7 +92,7 @@ def _require_textual():
     try:
         from textual.app import App, ComposeResult  # noqa: F401
         from textual.containers import Grid, VerticalScroll  # noqa: F401
-        from textual.widgets import Header, Static  # noqa: F401
+        from textual.widgets import Header, Static, TabbedContent, TabPane  # noqa: F401
     except ImportError as exc:  # pragma: no cover - coperto via importorskip
         raise RuntimeError(_MISSING_TEXTUAL_MSG) from exc
 
@@ -63,51 +115,18 @@ def build_dashboard_app(
 
     from textual.app import App, ComposeResult
     from textual.containers import Grid, VerticalScroll
-    from textual.widgets import Header, Static
+    from textual.widgets import Header, Static, TabbedContent, TabPane
 
     class _DashboardApp(App):
         TITLE = "Minnarone — Observability"
-        CSS = """
-        Screen {
-            background: #05080a;
-            color: #d7e6e2;
-        }
-
-        #dashboard-grid {
-            layout: grid;
-            grid-size: 3 3;
-            grid-rows: 1fr 1fr 1fr;
-            grid-columns: 1fr 1fr 1fr;
-            grid-gutter: 1 1;
-            height: 1fr;
-            padding: 0 1;
-        }
-
-        .dashboard-panel {
-            border: solid #2f6f73;
-            padding: 0 1;
-            text-style: none;
-        }
-
-        .dashboard-panel-content {
-            width: 1fr;
-            height: auto;
-            text-style: none;
-        }
-
-        #status-bar {
-            height: 1;
-            padding: 0 1;
-            color: #d7e6e2;
-            background: #102528;
-        }
-        """
+        CSS = _DASHBOARD_CSS
 
         def __init__(self) -> None:
             super().__init__()
             self._provider = snapshot_provider
             self._panels: dict[str, Static] = {}
             self._status_bar: Static | None = None
+            self._prompt_content: Static | None = None
 
         @property
         def panel_titles(self) -> list[str]:
@@ -117,21 +136,31 @@ def build_dashboard_app(
             yield Header()
             self._status_bar = Static("(in attesa)", id="status-bar", markup=False)
             yield self._status_bar
-            with Grid(id="dashboard-grid"):
-                for title in self.panel_titles:
-                    with VerticalScroll(
-                        id=_panel_id(title),
-                        classes="dashboard-panel",
-                        can_focus=True,
-                    ) as container:
-                        container.border_title = title
-                        content = Static(
-                            "(in attesa)",
-                            classes="dashboard-panel-content",
+            with TabbedContent(initial="dashboard-tab", id="main-tabs"):
+                with TabPane("DASHBOARD", id="dashboard-tab"):
+                    with Grid(id="dashboard-grid"):
+                        for title in self.panel_titles:
+                            with VerticalScroll(
+                                id=_panel_id(title),
+                                classes="dashboard-panel",
+                                can_focus=True,
+                            ) as container:
+                                container.border_title = title
+                                content = Static(
+                                    "(in attesa)",
+                                    classes="dashboard-panel-content",
+                                    markup=False,
+                                )
+                                self._panels[title] = content
+                                yield content
+                with TabPane("PROMPT", id="prompt-tab"):
+                    with VerticalScroll(id="prompt-view", can_focus=True):
+                        self._prompt_content = Static(
+                            "(nessun prompt)",
+                            id="prompt-content",
                             markup=False,
                         )
-                        self._panels[title] = content
-                        yield content
+                        yield self._prompt_content
 
         def on_mount(self) -> None:
             self._render_snapshot()
@@ -147,6 +176,8 @@ def build_dashboard_app(
                     self._status_bar.update(text)
                 for panel in self._panels.values():
                     panel.update(text)
+                if self._prompt_content is not None:
+                    self._prompt_content.update(text)
                 return
             if self._status_bar is not None:
                 self._status_bar.update(state.render_status_bar())
@@ -154,6 +185,8 @@ def build_dashboard_app(
                 widget = self._panels.get(panel.title)
                 if widget is not None:
                     widget.update(panel.text)
+            if self._prompt_content is not None:
+                self._prompt_content.update(state.render_prompt_view())
 
     return _DashboardApp()
 

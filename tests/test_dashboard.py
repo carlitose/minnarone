@@ -132,6 +132,127 @@ def test_snapshot_exposes_latest_prompt_observation():
     assert latest.token_metadata == {"prompt_tokens": 2}
 
 
+def test_prompt_view_degrades_unknown_metadata_gracefully():
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    state = DashboardState(
+        latest_prompt=PromptObservation(
+            prompt="## SITUAZIONE\nNessun dato opzionale.",
+            model="",
+            status="",
+            started_at=started,
+            completed_at=started,
+        )
+    )
+
+    rendered = state.render_prompt_view()
+
+    assert "trigger=unknown" in rendered
+    assert "status=unknown" in rendered
+    assert "model=unknown" in rendered
+    assert (
+        "tokens prompt_tokens=unknown completion_tokens=unknown total_tokens=unknown"
+        in rendered
+    )
+    assert "cache cached_tokens=unknown cache_write_tokens=unknown" in rendered
+    assert "cost=unknown" in rendered
+    assert rendered.endswith("## SITUAZIONE\nNessun dato opzionale.")
+
+
+def test_prompt_view_renders_partial_token_and_cache_metadata_schema():
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    state = DashboardState(
+        latest_prompt=PromptObservation(
+            prompt="prompt",
+            model="fake",
+            status="success",
+            started_at=started,
+            completed_at=started,
+            token_metadata={
+                "prompt_tokens": 8,
+                "provider": "fake",
+            },
+            cache_metadata={
+                "cached_tokens": 3,
+                "cache_read_tokens": 2,
+                "cache_backend": "memory",
+            },
+        )
+    )
+
+    rendered = state.render_prompt_view()
+
+    assert (
+        "tokens prompt_tokens=8 completion_tokens=unknown total_tokens=unknown"
+        in rendered
+    )
+    assert "tokens_extra provider=fake" in rendered
+    assert (
+        "cache cached_tokens=3 cache_write_tokens=unknown cache_read_tokens=2"
+        in rendered
+    )
+    assert "cache_extra cache_backend=memory" in rendered
+
+
+def test_prompt_view_renders_none_canonical_metadata_as_unknown_and_preserves_zero():
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+    state = DashboardState(
+        latest_prompt=PromptObservation(
+            prompt="prompt",
+            model="fake",
+            status="success",
+            started_at=started,
+            completed_at=started,
+            token_metadata={
+                "prompt_tokens": 0,
+                "completion_tokens": None,
+                "total_tokens": None,
+            },
+            cache_metadata={
+                "cached_tokens": 0,
+                "cache_write_tokens": None,
+                "cache_read_tokens": None,
+            },
+        )
+    )
+
+    rendered = state.render_prompt_view()
+
+    assert (
+        "tokens prompt_tokens=0 completion_tokens=unknown total_tokens=unknown"
+        in rendered
+    )
+    assert (
+        "cache cached_tokens=0 cache_write_tokens=unknown cache_read_tokens=unknown"
+        in rendered
+    )
+
+
+def test_snapshot_prompt_view_keeps_secrets_redacted():
+    started = datetime(2026, 6, 29, 10, 30, tzinfo=UTC)
+
+    class UnsafePromptRecorder:
+        def latest(self):
+            return PromptObservation(
+                prompt=(
+                    "## FATTI\n"
+                    "OPENROUTER_API_KEY=sk-or-this-secret-must-not-render\n"
+                    "Authorization: Bearer raw-token"
+                ),
+                model="openrouter/sk-or-model-leak",
+                status="success",
+                started_at=started,
+                completed_at=started,
+                token_metadata={"access_token": "raw-secret-value"},
+            )
+
+    rendered = snapshot(prompt_recorder=UnsafePromptRecorder()).render_prompt_view()
+
+    assert "sk-or-this-secret-must-not-render" not in rendered
+    assert "raw-token" not in rendered
+    assert "raw-secret-value" not in rendered
+    assert "[redacted" in rendered
+
+
 def test_snapshot_exposes_current_memory_summary():
     class FakeSummarizer:
         current_summary = "Lo streamer sta preparando la prossima run."
