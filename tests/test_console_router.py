@@ -16,3 +16,10 @@ def test_route_public_prints_message():
     router = ConsoleOutputRouter(stream=buf)
     asyncio.run(router.route("ciao a tutti", OutputMode.PUBLIC))
     assert "ciao a tutti" in buf.getvalue()
+
+
+def test_route_private_prints_private_prefix():
+    buf = io.StringIO()
+    router = ConsoleOutputRouter(stream=buf)
+    asyncio.run(router.route("commento locale", OutputMode.PRIVATE))
+    assert buf.getvalue() == "[PRIVATE] commento locale\n"

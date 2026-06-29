@@ -27,6 +27,7 @@ from .live_tui import (
     ensure_live_tui_available,
     run_live_tui,
 )
+from .output_sink import MinnaroneOutputStream
 from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
 from .twitch_stream import TwitchStreamRuntimeError
 
@@ -72,7 +73,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_session = _create_live_run_session(config)
         try:
             agent = (
-                build_agent(config, run_session=run_session)
+                build_agent(
+                    config,
+                    run_session=run_session,
+                    minnarone_output=MinnaroneOutputStream(),
+                )
                 if run_session is not None
                 else build_agent(config)
             )

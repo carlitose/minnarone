@@ -1060,6 +1060,97 @@ def test_commentator_mode_routes_private_output_to_console_and_changes_prompt(
     assert agent.senser.idle_interval == 0.01
 
 
+def test_tui_commentator_output_goes_to_dashboard_not_console(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    def transport(*, url, headers, body, timeout):
+        del url, headers, body, timeout
+        from minnarone.openrouter import HttpResponse
+
+        return HttpResponse(
+            status=200,
+            body=b'{"choices":[{"message":{"content":"Commento privato."}}]}',
+        )
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                idle_interval: 999
+                commentator:
+                  enabled: true
+                  language: it
+                  idle_interval: 0.01
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+        minnarone_output=MinnaroneOutputStream(),
+    )
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="minnarone, commenta questa giocata",
+            speaker="streamer",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    captured = capsys.readouterr()
+    assert "[PRIVATE]" not in captured.out
+    assert "Commento privato." not in captured.out
+    assert agent.observability_snapshot().messages == ["Commento privato."]
+
+
+def test_router_override_keeps_minnarone_output_stream_inactive(tmp_path):
+    from minnarone.fakes import FakeOutputRouter
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    stream = MinnaroneOutputStream()
+    router = FakeOutputRouter()
+    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+        minnarone_output=stream,
+    )
+
+    asyncio.run(agent.reactor._route_and_note("ciao"))
+
+    assert agent.minnarone_output is None
+    assert stream.recent_messages() == []
+    assert agent.observability_snapshot().messages == ["ciao"]
+
+
 def test_private_router_signals_not_implemented_on_route(tmp_path):
     import asyncio
 

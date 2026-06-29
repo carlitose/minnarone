@@ -170,6 +170,28 @@ def test_cli_tui_builds_agent_with_run_local_artifacts(tmp_path, monkeypatch):
     assert session.perception_log_path == session.run_dir / "perceptions.jsonl"
 
 
+def test_cli_tui_builds_agent_with_minnarone_output_stream(tmp_path, monkeypatch):
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    class FakeAgent:
+        pass
+
+    captured = {}
+
+    def fake_build_agent(_config, **kwargs):
+        captured.update(kwargs)
+        return FakeAgent()
+
+    monkeypatch.setattr(cli, "build_agent", fake_build_agent)
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+    monkeypatch.setattr(cli, "run_live_tui", lambda _agent: None, raising=False)
+
+    code = main([str(_valid_config(tmp_path)), "--tui"])
+
+    assert code == 0
+    assert isinstance(captured["minnarone_output"], MinnaroneOutputStream)
+
+
 def test_cli_tui_marks_run_completed_when_agent_build_fails(
     tmp_path, capsys, monkeypatch
 ):

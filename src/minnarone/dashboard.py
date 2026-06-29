@@ -232,7 +232,7 @@ class DashboardState:
         else:
             lines.append("(nessuna)")
 
-        lines.append("== Messaggi inviati ==")
+        lines.append("== MINNARONE ==")
         if self.messages:
             lines.extend(self.messages)
         else:
@@ -246,6 +246,7 @@ def snapshot(
     store=None,
     senser=None,
     reactor=None,
+    minnarone_output=None,
     perception_queue=None,
     speaker_tagger=None,
     video_perceiver=None,
@@ -288,7 +289,10 @@ def snapshot(
         windows = {who: replace(win) for who, win in window_source().items()}
 
     messages: list[str] = []
-    if reactor is not None:
+    if minnarone_output is not None:
+        output_messages = minnarone_output.recent_messages(recent_messages)
+        messages = [message.text for message in output_messages]
+    elif reactor is not None:
         messages = list(reactor.recent_messages(recent_messages))
 
     queue = _queue_diagnostics(perception_queue)

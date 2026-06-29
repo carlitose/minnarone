@@ -58,6 +58,7 @@ from .llm import LLMProvider
 from .memory import FileMemory, Memory
 from .openrouter import Transport, build_provider
 from .output import OutputMode, OutputRouter
+from .output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
 from .perception_queue import (
     BoundedLocalPerceptionQueue,
     PerceptionQueueStats,
@@ -157,6 +158,7 @@ class Agent:
     prompt_recorder: PromptObservationRecorder = field(
         default_factory=PromptObservationRecorder
     )
+    minnarone_output: MinnaroneOutputStream | None = None
     speaker_diagnostics: object | None = None
     video_diagnostics: object | None = None
 
@@ -188,6 +190,7 @@ class Agent:
             store=self.store,
             senser=self.senser,
             reactor=self.reactor,
+            minnarone_output=self.minnarone_output,
             perception_queue=self.perception_queue,
             speaker_tagger=self.speaker_diagnostics,
             video_perceiver=self.video_diagnostics,
@@ -472,6 +475,7 @@ def build_agent(
     store_path: str | Path | None = None,
     run_session: RunSession | None = None,
     router: OutputRouter | None = None,
+    minnarone_output: MinnaroneOutputStream | None = None,
     adapter: SourceAdapter | None = None,
     twitch_chat_connect: ConnectIRC | None = None,
     audio_perceiver: AudioPerceiver | None = None,
@@ -558,11 +562,20 @@ def build_agent(
 
     summarizer = Summarizer(llm=llm, store=store)
     human = HumanLikeness()
-    out_router = (
-        router
-        if router is not None
-        else _build_router(config.mode, commentator=config.commentator.enabled)
-    )
+    active_minnarone_output: MinnaroneOutputStream | None = None
+    if router is not None:
+        out_router = router
+        if isinstance(router, TuiPrivateOutputRouter):
+            active_minnarone_output = router.stream
+    elif (
+        minnarone_output is not None
+        and config.mode is OutputMode.PRIVATE
+        and config.commentator.enabled
+    ):
+        out_router = TuiPrivateOutputRouter(minnarone_output)
+        active_minnarone_output = minnarone_output
+    else:
+        out_router = _build_router(config.mode, commentator=config.commentator.enabled)
 
     if (
         config.adapter == "twitch"
@@ -656,6 +669,7 @@ def build_agent(
         perceivers=perceivers,
         perception_queue=perception_queue,
         prompt_recorder=prompt_recorder,
+        minnarone_output=active_minnarone_output,
         speaker_diagnostics=speaker_diagnostics,
         video_diagnostics=video_perceiver,
     )

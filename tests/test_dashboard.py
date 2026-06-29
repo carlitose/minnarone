@@ -210,6 +210,21 @@ def test_snapshot_includes_recent_sent_messages(tmp_path):
     assert "Ciao alice!" in state.messages
 
 
+def test_snapshot_exposes_minnarone_output_stream():
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+
+    stream = MinnaroneOutputStream(clock=lambda: 10.0)
+    router = TuiPrivateOutputRouter(stream)
+    asyncio.run(router.route("Commento locale", OutputMode.PRIVATE))
+
+    state = snapshot(minnarone_output=stream)
+
+    assert state.messages == ["Commento locale"]
+    rendered = state.render_text()
+    assert "== MINNARONE ==" in rendered
+    assert "[PRIVATE]" not in rendered
+
+
 # --- Trigger / eventi ------------------------------------------------------
 
 
