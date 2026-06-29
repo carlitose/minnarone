@@ -264,3 +264,25 @@ def test_cli_tui_missing_textual_returns_clear_error_before_build(
     err = capsys.readouterr().err
     assert "textual" in err.lower()
     assert "minnarone[tui]" in err
+
+
+def test_cli_replay_launches_without_config_or_live_agent(tmp_path, monkeypatch):
+    log = tmp_path / "perceptions.jsonl"
+    log.write_text("", encoding="utf-8")
+    launched = []
+
+    def forbidden_build_agent(*_args, **_kwargs):
+        raise AssertionError("replay must not build a live agent")
+
+    def forbidden_config_load(*_args, **_kwargs):
+        raise AssertionError("replay must not load live config")
+
+    monkeypatch.setattr(cli, "build_agent", forbidden_build_agent)
+    monkeypatch.setattr(cli.Config, "load", forbidden_config_load)
+    monkeypatch.setattr(cli, "ensure_live_tui_available", lambda: None)
+    monkeypatch.setattr(cli, "run_replay_tui", lambda path: launched.append(path))
+
+    code = main(["--replay", str(log)])
+
+    assert code == 0
+    assert launched == [str(log)]

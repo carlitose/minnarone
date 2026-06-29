@@ -151,6 +151,34 @@ def test_generic_llm_error_skips_turn(tmp_path):
     assert router.sent == []
 
 
+def test_run_event_recorder_failure_does_not_block_reaction(tmp_path):
+    class FailingEventRecorder:
+        def record_trigger(self, trigger):
+            del trigger
+            raise OSError("disk full")
+
+        def record_minnarone_output(self, message, mode):
+            del message, mode
+            raise OSError("disk full")
+
+    store, chat, llm, router, reactor = _build(tmp_path)
+    reactor = Reactor(
+        senser=reactor._senser,
+        prompt_builder=reactor._prompt_builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        event_recorder=FailingEventRecorder(),
+    )
+    chat.perceive("minnarone, reagisci", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [("ciao enkk!", OutputMode.PUBLIC)]
+    assert reactor.recent_messages() == ["ciao enkk!"]
+
+
 def test_summary_from_provider_appears_in_reaction_prompt(tmp_path):
     # Un Reactor con un summary_provider deve iniettare il riassunto corrente
     # nella sezione dinamica del prompt di reazione.

@@ -173,6 +173,7 @@ class DashboardState:
     channel: str | None = None
     started_at: datetime | None = None
     now: datetime | None = None
+    replay_source: str | None = None
 
     @property
     def source_counts(self) -> SourceCounts:

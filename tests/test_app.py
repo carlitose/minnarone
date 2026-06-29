@@ -266,6 +266,45 @@ def test_build_agent_records_prompt_observations_in_run_session(
     assert session.run_dir in path.parents
 
 
+def test_build_agent_records_replayable_trigger_and_output_events(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from minnarone.fakes import FakeOutputRouter
+    from minnarone.replay import load_replay_state
+
+    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    session = create_run_session(root=tmp_path / "runs")
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        run_session=session,
+        router=FakeOutputRouter(),
+    )
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone, replayami",
+            speaker="utente1",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    event_log = session.debug_dir / "events.jsonl"
+    assert event_log.is_file()
+    replay = load_replay_state(session.run_dir)
+    panels = {panel.title: panel.text for panel in replay.render_panels()}
+    assert "mention <- utente1" in panels["EVENTI"]
+    assert panels["MINNARONE"] == "ciao"
+    assert "replayed chat=1 audio=0 video=0 events=1 minnarone=1" in (
+        replay.render_status_bar()
+    )
+
+
 def test_build_agent_passes_announce_ai_into_prompt(tmp_path):
     cfg = Config.load(_write_workspace(tmp_path, announce_ai=True))
     agent = build_agent(cfg, transport=_fake_transport)

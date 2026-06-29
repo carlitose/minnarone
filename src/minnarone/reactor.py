@@ -51,6 +51,7 @@ class Reactor:
         summary_provider: Callable[[], str] | None = None,
         human: HumanLikeness | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        event_recorder=None,
     ) -> None:
         self._senser = senser
         self._prompt_builder = prompt_builder
@@ -77,6 +78,7 @@ class Reactor:
         # avvia il ciclo del Summarizer (assemblaggio completo: issue 11). Se
         # None, il prompt non riceve alcun riassunto (comportamento invariato).
         self._summary_provider = summary_provider
+        self._event_recorder = event_recorder
         # La cadenza del loop senso-reazione è delegata a un CadenceLoop interno
         # (creato in `run()`, quando si conosce l'intervallo). Lo skip-turno su
         # LLMError resta PER-TRIGGER dentro `run_once` (granularità più fine di
@@ -103,6 +105,8 @@ class Reactor:
         triggers = self._senser.tick()
         if not triggers:
             return
+        for trigger in triggers:
+            self._record_trigger(trigger)
         # Lo store non muta entro il tick: leggi la finestra recente una volta.
         recent = self._store.tail(self._recent_window)
         # Leggi il riassunto corrente (se c'è una fonte) una volta per tick.
@@ -153,6 +157,7 @@ class Reactor:
     async def _route_and_note(self, message: str) -> None:
         """Instrada il messaggio, lo ricorda per il dedup e notifica il Senser."""
         await self._router.route(message, self._mode)
+        self._record_minnarone_output(message)
         self._self_messages.append(message)
         # Notifica al Senser che l'agente ha appena parlato, così la
         # continuazione (UC03) funziona nel sistema assemblato. Si usa lo
@@ -177,3 +182,19 @@ class Reactor:
         """Richiede l'arresto del loop al prossimo giro."""
         if self._loop is not None:
             self._loop.stop()
+
+    def _record_trigger(self, trigger) -> None:
+        if self._event_recorder is None:
+            return
+        try:
+            self._event_recorder.record_trigger(trigger)
+        except OSError:
+            return
+
+    def _record_minnarone_output(self, message: str) -> None:
+        if self._event_recorder is None:
+            return
+        try:
+            self._event_recorder.record_minnarone_output(message, self._mode)
+        except OSError:
+            return

@@ -67,6 +67,7 @@ from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
 from .reactor import Reactor
 from .run_artifacts import RunSession
+from .run_events import RunEventRecorder
 from .senser import Senser
 from .source import RawEvent, SourceAdapter
 from .speaker import (
@@ -572,6 +573,9 @@ def build_agent(
 
     summarizer = Summarizer(llm=llm, store=store)
     human = HumanLikeness()
+    event_recorder = (
+        RunEventRecorder(run_session.debug_dir) if run_session is not None else None
+    )
     active_minnarone_output: MinnaroneOutputStream | None = None
     if router is not None:
         out_router = router
@@ -626,6 +630,7 @@ def build_agent(
         # Il Reactor LEGGE il riassunto corrente (non possiede il loop del
         # Summarizer): la callable zero-arg punta a `current_summary`.
         summary_provider=lambda: summarizer.current_summary,
+        event_recorder=event_recorder,
     )
 
     # Dispatcher di percezione per-canale. "chat" è sempre disponibile (nessun

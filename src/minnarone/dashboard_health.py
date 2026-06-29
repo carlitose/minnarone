@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,8 @@ def latest_failure(state) -> str | None:
 
 def render_status_bar(state) -> str:
     """Render one compact pure status line for the live TUI."""
+    if getattr(state, "replay_source", None):
+        return _render_replay_status_bar(state)
     counts = state.source_counts
     health = state.source_health
     health_names = (
@@ -91,12 +94,15 @@ def render_status_bar(state) -> str:
     queue_abandoned = sum(stats.abandoned for stats in state.queue.values())
     queue_cleanup = sum(stats.cleanup_failures for stats in state.queue.values())
     adapter_dropped = sum(stats.dropped for stats in state.adapter.values())
-    parts = [
-        f"channel={_compact(safe_status_value(state.channel) or '-', 32)}",
-        f"uptime={_format_uptime(state.started_at, state.now)}",
-        f"health {health_text}",
-        _prompt_status(state.latest_prompt),
-    ]
+    parts = []
+    parts.extend(
+        [
+            f"channel={_compact(safe_status_value(state.channel) or '-', 32)}",
+            f"uptime={_format_uptime(state.started_at, state.now)}",
+            f"health {health_text}",
+            _prompt_status(state.latest_prompt),
+        ]
+    )
     failure = state.latest_failure
     if failure:
         parts.append(f"latest_failure={_compact(failure, 80)}")
@@ -118,6 +124,29 @@ def render_status_bar(state) -> str:
         ]
     )
     return _compact(" | ".join(part for part in parts if part), 320)
+
+
+def _render_replay_status_bar(state) -> str:
+    source = _compact_path(safe_status_value(state.replay_source) or "-", 80)
+    prompt = "present" if state.latest_prompt is not None else "missing"
+    failure = state.latest_failure
+    parts = [
+        "mode=replay offline",
+        f"source={source}",
+        (
+            "replayed "
+            f"chat={len(state.chat_messages)} "
+            f"audio={len(state.audio_transcriptions)} "
+            f"video={len(state.video_captions)} "
+            f"events={len(state.triggers)} "
+            f"minnarone={len(state.messages)}"
+        ),
+        f"prompt={prompt}",
+        f"failures={len(state.failures)}",
+    ]
+    if failure:
+        parts.append(f"latest_failure={_compact(failure, 80)}")
+    return _compact(" | ".join(parts), 320)
 
 
 def technical_event_lines(state) -> list[str]:
@@ -407,6 +436,17 @@ def _compact(value: str, max_chars: int) -> str:
     if len(value) <= max_chars:
         return value
     return value[: max_chars - 3].rstrip() + "..."
+
+
+def _compact_path(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    path = Path(value)
+    tail = str(path.name or value[-max_chars:])
+    prefix_budget = max_chars - len(tail) - 4
+    if prefix_budget <= 0:
+        return "..." + tail[-(max_chars - 3) :]
+    return f"{value[:prefix_budget]}.../{tail}"
 
 
 _SECRET_PATTERNS = (

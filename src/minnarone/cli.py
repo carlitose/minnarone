@@ -28,6 +28,7 @@ from .live_tui import (
     run_live_tui,
 )
 from .output_sink import MinnaroneOutputStream
+from .replay import run_replay_tui
 from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
 from .twitch_stream import TwitchStreamRuntimeError
 
@@ -37,7 +38,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         prog="minnarone",
         description="Avvia l'agente Minnarone da un file di configurazione.",
     )
-    parser.add_argument("config", help="percorso del file di config YAML")
+    parser.add_argument(
+        "config",
+        nargs="?",
+        help="percorso del file di config YAML",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -48,7 +53,15 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="avvia il runtime live con la dashboard TUI di osservabilità",
     )
-    return parser.parse_args(list(argv))
+    parser.add_argument(
+        "--replay",
+        metavar="RUN_OR_JSONL",
+        help="apri una run o un perceptions.jsonl in dashboard replay offline",
+    )
+    args = parser.parse_args(list(argv))
+    if args.replay is None and args.config is None:
+        parser.error("config richiesto a meno di usare --replay")
+    return args
 
 
 def _create_live_run_session(config: Config) -> RunSession:
@@ -64,6 +77,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Punto d'ingresso CLI. Ritorna l'exit code (0 = ok)."""
     raw_args = list(sys.argv[1:] if argv is None else argv)
     args = _parse_args(raw_args)
+
+    if args.replay is not None:
+        try:
+            ensure_live_tui_available()
+            run_replay_tui(args.replay)
+        except LiveTuiDependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(f"errore replay: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     try:
         config = Config.load(args.config)
