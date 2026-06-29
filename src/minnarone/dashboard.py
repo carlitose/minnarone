@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from .perception import Perception, format_perception_line
+from .prompt_observation import PromptObservation
 from .senser import ConversationWindow, Trigger
 
 # Quante percezioni recenti includere di default nello snapshot.
@@ -126,6 +127,7 @@ class DashboardState:
     failures: list[LocalFailure] = field(default_factory=list)
     speaker: SpeakerDiagnostics = field(default_factory=SpeakerDiagnostics)
     video: VideoDiagnostics = field(default_factory=VideoDiagnostics)
+    latest_prompt: PromptObservation | None = None
 
     def render_text(self) -> str:
         """Resa testuale dello snapshot, senza alcuna dipendenza da textual.
@@ -248,6 +250,7 @@ def snapshot(
     speaker_tagger=None,
     video_perceiver=None,
     adapter=None,
+    prompt_recorder=None,
     recent_perceptions: int = _DEFAULT_RECENT_PERCEPTIONS,
     recent_triggers: int = _DEFAULT_RECENT_TRIGGERS,
     recent_messages: int = _DEFAULT_RECENT_MESSAGES,
@@ -293,6 +296,7 @@ def snapshot(
     failures = _queue_failures(queue) + _adapter_failures(adapter_diagnostics)
     speaker = _speaker_diagnostics(speaker_tagger)
     video = _video_diagnostics(video_perceiver)
+    latest_prompt = _latest_prompt_observation(prompt_recorder)
 
     return DashboardState(
         perceptions=perceptions,
@@ -306,6 +310,24 @@ def snapshot(
         failures=failures,
         speaker=speaker,
         video=video,
+        latest_prompt=latest_prompt,
+    )
+
+
+def _latest_prompt_observation(prompt_recorder) -> PromptObservation | None:
+    if prompt_recorder is None:
+        return None
+    latest = getattr(prompt_recorder, "latest", None)
+    if latest is None:
+        return None
+    observation = latest()
+    if observation is None:
+        return None
+    return replace(
+        observation,
+        response_metadata=dict(observation.response_metadata),
+        token_metadata=dict(observation.token_metadata),
+        cache_metadata=dict(observation.cache_metadata),
     )
 
 

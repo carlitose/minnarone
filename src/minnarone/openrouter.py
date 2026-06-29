@@ -233,12 +233,20 @@ def _extract_meta(data: Mapping[str, object]) -> dict[str, object]:
         for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
             if key in usage:
                 meta[key] = usage[key]
+        for key in ("cost", "total_cost"):
+            if key in usage:
+                meta["cost"] = usage[key]
+                break
         details = usage.get("prompt_tokens_details")
         if isinstance(details, Mapping):
             if "cached_tokens" in details:
                 meta["cached_tokens"] = details["cached_tokens"]
             if "cache_write_tokens" in details:
                 meta["cache_write_tokens"] = details["cache_write_tokens"]
+    for key in ("cost", "total_cost"):
+        if "cost" not in meta and key in data:
+            meta["cost"] = data[key]
+            break
     return meta
 
 

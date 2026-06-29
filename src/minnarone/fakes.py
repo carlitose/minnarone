@@ -41,16 +41,25 @@ class FakeSourceAdapter(SourceAdapter):
 class FakeLLMProvider(LLMProvider):
     """Ritorna un messaggio deterministico; può simulare un timeout."""
 
-    def __init__(self, message: str = "ok", *, raise_timeout: bool = False) -> None:
+    def __init__(
+        self,
+        message: str = "ok",
+        *,
+        raise_timeout: bool = False,
+        model: str = "fake-llm",
+        meta: dict[str, object] | None = None,
+    ) -> None:
         self._message = message
         self._raise_timeout = raise_timeout
+        self.model = model
+        self._meta = dict(meta or {})
         self.last_prompt: str | None = None
 
     async def complete(self, prompt: str) -> LLMResult:
         self.last_prompt = prompt
         if self._raise_timeout:
             raise LLMTimeout("timeout simulato")
-        return LLMResult(message=self._message)
+        return LLMResult(message=self._message, meta=dict(self._meta))
 
 
 class FakeMemory(Memory):

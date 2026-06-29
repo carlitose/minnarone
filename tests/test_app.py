@@ -193,6 +193,79 @@ def test_build_agent_respects_explicit_store_path_with_run_session(tmp_path):
     assert agent.store.path == explicit_store
 
 
+def test_build_agent_records_prompt_observations_in_run_session(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from minnarone.fakes import FakeOutputRouter
+    from minnarone.openrouter import HttpResponse
+
+    prompts: list[str] = []
+
+    def transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        prompt = _prompt_from_body(body)
+        prompts.append(prompt)
+        payload = {
+            "choices": [{"message": {"content": "ciao"}}],
+            "model": "fake-observed-model",
+            "usage": {
+                "prompt_tokens": 21,
+                "completion_tokens": 3,
+                "total_tokens": 24,
+                "cost": 0.0007,
+                "prompt_tokens_details": {
+                    "cached_tokens": 10,
+                    "cache_write_tokens": 0,
+                },
+            },
+        }
+        return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
+
+    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    session = create_run_session(root=tmp_path / "runs")
+    agent = build_agent(
+        cfg,
+        transport=transport,
+        run_session=session,
+        router=FakeOutputRouter(),
+    )
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone, ci sei?",
+            speaker="utente1",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    state = agent.observability_snapshot()
+    assert prompts
+    assert state.latest_prompt is not None
+    assert state.latest_prompt.prompt == prompts[-1]
+    assert state.latest_prompt.model == "fake-observed-model"
+    assert state.latest_prompt.context == "reactor:mention"
+    assert state.latest_prompt.token_metadata == {
+        "prompt_tokens": 21,
+        "completion_tokens": 3,
+        "total_tokens": 24,
+    }
+    assert state.latest_prompt.cache_metadata == {
+        "cached_tokens": 10,
+        "cache_write_tokens": 0,
+    }
+    assert state.latest_prompt.cost == 0.0007
+
+    [path] = list((session.debug_dir / "prompts").glob("prompt-*.json"))
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["prompt"] == prompts[-1]
+    assert session.run_dir in path.parents
+
+
 def test_build_agent_passes_announce_ai_into_prompt(tmp_path):
     cfg = Config.load(_write_workspace(tmp_path, announce_ai=True))
     agent = build_agent(cfg, transport=_fake_transport)

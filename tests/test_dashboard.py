@@ -6,6 +6,7 @@ Tutti i test sono offline e NON richiedono `textual`.
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from minnarone.chat import ChatPerceiver
 from minnarone.dashboard import (
@@ -24,6 +25,7 @@ from minnarone.perception_queue import (
     PerceptionQueueChannelStats,
     PerceptionQueueStats,
 )
+from minnarone.prompt_observation import PromptObservation, PromptObservationRecorder
 from minnarone.reactor import Reactor
 from minnarone.senser import Senser
 from minnarone.store import PerceptionStore
@@ -78,6 +80,18 @@ def _video_perception(text, ts):
     return Perception(ts=ts, source=Source.VIDEO, type="caption", text=text)
 
 
+def _prompt_observation(prompt: str, index: int) -> PromptObservation:
+    started = datetime(2026, 6, 29, 10, 30, index, tzinfo=UTC)
+    return PromptObservation(
+        prompt=prompt,
+        model="fake",
+        status="success",
+        started_at=started,
+        completed_at=started + timedelta(milliseconds=1),
+        token_metadata={"prompt_tokens": index},
+    )
+
+
 # --- Percezioni recenti ----------------------------------------------------
 
 
@@ -93,6 +107,24 @@ def test_snapshot_reflects_recent_perceptions_from_store(tmp_path):
     assert texts == ["ciao", "come va"]
     # La sorgente è etichettata/raggruppabile per source.
     assert all(p.source is Source.CHAT for p in state.perceptions)
+
+
+def test_snapshot_exposes_latest_prompt_observation():
+    recorder = PromptObservationRecorder()
+    recorder.record(_prompt_observation("first prompt", 1))
+    recorder.record(_prompt_observation("latest prompt", 2))
+
+    state = snapshot(prompt_recorder=recorder)
+
+    assert state.latest_prompt is not None
+    assert state.latest_prompt.prompt == "latest prompt"
+    assert state.latest_prompt.token_metadata == {"prompt_tokens": 2}
+
+    state.latest_prompt.token_metadata["prompt_tokens"] = 999
+
+    latest = recorder.latest()
+    assert latest is not None
+    assert latest.token_metadata == {"prompt_tokens": 2}
 
 
 def test_snapshot_perceptions_limited_to_recent_n(tmp_path):

@@ -63,6 +63,7 @@ from .perception_queue import (
     PerceptionQueueStats,
 )
 from .prompt import PromptBuilder
+from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
 from .reactor import Reactor
 from .run_artifacts import RunSession
 from .senser import Senser
@@ -153,6 +154,9 @@ class Agent:
     # chat resta diretta per non essere penalizzata da ASR/VLM lenti.
     perception_queue: BoundedLocalPerceptionQueue | None = None
     run_session: RunSession | None = None
+    prompt_recorder: PromptObservationRecorder = field(
+        default_factory=PromptObservationRecorder
+    )
     speaker_diagnostics: object | None = None
     video_diagnostics: object | None = None
 
@@ -188,6 +192,7 @@ class Agent:
             speaker_tagger=self.speaker_diagnostics,
             video_perceiver=self.video_diagnostics,
             adapter=self.adapter,
+            prompt_recorder=self.prompt_recorder,
         )
 
     async def _pump_perceptions(self) -> None:
@@ -532,7 +537,13 @@ def build_agent(
         commentator_language=config.commentator.language,
     )
 
-    llm = build_provider(config, transport=transport)
+    prompt_recorder = PromptObservationRecorder(
+        debug_dir=run_session.debug_dir if run_session is not None else None
+    )
+    llm = ObservedLLMProvider(
+        build_provider(config, transport=transport),
+        recorder=prompt_recorder,
+    )
 
     senser = Senser(
         store,
@@ -644,6 +655,7 @@ def build_agent(
         adapter=adapter,
         perceivers=perceivers,
         perception_queue=perception_queue,
+        prompt_recorder=prompt_recorder,
         speaker_diagnostics=speaker_diagnostics,
         video_diagnostics=video_perceiver,
     )

@@ -24,6 +24,7 @@ import asyncio
 from .cadence import CadenceLoop
 from .llm import LLMError, LLMProvider
 from .perception import Perception, format_perception_line
+from .prompt_observation import prompt_observation_context
 from .store import PerceptionStore
 
 # Quante percezioni recenti riassumere. La memoria a breve termine è una vista
@@ -78,7 +79,8 @@ class Summarizer:
         if not perceptions:
             return self._summary
         prompt = self._build_prompt(perceptions)
-        result = await self._llm.complete(prompt)
+        with prompt_observation_context("summarizer"):
+            result = await self._llm.complete(prompt)
         self._summary = result.message
         return self._summary
 

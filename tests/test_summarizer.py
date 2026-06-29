@@ -9,6 +9,7 @@ import asyncio
 
 from minnarone.chat import ChatPerceiver
 from minnarone.fakes import FakeLLMProvider
+from minnarone.prompt_observation import ObservedLLMProvider, PromptObservationRecorder
 from minnarone.store import PerceptionStore
 from minnarone.summarizer import Summarizer
 
@@ -49,6 +50,24 @@ def test_summarization_prompt_includes_perception_content(tmp_path):
     assert llm.last_prompt is not None
     assert "ho battuto il boss del livello 5" in llm.last_prompt
     assert "enkk" in llm.last_prompt
+
+
+def test_summarizer_prompt_observation_has_context_label(tmp_path):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    recorder = PromptObservationRecorder()
+    llm = ObservedLLMProvider(
+        FakeLLMProvider(message="riassunto"),
+        recorder=recorder,
+    )
+    summarizer = Summarizer(llm=llm, store=store)
+    chat.perceive("ho battuto il boss", speaker="enkk", ts=1.0)
+
+    asyncio.run(summarizer.summarize())
+
+    observation = recorder.latest()
+    assert observation is not None
+    assert observation.context == "summarizer"
 
 
 def test_empty_store_safe_no_llm_call(tmp_path):

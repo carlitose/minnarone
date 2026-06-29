@@ -22,6 +22,7 @@ from .human import HumanLikeness
 from .llm import LLMError, LLMProvider
 from .output import OutputMode, OutputRouter
 from .prompt import PromptBuilder
+from .prompt_observation import prompt_observation_context
 from .senser import Senser
 from .store import PerceptionStore
 
@@ -111,7 +112,8 @@ class Reactor:
                 recent=recent, trigger=trigger, summary=summary
             )
             try:
-                result = await self._llm.complete(prompt)
+                with prompt_observation_context(f"reactor:{trigger.kind}"):
+                    result = await self._llm.complete(prompt)
             except LLMError:
                 # Salta-turno: nessun output stale (EC03).
                 continue

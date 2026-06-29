@@ -61,6 +61,11 @@ from .output import OutputMode, OutputRouter
 from .perceiver import EventPerceiver
 from .perception import Perception, Source
 from .prompt import PromptBuilder
+from .prompt_observation import (
+    ObservedLLMProvider,
+    PromptObservation,
+    PromptObservationRecorder,
+)
 from .reactor import Reactor
 from .senser import ConversationWindow, Senser, Trigger
 from .source import RawEvent, SourceAdapter
@@ -171,6 +176,9 @@ __all__ = [
     "Trigger",
     "ConversationWindow",
     "PromptBuilder",
+    "PromptObservation",
+    "PromptObservationRecorder",
+    "ObservedLLMProvider",
     "ConsoleOutputRouter",
     "Reactor",
     "Summarizer",

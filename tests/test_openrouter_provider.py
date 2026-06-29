@@ -145,6 +145,26 @@ def test_complete_extracts_message_and_meta():
     assert result.meta["cached_tokens"] == 80
 
 
+def test_complete_extracts_cost_when_available():
+    body = {
+        "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+        "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "total_tokens": 12,
+            "cost": 0.00042,
+        },
+    }
+    transport = RecordingTransport(
+        HttpResponse(status=200, body=json.dumps(body).encode("utf-8"))
+    )
+    provider = OpenRouterProvider(model="x-ai/grok", api_key="k", transport=transport)
+
+    result = asyncio.run(provider.complete("p"))
+
+    assert result.meta["cost"] == 0.00042
+
+
 # --- gestione errori --------------------------------------------------------
 
 
