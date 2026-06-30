@@ -26,6 +26,7 @@ twitch:
 
 commentator:
   enabled: true
+  style: operator
   language: it
   # More proactive than the public-chat default, but still bounded.
   idle_interval: 30.0

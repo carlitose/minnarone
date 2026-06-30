@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 from .asr import AsrConfig, AsrConfigError
-from .output import OutputMode
+from .output import CommentatorStyle, OutputMode
 from .speaker import (
     SpeakerClusteringConfig,
     SpeakerConfigError,
@@ -32,6 +32,18 @@ from .vlm import QwenVlConfig, QwenVlConfigError
 
 class ConfigError(ValueError):
     """Configurazione mancante o non valida, con messaggio puntuale."""
+
+
+def _coerce_commentator_style(value: object) -> CommentatorStyle:
+    if isinstance(value, CommentatorStyle):
+        return value
+    try:
+        return CommentatorStyle(value)
+    except (TypeError, ValueError) as exc:
+        accepted = ", ".join(style.value for style in CommentatorStyle)
+        raise ConfigError(
+            f"commentator.style {value!r} non valido (ammessi: {accepted})"
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,10 +67,12 @@ class CommentatorConfig:
     enabled: bool = False
     language: str = "it"
     idle_interval: float | None = None
+    style: CommentatorStyle = CommentatorStyle.OPERATOR
 
     def __post_init__(self) -> None:
         if not isinstance(self.enabled, bool):
             raise ConfigError("commentator.enabled deve essere booleano")
+        object.__setattr__(self, "style", _coerce_commentator_style(self.style))
         if not isinstance(self.language, str) or not self.language.strip():
             raise ConfigError("commentator.language deve essere una stringa non vuota")
         object.__setattr__(self, "language", self.language.strip())
@@ -73,6 +87,35 @@ class CommentatorConfig:
         if interval <= 0:
             raise ConfigError("commentator.idle_interval deve essere > 0")
         object.__setattr__(self, "idle_interval", interval)
+
+    @property
+    def prompt_style(self) -> CommentatorStyle | None:
+        """Style consumed by prompt/reaction code; None means disabled."""
+        return self.style if self.enabled else None
+
+    def idle_interval_or(self, default: float) -> float:
+        """Return the commentator idle cadence when enabled, else default."""
+        if self.enabled and self.idle_interval is not None:
+            return self.idle_interval
+        return default
+
+    def uses_local_output(self, mode: OutputMode) -> bool:
+        """Whether private mode should route commentator output locally."""
+        return self.enabled and mode is OutputMode.PRIVATE
+
+    def validate_for_mode(self, mode: OutputMode) -> None:
+        """Validate commentator runtime policy against the selected output mode."""
+        if self.style is CommentatorStyle.ORIGINAL_CHAT and (
+            not self.enabled or mode is not OutputMode.PRIVATE
+        ):
+            raise ConfigError(
+                "commentator.style: original_chat richiede "
+                "commentator.enabled: true e mode: private"
+            )
+        if self.enabled and mode is not OutputMode.PRIVATE:
+            raise ConfigError(
+                "commentator.enabled richiede mode: private per evitare output pubblico"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,6 +378,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
         "enabled",
         "language",
         "idle_interval",
+        "style",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -346,6 +390,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
         enabled=data.get("enabled", False),  # type: ignore[arg-type]
         language=data.get("language", "it"),  # type: ignore[arg-type]
         idle_interval=data.get("idle_interval"),  # type: ignore[arg-type]
+        style=data.get("style", CommentatorStyle.OPERATOR),  # type: ignore[arg-type]
     )
 
 
@@ -419,10 +464,7 @@ class Config:
             raise ConfigError("vlm deve essere una QwenVlConfig")
         if not isinstance(self.commentator, CommentatorConfig):
             raise ConfigError("commentator deve essere una CommentatorConfig")
-        if self.commentator.enabled and self.mode is not OutputMode.PRIVATE:
-            raise ConfigError(
-                "commentator.enabled richiede mode: private per evitare output pubblico"
-            )
+        self.commentator.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
         if self.senser_interval <= 0:

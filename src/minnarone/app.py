@@ -57,7 +57,7 @@ from .human import HumanLikeness
 from .llm import LLMProvider
 from .memory import FileMemory, Memory
 from .openrouter import Transport, build_provider
-from .output import OutputMode, OutputRouter
+from .output import CommentatorStyle, OutputMode, OutputRouter
 from .output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
 from .perception_queue import (
     BoundedLocalPerceptionQueue,
@@ -309,11 +309,13 @@ def _raise_shutdown_errors(errors: list[BaseException]) -> None:
     raise BaseExceptionGroup("agent shutdown failures", errors)
 
 
-def _build_router(mode: OutputMode, *, commentator: bool = False) -> OutputRouter:
+def _build_router(
+    mode: OutputMode, *, commentator_style: CommentatorStyle | None = None
+) -> OutputRouter:
     """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice)."""
     if mode is OutputMode.PUBLIC:
         return ConsoleOutputRouter()
-    if commentator:
+    if commentator_style is not None:
         return ConsoleOutputRouter()
     # private: accettata, ma il percorso di output segnala not-implemented.
     return PrivateNotImplementedRouter()
@@ -545,11 +547,12 @@ def build_agent(
     memory = FileMemory(soul_path=config.soul_path, facts_dir=config.facts_dir)
     blocks = memory.load()
     # announce_ai è l'UNICO punto v2 cablato (coerente): fluisce nello stance.
+    commentator_style = config.commentator.prompt_style
     prompt_builder = PromptBuilder(
         blocks,
         announce_ai=config.disclosure.announce_ai,
-        commentator=config.commentator.enabled,
         commentator_language=config.commentator.language,
+        commentator_style=commentator_style,
     )
 
     prompt_recorder = PromptObservationRecorder(
@@ -563,12 +566,7 @@ def build_agent(
     senser = Senser(
         store,
         agent_name=config.agent_name,
-        idle_interval=(
-            config.commentator.idle_interval
-            if config.commentator.enabled
-            and config.commentator.idle_interval is not None
-            else config.idle_interval
-        ),
+        idle_interval=config.commentator.idle_interval_or(config.idle_interval),
     )
 
     summarizer = Summarizer(llm=llm, store=store)
@@ -583,13 +581,12 @@ def build_agent(
             active_minnarone_output = router.stream
     elif (
         minnarone_output is not None
-        and config.mode is OutputMode.PRIVATE
-        and config.commentator.enabled
+        and config.commentator.uses_local_output(config.mode)
     ):
         out_router = TuiPrivateOutputRouter(minnarone_output)
         active_minnarone_output = minnarone_output
     else:
-        out_router = _build_router(config.mode, commentator=config.commentator.enabled)
+        out_router = _build_router(config.mode, commentator_style=commentator_style)
 
     if (
         config.adapter == "twitch"

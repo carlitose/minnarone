@@ -1,6 +1,7 @@
 """Test del PromptBuilder: prefisso stabile + messaggi recenti + situazione in coda."""
 
 from minnarone.memory import MemoryBlocks
+from minnarone.output import CommentatorStyle
 from minnarone.perception import Perception, Source
 from minnarone.prompt import PromptBuilder
 from minnarone.senser import Trigger
@@ -276,7 +277,7 @@ def test_commentator_stance_is_private_italian_and_opt_in():
     default_prefix = PromptBuilder(_blocks()).stable_prefix()
     commentator_prefix = PromptBuilder(
         _blocks(),
-        commentator=True,
+        commentator_style=CommentatorStyle.OPERATOR,
         commentator_language="it",
     ).stable_prefix()
 
@@ -294,7 +295,9 @@ def test_commentator_situation_comments_for_operator_not_interlocutor():
         text="minnarone guarda il boss",
         speaker="viewer",
     )
-    prompt = PromptBuilder(_blocks(), commentator=True).build(
+    prompt = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.OPERATOR
+    ).build(
         recent=[perception],
         trigger=Trigger(
             reason="mention",
@@ -311,7 +314,9 @@ def test_commentator_situation_comments_for_operator_not_interlocutor():
 
 
 def test_commentator_idle_situation_comments_for_operator():
-    prompt = PromptBuilder(_blocks(), commentator=True).build(
+    prompt = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.OPERATOR
+    ).build(
         recent=[],
         trigger=Trigger(reason="idle_comment", perception=None, kind="idle_comment"),
     )

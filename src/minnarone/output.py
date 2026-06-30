@@ -20,6 +20,13 @@ class OutputMode(str, Enum):
     PRIVATE = "private"
 
 
+class CommentatorStyle(str, Enum):
+    """Stile del commentatore locale privato."""
+
+    OPERATOR = "operator"
+    ORIGINAL_CHAT = "original_chat"
+
+
 class OutputRouter(ABC):
     """Instrada un messaggio verso il canale appropriato per la modalità."""
 
