@@ -1,0 +1,47 @@
+# Local original-chat dry-run example.
+# Private/local only: Minnarone's output is rendered locally and this runtime
+# does not send PRIVMSG lines to Twitch.
+# Chat capture still needs read-only IRC credentials in environment if
+# `twitch.chat: true`:
+#   TWITCH_BOT_USERNAME
+#   TWITCH_OAUTH_TOKEN
+
+mode: private
+soul_path: original-chat-memory/soul.md
+facts_dir: original-chat-memory/facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: enkk
+  quality: best
+  chat: true
+  audio: false
+  video: false
+  audio_chunk_seconds: 1.0
+  video_fps: 1.0
+
+commentator:
+  enabled: true
+  style: original_chat
+  language: it
+  idle_interval: 30.0
+
+senser_interval: 0.5
+idle_interval: 150.0
+summarizer_interval: 30.0
+recent_chat_window: 20
+perception_queue_size: 32
+perception_shutdown_timeout: 5.0
+
+llm_params:
+  thinking: low
+
+disclosure:
+  announce_ai: false
+
+retention:
+  perceptions_days: 7
+
+auto_memory: false

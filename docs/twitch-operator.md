@@ -628,6 +628,32 @@ See `examples/twitch-commentator.example.yaml` for a complete console-only
 commentator config. The existing `examples/twitch.example.yaml` remains the
 conservative public-console Twitch config with `commentator.enabled: false`.
 
+### Original-Chat Dry-Run Seed Memory
+
+Use `examples/twitch-original-chat.example.yaml` when you want the private
+local dry-run to render what Minnarone would write as a Twitch chat user. The
+example keeps `mode: private`, `commentator.enabled: true`, and
+`commentator.style: original_chat`; it still has no public Twitch send path.
+
+The example points at committed seed memory with paths relative to the config
+file:
+
+```yaml
+soul_path: original-chat-memory/soul.md
+facts_dir: original-chat-memory/facts
+```
+
+`soul` is Minnarone's identity, persona, and style: who he is, how he talks,
+and what tone boundaries he should keep. The `facts` files hold stable facts
+about channels or interlocutors, split by entity file under the facts directory.
+In the repo, these resolve to `examples/original-chat-memory/soul.md` and
+`examples/original-chat-memory/facts`, with files such as `facts/enkk.md`.
+Both blocks are injected into the original-chat prompt's
+`[MEMORIA PERMANENTE]` section.
+
+Facts are manually authored for now. There is no auto-memory, fact extraction
+from live streams, or cross-session update workflow in this local dry-run seed.
+
 ## Full Commentator Run Workflow
 
 Run the full local commentator in layers. Do not start with every model enabled

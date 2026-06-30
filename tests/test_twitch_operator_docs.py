@@ -4,9 +4,13 @@ import re
 import shlex
 from pathlib import Path
 
+import pytest
+
 import minnarone.cli as cli
 from minnarone.config import Config
-from minnarone.output import OutputMode
+from minnarone.memory import FileMemory
+from minnarone.output import CommentatorStyle, OutputMode
+from minnarone.prompt import PromptBuilder
 from minnarone.twitch_smoke import main
 from minnarone.twitch_smoke_artifacts import SmokeStats
 
@@ -58,6 +62,50 @@ def test_twitch_commentator_example_config_loads_console_only_shape():
     assert cfg.commentator.enabled is True
     assert cfg.commentator.language == "it"
     assert cfg.commentator.idle_interval == 30.0
+
+
+def test_original_chat_example_loads_seed_memory_into_prompt():
+    cfg = Config.load(Path("examples/twitch-original-chat.example.yaml"))
+
+    assert cfg.mode is OutputMode.PRIVATE
+    assert cfg.commentator.style is CommentatorStyle.ORIGINAL_CHAT
+
+    blocks = FileMemory(soul_path=cfg.soul_path, facts_dir=cfg.facts_dir).load()
+    assert blocks.soul.strip()
+    assert blocks.facts.strip()
+
+    prefix = PromptBuilder(
+        blocks,
+        announce_ai=cfg.disclosure.announce_ai,
+        commentator_language=cfg.commentator.language,
+        commentator_style=cfg.commentator.prompt_style,
+    ).stable_prefix()
+
+    assert "[MEMORIA PERMANENTE]" in prefix
+    assert prefix.index("CHI SEI:") < prefix.index(blocks.soul)
+    assert prefix.index("COSA SAI SU @enkk") < prefix.index(blocks.facts)
+
+
+@pytest.mark.parametrize(
+    ("cwd", "config_path"),
+    [
+        (Path("examples"), Path("twitch-original-chat.example.yaml")),
+        (Path("tests"), Path("../examples/twitch-original-chat.example.yaml")),
+    ],
+)
+def test_original_chat_example_loads_seed_memory_from_non_root_cwd(
+    monkeypatch,
+    cwd,
+    config_path,
+):
+    repo_root = Path(__file__).resolve().parents[1]
+    monkeypatch.chdir(repo_root / cwd)
+
+    cfg = Config.load(config_path)
+    blocks = FileMemory(soul_path=cfg.soul_path, facts_dir=cfg.facts_dir).load()
+
+    assert blocks.soul.strip()
+    assert blocks.facts.strip()
 
 
 def test_twitch_example_documents_console_only_runtime():
@@ -274,6 +322,27 @@ def test_twitch_operator_docs_cover_local_commentator_mode():
     ]
     for phrase in required:
         assert phrase in text
+
+
+def test_twitch_operator_docs_cover_original_chat_seed_memory():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+
+    required = [
+        "Original-Chat Dry-Run Seed Memory",
+        "examples/twitch-original-chat.example.yaml",
+        "examples/original-chat-memory/soul.md",
+        "examples/original-chat-memory/facts",
+        "`soul`",
+        "`facts`",
+        "identity, persona, and style",
+        "stable facts about channels or interlocutors",
+        "manually authored for now",
+        "no auto-memory",
+        "[MEMORIA PERMANENTE]",
+    ]
+    for phrase in required:
+        assert phrase in normalized
 
 
 def test_twitch_operator_docs_cover_local_perception_observability():

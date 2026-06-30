@@ -82,6 +82,16 @@ def test_defaults_applied_when_omitted(tmp_path):
     assert cfg.twitch is None
 
 
+def test_load_resolves_memory_paths_relative_to_config_file(tmp_path):
+    cfg_dir = tmp_path / "configs"
+    cfg_dir.mkdir()
+
+    cfg = Config.load(_write(cfg_dir, MINIMAL_YAML))
+
+    assert cfg.soul_path == str(cfg_dir / "soul.md")
+    assert cfg.facts_dir == str(cfg_dir / "facts")
+
+
 def test_config_positional_constructor_contract_is_preserved():
     cfg = Config(
         OutputMode.PUBLIC,
