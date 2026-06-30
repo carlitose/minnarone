@@ -20,8 +20,9 @@ from collections.abc import Awaitable, Callable
 from .cadence import CadenceLoop
 from .human import HumanLikeness
 from .llm import LLMError, LLMProvider
-from .output import OutputMode, OutputRouter
-from .prompt import PromptBuilder
+from .output import CommentatorStyle, OutputMode, OutputRouter
+from .perception import Perception, Source
+from .prompt import ORIGINAL_CHAT_CONTEXT_SPECS, PromptBuilder
 from .prompt_observation import prompt_observation_context
 from .senser import Senser
 from .store import PerceptionStore
@@ -108,12 +109,15 @@ class Reactor:
         for trigger in triggers:
             self._record_trigger(trigger)
         # Lo store non muta entro il tick: leggi la finestra recente una volta.
-        recent = self._store.tail(self._recent_window)
+        recent = self._recent_for_prompt()
         # Leggi il riassunto corrente (se c'è una fonte) una volta per tick.
         summary = self._summary_provider() if self._summary_provider else None
         for trigger in triggers:
             prompt = self._prompt_builder.build(
-                recent=recent, trigger=trigger, summary=summary
+                recent=recent,
+                trigger=trigger,
+                summary=summary,
+                self_messages=list(self._self_messages),
             )
             try:
                 with prompt_observation_context(f"reactor:{trigger.kind}"):
@@ -198,3 +202,31 @@ class Reactor:
             self._event_recorder.record_minnarone_output(message, self._mode)
         except OSError:
             return
+
+    def _recent_for_prompt(self) -> list[Perception]:
+        if (
+            getattr(self._prompt_builder, "commentator_style", None)
+            is not CommentatorStyle.ORIGINAL_CHAT
+        ):
+            return self._store.tail(self._recent_window)
+
+        recent: list[Perception] = []
+        for spec in ORIGINAL_CHAT_CONTEXT_SPECS:
+            recent.extend(self._tail_matching(spec.source, spec.type))
+        return sorted(recent, key=lambda p: p.ts)
+
+    def _tail_matching(self, source: Source, type_: str) -> list[Perception]:
+        tail_matching = getattr(self._store, "tail_matching", None)
+        if tail_matching is not None:
+            return list(
+                tail_matching(
+                    self._recent_window,
+                    source=source.value,
+                    type=type_,
+                )
+            )
+        return [
+            p
+            for p in self._store.tail(self._recent_window)
+            if p.source is source and p.type == type_
+        ]

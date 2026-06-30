@@ -9,7 +9,8 @@ import asyncio
 from minnarone.chat import ChatPerceiver
 from minnarone.console import ConsoleOutputRouter  # noqa: F401 (import sanity)
 from minnarone.fakes import FakeLLMProvider, FakeMemory, FakeOutputRouter
-from minnarone.output import OutputMode
+from minnarone.output import CommentatorStyle, OutputMode
+from minnarone.perception import Perception, Source
 from minnarone.prompt import PromptBuilder
 from minnarone.reactor import Reactor
 from minnarone.senser import Senser
@@ -404,3 +405,97 @@ def test_reactor_unchanged_without_human_likeness(tmp_path):
     asyncio.run(reactor.run_once())
 
     assert router.sent == [("ciao enkk!", OutputMode.PUBLIC)]
+
+
+def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_path):
+    class MutatingPromptBuilder:
+        def __init__(self):
+            self.snapshots: list[list[str]] = []
+
+        def build(self, *, recent, trigger, summary=None, self_messages):
+            del recent, trigger, summary
+            self.snapshots.append(list(self_messages))
+            try:
+                self_messages.append("mutation from prompt builder")
+            except AttributeError:
+                pass
+            return "prompt"
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone")
+    builder = MutatingPromptBuilder()
+    llm = FakeLLMProvider(message="first reply")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+    )
+
+    chat.perceive("minnarone prima", speaker="enkk", ts=1.0)
+    asyncio.run(reactor.run_once())
+
+    llm._message = "second reply"
+    chat.perceive("minnarone seconda", speaker="enkk", ts=2.0)
+    asyncio.run(reactor.run_once())
+
+    assert builder.snapshots == [[], ["first reply"]]
+    assert reactor.recent_messages() == ["first reply", "second reply"]
+
+
+def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="ok")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+        recent_window=2,
+    )
+    store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="audio ancora rilevante",
+            speaker="streamer",
+        )
+    )
+    store.append(
+        Perception(
+            ts=2.0,
+            source=Source.VIDEO,
+            type="caption",
+            text="video ancora rilevante",
+        )
+    )
+    chat.perceive("chat non trigger", speaker="bob", ts=3.0)
+    chat.perceive("minnarone guarda qui", speaker="alice", ts=4.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert llm.last_prompt is not None
+    assert "[PARLATO RECENTE]" in llm.last_prompt
+    assert "audio ancora rilevante" in llm.last_prompt
+    assert "[SCHERMO RECENTE]" in llm.last_prompt
+    assert "video ancora rilevante" in llm.last_prompt
+    chat_recent = llm.last_prompt.split("[CHAT RECENTE]", maxsplit=1)[1].split(
+        "[PARLATO RECENTE]", maxsplit=1
+    )[0]
+    assert "bob: chat non trigger" in chat_recent
+    assert "alice: minnarone guarda qui" not in chat_recent
+    assert llm.last_prompt.count("minnarone guarda qui") == 1

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from .memory import MemoryBlocks
 from .output import CommentatorStyle
@@ -45,6 +46,20 @@ _UNTRUSTED_CLOSE = ">>> FINE_DATI_PERCEPITI"
 # del prompt, perché ogni riga osservata inizia sempre con questo marcatore.
 _DATA_LINE_PREFIX = "| "
 _SAFE_DISPLAY_TOKEN_RE = re.compile(r"@?[A-Za-z0-9_]{1,25}\Z")
+
+
+@dataclass(frozen=True)
+class OriginalChatContextSpec:
+    source: Source
+    type: str
+    header: str
+
+
+ORIGINAL_CHAT_CONTEXT_SPECS = (
+    OriginalChatContextSpec(Source.CHAT, "msg", "[CHAT RECENTE]"),
+    OriginalChatContextSpec(Source.AUDIO, "speech", "[PARLATO RECENTE]"),
+    OriginalChatContextSpec(Source.VIDEO, "caption", "[SCHERMO RECENTE]"),
+)
 
 # Regole comuni di robustezza (anti-injection): byte-invarianti.
 _ROBUSTNESS_RULES = (
@@ -184,6 +199,7 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None = None,
+        self_messages: Sequence[str] = (),
     ) -> str:
         """Assembla il prompt completo per il turno corrente.
 
@@ -219,6 +235,7 @@ class PromptBuilder:
                 recent=recent,
                 trigger=trigger,
                 summary=summary,
+                self_messages=self_messages,
             )
 
         situation_perception = trigger.perception
@@ -271,13 +288,17 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None,
+        self_messages: Sequence[str],
     ) -> str:
         return self._dynamic_prompt(
             recent=recent,
             trigger=trigger,
             summary=summary,
+            self_messages=self_messages,
             summary_header="[RIASSUNTO]",
+            self_messages_header="[TUOI MESSAGGI RECENTI]",
             recent_header="[CONVERSAZIONE RECENTE]",
+            recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
             situation_header="[SITUAZIONE]",
             situation_line=self._original_chat_situation(trigger),
         )
@@ -346,12 +367,21 @@ class PromptBuilder:
         recent_header: str,
         situation_header: str,
         situation_line: str,
+        self_messages: Sequence[str] = (),
+        self_messages_header: str | None = None,
+        recent_source_headers: Sequence[OriginalChatContextSpec] | None = None,
     ) -> str:
+        recent_context = self._recent_context_block(
+            recent_header,
+            recent,
+            trigger.perception,
+            recent_source_headers,
+        )
         return (
             f"{self.stable_prefix()}\n"
             f"{self._summary_block(summary_header, summary)}"
-            f"{recent_header}\n"
-            f"{self._fence(self._recent_block(recent, trigger.perception))}\n\n"
+            f"{self._self_messages_block(self_messages_header, self_messages)}"
+            f"{recent_context}"
             f"{situation_header}\n"
             f"{situation_line}\n"
         )
@@ -364,23 +394,65 @@ class PromptBuilder:
         return "\n".join(format_perception_line(p) for p in history)
 
     @classmethod
+    def _recent_context_block(
+        cls,
+        header: str,
+        recent: Sequence[Perception],
+        situation_perception: Perception | None,
+        source_headers: Sequence[OriginalChatContextSpec] | None,
+    ) -> str:
+        if source_headers is None:
+            return (
+                f"{header}\n"
+                f"{cls._fence(cls._recent_block(recent, situation_perception))}\n\n"
+            )
+
+        blocks = [header]
+        for spec in source_headers:
+            source_recent = [
+                p
+                for p in recent
+                if p.source is spec.source and p.type == spec.type
+            ]
+            blocks.append(
+                f"{spec.header}\n"
+                f"{cls._fence(cls._recent_block(source_recent, situation_perception))}"
+            )
+        return "\n\n".join(blocks) + "\n\n"
+
+    @classmethod
     def _summary_block(cls, header: str, summary: str | None) -> str:
         if not summary or not summary.strip():
             return ""
         return f"{header}\n{cls._fence(summary.strip())}\n\n"
 
+    @classmethod
+    def _self_messages_block(
+        cls, header: str | None, self_messages: Sequence[str]
+    ) -> str:
+        messages = [message for message in self_messages if message.strip()]
+        if header is None or not messages:
+            return ""
+        body = "\n".join(f"minnarone: {message}" for message in messages)
+        return (
+            f"{header}\n"
+            "Usali per tenere continuita' e non ripeterti.\n"
+            f"{cls._fence(body)}\n\n"
+        )
+
     @staticmethod
     def _fence(content: str) -> str:
         """Racchiude contenuto percepito in un blocco di DATI non fidati.
 
-        Oltre ai delimitatori, OGNI riga di `content` (split su newline, quindi
-        anche le righe successive alla prima di un messaggio multilinea) è
-        prefissata con ``_DATA_LINE_PREFIX``. Così nessuna riga interna può mai
-        affiorare flush-left: né un finto delimitatore di chiusura
+        Oltre ai delimitatori, OGNI riga di `content` è prefissata con
+        ``_DATA_LINE_PREFIX``. I ritorni a capo CRLF/CR sono normalizzati prima
+        dello split, così anche input con carriage return non possono far
+        affiorare righe flush-left: né un finto delimitatore di chiusura
         (``>>> FINE_DATI_PERCEPITI``) né un finto header ``## ...`` possono
         impersonare struttura reale del prompt — restano testo dentro il fence,
         riconoscibili come dato dal marcatore di riga.
         """
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
         body = "\n".join(
             f"{_DATA_LINE_PREFIX}{line}" for line in content.split("\n")
         )
