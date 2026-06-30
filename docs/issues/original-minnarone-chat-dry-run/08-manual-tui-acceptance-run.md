@@ -112,3 +112,23 @@ be moved to done based only on automated tests.
 - User story 10
 - User story 11
 - User story 22
+
+## Autopilot status
+
+Blocked-needs-human as of 2026-06-30. Dependency 07 is complete in the stacked
+autopilot branch/PR, and the non-live config wiring check passes with placeholder
+read-only IRC values:
+
+```bash
+TWITCH_BOT_USERNAME=dry_run TWITCH_OAUTH_TOKEN=oauth:dry_run \
+  uv run --extra dev python -m minnarone \
+  examples/twitch-original-chat.example.yaml --check
+```
+
+This issue remains open because the remaining acceptance criteria require a
+bounded live TUI session, real runtime credentials/model setup, visual
+inspection of the prompt and `MINNARONE` panels, and operator judgment of output
+quality. No secrets were inspected or recorded. Do not move this issue to
+`done/` until a real run confirms local `RE`/`MSG` output, perception
+availability, prompt structure, `#end_conv` behavior if observed, and no public
+Twitch sends.
