@@ -607,6 +607,21 @@ class Config:
             raise ConfigError(f"{field_name} deve essere > 0")
         return parsed
 
+    @staticmethod
+    def _with_config_relative_memory_paths(
+        data: dict[str, object],
+        config_dir: Path,
+    ) -> dict[str, object]:
+        resolved = dict(data)
+        for field_name in ("soul_path", "facts_dir"):
+            value = resolved.get(field_name)
+            if not isinstance(value, str) or not value:
+                continue
+            path = Path(value)
+            if not path.is_absolute():
+                resolved[field_name] = str(config_dir / path)
+        return resolved
+
     @classmethod
     def load(cls, path: str | Path) -> "Config":
         """Carica e valida una Config da un file YAML."""
@@ -619,4 +634,6 @@ class Config:
             raise ConfigError(f"file di config vuoto: {p}")
         if not isinstance(data, dict):
             raise ConfigError("la radice del file di config deve essere una mappa")
-        return cls.from_dict(data)
+        return cls.from_dict(
+            cls._with_config_relative_memory_paths(data, p.resolve().parent)
+        )
