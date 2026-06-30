@@ -6,6 +6,7 @@ core end-to-end (slice 01) prima che esistano le implementazioni reali.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import AsyncIterator, Sequence
 
 from .audio import STREAMER, AudioChunk, SpeechSegment
@@ -45,21 +46,33 @@ class FakeLLMProvider(LLMProvider):
         self,
         message: str = "ok",
         *,
+        messages: Sequence[str] | None = None,
         raise_timeout: bool = False,
         model: str = "fake-llm",
         meta: dict[str, object] | None = None,
     ) -> None:
         self._message = message
+        self._messages: deque[str] | None = (
+            deque(messages) if messages is not None else None
+        )
         self._raise_timeout = raise_timeout
         self.model = model
         self._meta = dict(meta or {})
         self.last_prompt: str | None = None
+        self.prompts: list[str] = []
 
     async def complete(self, prompt: str) -> LLMResult:
         self.last_prompt = prompt
+        self.prompts.append(prompt)
         if self._raise_timeout:
             raise LLMTimeout("timeout simulato")
-        return LLMResult(message=self._message, meta=dict(self._meta))
+        if self._messages is not None:
+            if not self._messages:
+                raise AssertionError("fake LLM messages exhausted")
+            message = self._messages.popleft()
+        else:
+            message = self._message
+        return LLMResult(message=message, meta=dict(self._meta))
 
 
 class FakeMemory(Memory):

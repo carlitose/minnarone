@@ -47,6 +47,14 @@ def test_llm_provider_returns_deterministic_message():
     assert provider.last_prompt == "un prompt"
 
 
+def test_llm_provider_scripted_messages_fail_loudly_when_exhausted():
+    provider = FakeLLMProvider(messages=["prima"])
+
+    assert asyncio.run(provider.complete("prompt 1")).message == "prima"
+    with pytest.raises(AssertionError, match="fake LLM messages exhausted"):
+        asyncio.run(provider.complete("prompt inatteso"))
+
+
 def test_llm_provider_can_raise_timeout():
     provider = FakeLLMProvider(raise_timeout=True)
     with pytest.raises(LLMTimeout):

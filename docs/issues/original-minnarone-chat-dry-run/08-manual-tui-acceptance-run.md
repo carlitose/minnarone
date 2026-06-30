@@ -100,7 +100,7 @@ be moved to done based only on automated tests.
 
 ## Blocked by
 
-- Blocked by [07-end-to-end-fake-dry-run.md](./07-end-to-end-fake-dry-run.md)
+- Blocked by [07-end-to-end-fake-dry-run.md](./done/07-end-to-end-fake-dry-run.md)
 
 ## User stories addressed
 
