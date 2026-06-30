@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable
 from .cadence import CadenceLoop
 from .human import HumanLikeness
 from .llm import LLMError, LLMProvider
+from .original_chat_output import normalize_original_chat_response
 from .output import CommentatorStyle, OutputMode, OutputRouter
 from .perception import Perception, Source
 from .prompt import ORIGINAL_CHAT_CONTEXT_SPECS, PromptBuilder
@@ -139,6 +140,13 @@ class Reactor:
         - altrimenti si attende il typing delay (await dello sleep iniettato:
           non blocca il loop) e poi si instrada il testo ripulito.
         """
+        if self._uses_original_chat_style():
+            response = normalize_original_chat_response(message)
+            await self._route_local_output(response.display_text)
+            if response.message and not response.end_conversation:
+                self._note_self_message(response.message)
+            return
+
         if self._human is None:
             await self._route_and_note(message)
             return
@@ -160,8 +168,16 @@ class Reactor:
 
     async def _route_and_note(self, message: str) -> None:
         """Instrada il messaggio, lo ricorda per il dedup e notifica il Senser."""
+        await self._route_local_output(message)
+        self._note_self_message(message)
+
+    async def _route_local_output(self, message: str) -> None:
+        """Instrada e registra il testo visibile localmente."""
         await self._router.route(message, self._mode)
         self._record_minnarone_output(message)
+
+    def _note_self_message(self, message: str) -> None:
+        """Ricorda un messaggio proprio effettivamente inviabile."""
         self._self_messages.append(message)
         # Notifica al Senser che l'agente ha appena parlato, così la
         # continuazione (UC03) funziona nel sistema assemblato. Si usa lo
@@ -204,10 +220,7 @@ class Reactor:
             return
 
     def _recent_for_prompt(self) -> list[Perception]:
-        if (
-            getattr(self._prompt_builder, "commentator_style", None)
-            is not CommentatorStyle.ORIGINAL_CHAT
-        ):
+        if not self._uses_original_chat_style():
             return self._store.tail(self._recent_window)
 
         recent: list[Perception] = []
@@ -230,3 +243,9 @@ class Reactor:
             for p in self._store.tail(self._recent_window)
             if p.source is source and p.type == type_
         ]
+
+    def _uses_original_chat_style(self) -> bool:
+        return (
+            getattr(self._prompt_builder, "commentator_style", None)
+            is CommentatorStyle.ORIGINAL_CHAT
+        )

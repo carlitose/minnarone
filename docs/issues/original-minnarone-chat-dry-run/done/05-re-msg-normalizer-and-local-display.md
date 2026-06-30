@@ -1,6 +1,6 @@
 ## Parent PRD
 
-[original-minnarone-chat-dry-run.md](../../prds/original-minnarone-chat-dry-run.md)
+[original-minnarone-chat-dry-run.md](../../../prds/original-minnarone-chat-dry-run.md)
 
 ## What to build
 
