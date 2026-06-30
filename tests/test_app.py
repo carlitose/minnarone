@@ -21,7 +21,7 @@ from minnarone.app import (
     build_agent,
 )
 from minnarone.audio import AudioChunk
-from minnarone.config import Config, ConfigError
+from minnarone.config import CommentatorStyle, Config, ConfigError
 from minnarone.console import ConsoleOutputRouter
 from minnarone.output import OutputMode
 from minnarone.perception import Perception, Source
@@ -1118,6 +1118,50 @@ def test_commentator_mode_routes_private_output_to_console_and_changes_prompt(
     assert "italiano" in prompts[0].lower()
     assert "NON inviare messaggi pubblici Twitch" in prompts[0]
     assert agent.senser.idle_interval == 0.01
+
+
+def test_original_chat_style_reaches_prompt_boundary_without_public_output(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  enabled: true
+                  style: original_chat
+                """
+            ),
+        )
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+    )
+
+    assert agent.mode is OutputMode.PRIVATE
+    assert isinstance(agent.router, ConsoleOutputRouter)
+    assert agent.prompt_builder.commentator_style is CommentatorStyle.ORIGINAL_CHAT
 
 
 def test_tui_commentator_output_goes_to_dashboard_not_console(

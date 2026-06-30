@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from minnarone.asr import AsrConfig
-from minnarone.config import CommentatorConfig, Config, ConfigError
+from minnarone.config import CommentatorConfig, CommentatorStyle, Config, ConfigError
 from minnarone.output import OutputMode
 from minnarone.speaker import SpeakerClusteringConfig, SpeakerEmbeddingConfig
 from minnarone.vad import VadConfig
@@ -435,6 +435,7 @@ def test_commentator_config_defaults_overrides_and_validation(tmp_path):
         language="it",
         idle_interval=12.5,
     )
+    assert configured.commentator.style is CommentatorStyle.OPERATOR
 
     with pytest.raises(ConfigError, match="commentator.enabled"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  enabled: 1\n"))
@@ -446,6 +447,63 @@ def test_commentator_config_defaults_overrides_and_validation(tmp_path):
         )
     with pytest.raises(ConfigError, match="commentator.unexpected"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  unexpected: 1\n"))
+
+
+def test_original_chat_style_loads_for_private_commentator(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace("mode: public", "mode: private")
+            + textwrap.dedent(
+                """
+                commentator:
+                  enabled: true
+                  style: original_chat
+                """
+            ),
+        )
+    )
+
+    assert cfg.commentator.style is CommentatorStyle.ORIGINAL_CHAT
+
+
+def test_original_chat_style_requires_enabled_private_commentator(tmp_path):
+    with pytest.raises(
+        ConfigError,
+        match="commentator.style.*original_chat.*commentator.enabled.*mode: private",
+    ):
+        Config.load(
+            _write(
+                tmp_path,
+                MINIMAL_YAML
+                + textwrap.dedent(
+                    """
+                    commentator:
+                      style: original_chat
+                    """
+                ),
+            )
+        )
+
+
+def test_invalid_commentator_style_fails_clearly(tmp_path):
+    with pytest.raises(
+        ConfigError,
+        match="commentator.style.*glitch.*operator.*original_chat",
+    ):
+        Config.load(
+            _write(
+                tmp_path,
+                MINIMAL_YAML.replace("mode: public", "mode: private")
+                + textwrap.dedent(
+                    """
+                    commentator:
+                      enabled: true
+                      style: glitch
+                    """
+                ),
+            )
+        )
 
 
 def test_commentator_requires_private_mode(tmp_path):

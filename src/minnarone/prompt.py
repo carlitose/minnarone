@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .memory import MemoryBlocks
+from .output import CommentatorStyle
 from .perception import Perception, format_perception_line
 from .senser import Trigger
 
@@ -92,19 +93,24 @@ class PromptBuilder:
         blocks: MemoryBlocks,
         *,
         announce_ai: bool = False,
-        commentator: bool = False,
         commentator_language: str = "it",
+        commentator_style: CommentatorStyle | None = None,
     ) -> None:
         self._blocks = blocks
         self._announce_ai = announce_ai
-        self._commentator = commentator
         self._commentator_language = commentator_language
+        self._commentator_style = commentator_style
+
+    @property
+    def commentator_style(self) -> CommentatorStyle | None:
+        """Selected commentator style visible at the reaction prompt boundary."""
+        return self._commentator_style
 
     def stable_prefix(self) -> str:
         """La parte cacheable del prompt: dati stabili (regole + soul + facts)."""
         disclosure = _DISCLOSURE_ANNOUNCE if self._announce_ai else _DISCLOSURE_HIDE
         commentator = ""
-        if self._commentator:
+        if self._commentator_style is not None:
             commentator = _COMMENTATOR_RULES_TEMPLATE.format(
                 language=_language_name(self._commentator_language)
             )
@@ -166,7 +172,7 @@ class PromptBuilder:
             f" (rivolto a {trigger.interlocutor})" if trigger.interlocutor else ""
         )
         if situation_perception is None:
-            if self._commentator:
+            if self._commentator_style is not None:
                 situation_line = (
                     "Nessuno ti ha nominato di recente: commenta per "
                     f"l'operatore cosa sta succedendo nel contesto "
@@ -181,7 +187,7 @@ class PromptBuilder:
             # Il messaggio del trigger è contenuto percepito: lo si racchiude in
             # un fence di dati non fidati così un finto header non impersona una
             # sezione reale. L'istruzione ("Reagisci a...") resta FUORI dal fence.
-            if self._commentator:
+            if self._commentator_style is not None:
                 interlocutor = (
                     f" di {trigger.interlocutor}" if trigger.interlocutor else ""
                 )
