@@ -98,7 +98,7 @@ terminal dependencies.
 - Blocked by [03-dynamic-context-and-self-history.md](./03-dynamic-context-and-self-history.md)
 - Blocked by [04-seed-soul-facts-memory.md](./done/04-seed-soul-facts-memory.md)
 - Blocked by [05-re-msg-normalizer-and-local-display.md](./done/05-re-msg-normalizer-and-local-display.md)
-- Blocked by [06-visible-end-conv-skip.md](./06-visible-end-conv-skip.md)
+- Blocked by [06-visible-end-conv-skip.md](./done/06-visible-end-conv-skip.md)
 
 ## User stories addressed
 
