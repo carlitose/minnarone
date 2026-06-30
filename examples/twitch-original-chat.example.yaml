@@ -14,7 +14,7 @@ llm_provider: grok
 agent_name: minnarone
 
 twitch:
-  channel: enkk
+  channel: multiplayerit
   quality: best
   chat: true
   audio: false

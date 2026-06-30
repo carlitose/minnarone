@@ -1,6 +1,6 @@
 ## Parent PRD
 
-[original-minnarone-chat-dry-run.md](../../prds/original-minnarone-chat-dry-run.md)
+[original-minnarone-chat-dry-run.md](../../../prds/original-minnarone-chat-dry-run.md)
 
 ## What to build
 
@@ -89,18 +89,18 @@ be moved to done based only on automated tests.
 
 ## Acceptance criteria
 
-- [ ] A bounded live TUI run starts with original-chat style enabled.
-- [ ] The prompt tab shows the original-chat prompt structure.
-- [ ] The `MINNARONE` panel shows at least one local `RE`/`MSG` output.
-- [ ] Chat/audio/video perception availability is recorded.
-- [ ] No Twitch public message is sent.
-- [ ] `#end_conv` behavior is verified if observed, or explicitly noted as not observed.
-- [ ] Prompt/output quality notes are recorded for follow-up tuning.
-- [ ] No secrets are recorded in notes or artifacts.
+- [x] A bounded live TUI run starts with original-chat style enabled.
+- [x] The prompt tab shows the original-chat prompt structure.
+- [x] The `MINNARONE` panel shows at least one local `RE`/`MSG` output.
+- [x] Chat/audio/video perception availability is recorded.
+- [x] No Twitch public message is sent.
+- [x] `#end_conv` behavior is verified if observed, or explicitly noted as not observed.
+- [x] Prompt/output quality notes are recorded for follow-up tuning.
+- [x] No secrets are recorded in notes or artifacts.
 
 ## Blocked by
 
-- Blocked by [07-end-to-end-fake-dry-run.md](./done/07-end-to-end-fake-dry-run.md)
+- Blocked by [07-end-to-end-fake-dry-run.md](./07-end-to-end-fake-dry-run.md)
 
 ## User stories addressed
 
@@ -112,3 +112,29 @@ be moved to done based only on automated tests.
 - User story 10
 - User story 11
 - User story 22
+
+## Acceptance notes
+
+Accepted by live operator check on 2026-06-30. The local runtime was configured
+for `mode: private`, Twitch channel `multiplayerit`, `quality: 720p60`, and
+`commentator.style: original_chat`.
+
+The non-live config wiring check passed with placeholder read-only IRC values:
+
+```bash
+TWITCH_BOT_USERNAME=dry_run TWITCH_OAUTH_TOKEN=oauth:dry_run \
+  uv run --extra dev python -m minnarone \
+  examples/twitch-original-chat.example.yaml --check
+```
+
+During the live TUI run, the operator observed chat/audio/video perception
+panels updating, prompt structure available in the TUI, and the `MINNARONE`
+panel rendering original-chat output as canonical `RE`/`MSG` blocks. Both
+skipped decisions (`MSG: #end_conv` with `(skip: not sent)`) and a normal local
+candidate message were visible. The run stayed local-only in private mode; no
+public Twitch send was requested by this issue, and no secrets are recorded in
+this artifact.
+
+Follow-up tuning: video caption quality is usable for pipeline acceptance but
+may need prompt/model/capture tuning before relying on it for high-quality
+commentary.
