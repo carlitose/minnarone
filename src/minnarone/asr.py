@@ -8,9 +8,12 @@ This module keeps model-specific code behind that protocol and imports
 from __future__ import annotations
 
 import struct
+import sys
 from array import array
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import Lock
 
 from .audio import SpeechSegment
 
@@ -18,6 +21,7 @@ _DEFAULT_MODEL = "large-v3-turbo"
 _DEFAULT_DEVICE = "auto"
 _DEFAULT_COMPUTE_TYPE = "default"
 _DEFAULT_BEAM_SIZE = 5
+_FASTER_WHISPER_TQDM_LOCK = Lock()
 
 
 class AsrConfigError(ValueError):
@@ -101,19 +105,20 @@ class FasterWhisperAsr:
         if segment.sample_rate != 16_000:
             raise AsrInputError("SpeechSegment.sample_rate deve essere 16000 Hz")
         audio = pcm_s16le_to_float32(segment.samples)
-        segments, _info = self._model.transcribe(
-            audio,
-            beam_size=self._config.beam_size,
-            language=self._config.language,
-            condition_on_previous_text=self._config.condition_on_previous_text,
-        )
-        return " ".join(
-            text
-            for text in (
-                str(getattr(segment, "text", "")).strip() for segment in segments
+        with _faster_whisper_progress_disabled():
+            segments, _info = self._model.transcribe(
+                audio,
+                beam_size=self._config.beam_size,
+                language=self._config.language,
+                condition_on_previous_text=self._config.condition_on_previous_text,
             )
-            if text
-        ).strip()
+            return " ".join(
+                text
+                for text in (
+                    str(getattr(segment, "text", "")).strip() for segment in segments
+                )
+                if text
+            ).strip()
 
 
 def pcm_s16le_to_float32(samples: object) -> object:
@@ -143,6 +148,39 @@ def _default_model_factory(model: str, *, device: str, compute_type: str) -> obj
             "o il pacchetto 'faster-whisper' prima di abilitare twitch.audio"
         ) from exc
     return WhisperModel(model, device=device, compute_type=compute_type)
+
+
+class _NoOpTqdm:
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def update(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+@contextmanager
+def _faster_whisper_progress_disabled():
+    """Avoid faster-whisper/tqdm multiprocessing locks in Textual runtimes."""
+    module = sys.modules.get("faster_whisper.transcribe")
+    if module is None:
+        try:
+            import faster_whisper.transcribe as module
+        except ImportError:
+            yield
+            return
+    original = getattr(module, "tqdm", None)
+    if original is None:
+        yield
+        return
+    with _FASTER_WHISPER_TQDM_LOCK:
+        module.tqdm = _NoOpTqdm  # type: ignore[attr-defined]
+        try:
+            yield
+        finally:
+            module.tqdm = original  # type: ignore[attr-defined]
 
 
 def _non_empty_string(value: object, field_name: str) -> str:

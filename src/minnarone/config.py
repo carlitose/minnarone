@@ -303,6 +303,8 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
         "language",
         "prompt",
         "max_caption_chars",
+        "max_image_edge",
+        "max_image_pixels",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -321,6 +323,8 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
             language=data.get("language", "en"),  # type: ignore[arg-type]
             prompt=data.get("prompt", QwenVlConfig().prompt),  # type: ignore[arg-type]
             max_caption_chars=data.get("max_caption_chars", 240),  # type: ignore[arg-type]
+            max_image_edge=data.get("max_image_edge", 768),  # type: ignore[arg-type]
+            max_image_pixels=data.get("max_image_pixels", 500_000),  # type: ignore[arg-type]
         )
     except QwenVlConfigError as exc:
         raise ConfigError(f"vlm.{exc}") from exc

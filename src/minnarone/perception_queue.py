@@ -111,6 +111,8 @@ class BoundedLocalPerceptionQueue:
             raise RuntimeError("perception queue is not running")
         queue = self._queues[event.channel]
         stats = self._stats[event.channel]
+        if event.channel == "video":
+            stats.dropped += self._drain_queue(queue)
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:

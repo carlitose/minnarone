@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 import time
+import types
 
 import pytest
 
@@ -10,18 +12,29 @@ from minnarone.video import VideoFrame
 
 
 class _FakeImage:
-    def __init__(self, source):
+    def __init__(self, source, *, size=(64, 64)):
         self.source = source
+        self.size = size
         self.converted_to: str | None = None
+        self.resize_calls = []
 
     def convert(self, mode):
         self.converted_to = mode
         return self
 
+    def resize(self, size, *, resample):
+        self.resize_calls.append({"size": size, "resample": resample})
+        resized = _FakeImage(self.source, size=size)
+        resized.converted_to = self.converted_to
+        return resized
+
 
 class _FakeImageModule:
     class Image:
         pass
+
+    class Resampling:
+        LANCZOS = "lanczos"
 
     def __init__(self) -> None:
         self.fromarray_calls = []
@@ -206,6 +219,57 @@ def test_qwen_captioner_requires_model_for_real_backend():
         Qwen2VlCaptioner(QwenVlConfig(model=None))
 
 
+def test_qwen_captioner_disables_transformers_progress_while_loading_model(
+    monkeypatch,
+):
+    from minnarone.vlm import Qwen2VlCaptioner, QwenVlConfig
+
+    class FakeTransformersLogging:
+        def __init__(self):
+            self.active = True
+            self.disabled_during_load = False
+
+        def is_progress_bar_enabled(self):
+            return self.active
+
+        def disable_progress_bar(self):
+            self.active = False
+
+        def enable_progress_bar(self):
+            self.active = True
+
+    fake_logging = FakeTransformersLogging()
+
+    class FakeModelClass:
+        @classmethod
+        def from_pretrained(cls, model, **kwargs):
+            if fake_logging.active:
+                raise ValueError("bad value(s) in fds_to_keep")
+            fake_logging.disabled_during_load = True
+            return _FakeModel()
+
+    class FakeProcessorClass:
+        @classmethod
+        def from_pretrained(cls, model):
+            return _FakeProcessor()
+
+    fake_transformers = types.SimpleNamespace(
+        Qwen2VLForConditionalGeneration=FakeModelClass,
+        AutoProcessor=FakeProcessorClass,
+        utils=types.SimpleNamespace(logging=fake_logging),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    Qwen2VlCaptioner(
+        QwenVlConfig(model="local", device="cpu"),
+        torch_module=_FakeTorch(),
+        image_module=_FakeImageModule(),
+    )
+
+    assert fake_logging.disabled_during_load is True
+    assert fake_logging.active is True
+
+
 def test_qwen_config_rejects_custom_device_map_with_explicit_device():
     from minnarone.vlm import QwenVlConfig, QwenVlConfigError
 
@@ -244,6 +308,10 @@ def test_qwen_captioner_times_out_without_killing_caller():
 def test_qwen_captioner_does_not_overlap_after_timeout():
     from minnarone.vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 
+    image_module = _FakeImageModule()
+    first = _FakeImage("rgb", size=(1920, 1080))
+    second = _FakeImage("rgb-2", size=(1920, 1080))
+
     class BlockingModel(_FakeModel):
         calls = 0
 
@@ -257,14 +325,16 @@ def test_qwen_captioner_does_not_overlap_after_timeout():
         model_factory=lambda _model_id, **_kwargs: BlockingModel(),
         processor_factory=lambda _model_id: _FakeProcessor(),
         torch_module=_FakeTorch(),
-        image_module=_FakeImageModule(),
+        image_module=image_module,
     )
 
     with pytest.raises(QwenVlCaptionError, match="timed out"):
-        captioner.caption(VideoFrame(pixels=["rgb"]))
+        captioner.caption(VideoFrame(pixels=first))
     with pytest.raises(QwenVlCaptionError, match="still busy"):
-        captioner.caption(VideoFrame(pixels=["rgb-2"]))
+        captioner.caption(VideoFrame(pixels=second))
     assert BlockingModel.calls == 1
+    assert first.resize_calls == [{"size": (768, 432), "resample": "lanczos"}]
+    assert second.resize_calls == []
 
 
 def test_frame_to_image_accepts_existing_image_without_writing_files():
@@ -276,3 +346,69 @@ def test_frame_to_image_accepts_existing_image_without_writing_files():
 
     assert converted is image
     assert image.converted_to == "RGB"
+
+
+def test_qwen_captioner_downscales_large_images_before_processor():
+    from minnarone.vlm import Qwen2VlCaptioner, QwenVlConfig
+
+    processor = _FakeProcessor()
+    original = _FakeImage("large-frame", size=(1920, 1080))
+    captioner = Qwen2VlCaptioner(
+        QwenVlConfig(
+            model="local",
+            max_image_edge=768,
+            max_image_pixels=500_000,
+        ),
+        model_factory=lambda _model_id, **_kwargs: _FakeModel(),
+        processor_factory=lambda _model_id: processor,
+        torch_module=_FakeTorch(),
+        image_module=_FakeImageModule(),
+    )
+
+    captioner.caption(VideoFrame(pixels=original))
+
+    image_seen_by_processor = processor.calls[0]["images"][0]
+    assert image_seen_by_processor.size == (768, 432)
+    assert image_seen_by_processor.converted_to == "RGB"
+    assert original.size == (1920, 1080)
+    assert original.resize_calls == [{"size": (768, 432), "resample": "lanczos"}]
+
+
+def test_qwen_captioner_leaves_small_images_unresized():
+    from minnarone.vlm import Qwen2VlCaptioner, QwenVlConfig
+
+    processor = _FakeProcessor()
+    original = _FakeImage("small-frame", size=(320, 180))
+    captioner = Qwen2VlCaptioner(
+        QwenVlConfig(
+            model="local",
+            max_image_edge=768,
+            max_image_pixels=500_000,
+        ),
+        model_factory=lambda _model_id, **_kwargs: _FakeModel(),
+        processor_factory=lambda _model_id: processor,
+        torch_module=_FakeTorch(),
+        image_module=_FakeImageModule(),
+    )
+
+    captioner.caption(VideoFrame(pixels=original))
+
+    assert processor.calls[0]["images"][0] is original
+    assert original.converted_to == "RGB"
+    assert original.resize_calls == []
+
+
+def test_qwen_captioner_resize_stays_within_pixel_budget():
+    from minnarone.vlm import downscale_image_for_vlm
+
+    original = _FakeImage("near-threshold", size=(707, 708))
+
+    resized = downscale_image_for_vlm(
+        original,
+        max_edge=1000,
+        max_pixels=500_000,
+        image_module=_FakeImageModule(),
+    )
+
+    assert resized.size[0] * resized.size[1] <= 500_000
+    assert resized.size == (706, 707)

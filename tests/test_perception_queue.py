@@ -58,6 +58,39 @@ def test_media_queue_is_bounded_and_drains_accepted_work():
     asyncio.run(run())
 
 
+def test_video_queue_replaces_stale_queued_frame_with_newest():
+    async def run() -> None:
+        processor = _GateProcessor()
+        queue = BoundedLocalPerceptionQueue(
+            {"video": processor},
+            capacity=3,
+            shutdown_timeout=1.0,
+        )
+
+        await queue.start()
+        assert queue.submit(_event("video", "in-flight")) is True
+        assert await asyncio.to_thread(processor.started.wait, timeout=1.0)
+
+        assert queue.submit(_event("video", "stale-1")) is True
+        assert queue.submit(_event("video", "stale-2")) is True
+        assert queue.submit(_event("video", "newest")) is True
+
+        stats = queue.stats().channels["video"]
+        assert stats.queued == 4
+        assert stats.dropped == 2
+        assert stats.queue_depth == 1
+
+        processor.release.set()
+        await queue.stop()
+
+        stats = queue.stats().channels["video"]
+        assert processor.seen == ["in-flight", "newest"]
+        assert stats.processed == 2
+        assert stats.dropped == 2
+
+    asyncio.run(run())
+
+
 class _HangingProcessor:
     def __init__(self) -> None:
         self.started = Event()

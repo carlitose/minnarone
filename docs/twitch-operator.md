@@ -479,6 +479,8 @@ vlm:
     Mention only observable gameplay, UI, people, and readable text.
     Do not speculate.
   max_caption_chars: 240
+  max_image_edge: 768
+  max_image_pixels: 500000
 ```
 
 Caption one captured smoke JPEG through `minnarone.vlm`:
@@ -573,6 +575,8 @@ vlm:
     Mention only observable gameplay, UI, people, and readable text.
     Do not speculate.
   max_caption_chars: 240
+  max_image_edge: 768
+  max_image_pixels: 500000
 
 commentator:
   enabled: false

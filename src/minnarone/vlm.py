@@ -49,6 +49,8 @@ class QwenVlConfig:
     language: str = "en"
     prompt: str = DEFAULT_QWEN_VL_PROMPT
     max_caption_chars: int = 240
+    max_image_edge: int = 768
+    max_image_pixels: int = 500_000
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -102,6 +104,16 @@ class QwenVlConfig:
             "max_caption_chars",
             _positive_int(self.max_caption_chars, "max_caption_chars"),
         )
+        object.__setattr__(
+            self,
+            "max_image_edge",
+            _positive_int(self.max_image_edge, "max_image_edge"),
+        )
+        object.__setattr__(
+            self,
+            "max_image_pixels",
+            _positive_int(self.max_image_pixels, "max_image_pixels"),
+        )
         timeout = _positive_float(self.timeout_seconds, "timeout_seconds")
         object.__setattr__(self, "timeout_seconds", timeout)
 
@@ -143,8 +155,9 @@ class Qwen2VlCaptioner:
                 model_factory = _default_model_factory()
             if processor_factory is None:
                 processor_factory = _default_processor_factory()
-            self._model = model_factory(model_id, **kwargs)
-            self._processor = processor_factory(model_id)
+            with _TransformersProgressDisabled():
+                self._model = model_factory(model_id, **kwargs)
+                self._processor = processor_factory(model_id)
             self._place_model()
             eval_method = getattr(self._model, "eval", None)
             if eval_method is not None:
@@ -156,8 +169,17 @@ class Qwen2VlCaptioner:
 
     def caption(self, frame: VideoFrame) -> str:
         """Return one short caption for `frame`, or raise on backend failure."""
+        return self._run_with_timeout(lambda: self._caption_frame(frame))
+
+    def _caption_frame(self, frame: VideoFrame) -> str:
         image = frame_to_pil_image(frame, image_module=self._image_module)
-        return self._run_with_timeout(lambda: self._caption_image(image))
+        image = downscale_image_for_vlm(
+            image,
+            max_edge=self._config.max_image_edge,
+            max_pixels=self._config.max_image_pixels,
+            image_module=self._image_module,
+        )
+        return self._caption_image(image)
 
     def _model_kwargs(self) -> dict[str, object]:
         kwargs: dict[str, object] = {}
@@ -279,6 +301,79 @@ def frame_to_pil_image(frame: VideoFrame, *, image_module: object | None = None)
         return image_api.open(BytesIO(bytes(pixels))).convert("RGB")  # type: ignore[attr-defined]
     return image_api.fromarray(pixels).convert("RGB")  # type: ignore[attr-defined]
 
+def downscale_image_for_vlm(
+    image: object,
+    *,
+    max_edge: int,
+    max_pixels: int,
+    image_module: object | None = None,
+) -> object:
+    """Return `image` or a resized copy that fits the VLM input budget."""
+    width, height = _image_size(image)
+    scale = min(
+        1.0,
+        max_edge / max(width, height),
+        math.sqrt(max_pixels / (width * height)),
+    )
+    if scale >= 1.0:
+        return image
+    target_size = _bounded_size(
+        width=width,
+        height=height,
+        scale=scale,
+        max_edge=max_edge,
+        max_pixels=max_pixels,
+    )
+    return image.resize(  # type: ignore[union-attr]
+        target_size,
+        resample=_resize_filter(image_module),
+    )
+
+def _bounded_size(
+    *,
+    width: int,
+    height: int,
+    scale: float,
+    max_edge: int,
+    max_pixels: int,
+) -> tuple[int, int]:
+    target_width = max(1, int(width * scale))
+    target_height = max(1, int(height * scale))
+    while (
+        max(target_width, target_height) > max_edge
+        or target_width * target_height > max_pixels
+    ):
+        if target_width >= target_height and target_width > 1:
+            target_width -= 1
+        elif target_height > 1:
+            target_height -= 1
+        else:
+            break
+    return target_width, target_height
+
+def _image_size(image: object) -> tuple[int, int]:
+    size = getattr(image, "size", None)
+    if (
+        isinstance(size, tuple)
+        and len(size) == 2
+        and all(isinstance(value, int) for value in size)
+        and size[0] > 0
+        and size[1] > 0
+    ):
+        return size
+    width = getattr(image, "width", None)
+    height = getattr(image, "height", None)
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        return width, height
+    raise QwenVlCaptionError("VLM image has no valid pixel size")
+
+def _resize_filter(image_module: object | None) -> object:
+    image_api = image_module if image_module is not None else _import_pillow_image()
+    resampling = getattr(image_api, "Resampling", None)
+    if resampling is not None:
+        return resampling.LANCZOS  # type: ignore[union-attr]
+    return image_api.LANCZOS  # type: ignore[union-attr]
+
 
 def _is_pil_like_image(pixels: object, image_module: object) -> bool:
     image_class = getattr(image_module, "Image", None)
@@ -323,6 +418,38 @@ def _import_transformers() -> object:
             "local Qwen2-VL captioning requires transformers; install the vlm extra"
         ) from exc
     return transformers
+
+
+class _TransformersProgressDisabled:
+    def __init__(self) -> None:
+        self._logging: object | None = None
+        self._was_enabled = False
+
+    def __enter__(self):
+        transformers = _import_transformers()
+        utils = getattr(transformers, "utils", None)
+        logging = getattr(utils, "logging", None)
+        if logging is None:
+            try:
+                from transformers.utils import logging as imported_logging
+            except (ImportError, AttributeError):
+                return self
+            logging = imported_logging
+        is_enabled = getattr(logging, "is_progress_bar_enabled", None)
+        disable = getattr(logging, "disable_progress_bar", None)
+        if callable(is_enabled):
+            self._was_enabled = bool(is_enabled())
+        if callable(disable):
+            disable()
+            self._logging = logging
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> bool:
+        if self._was_enabled and self._logging is not None:
+            enable = getattr(self._logging, "enable_progress_bar", None)
+            if callable(enable):
+                enable()
+        return False
 
 
 def _import_torch() -> object:

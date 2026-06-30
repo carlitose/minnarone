@@ -338,17 +338,23 @@ def _queue_health(state) -> SourceHealth:
         stats.failed + stats.cleanup_failures + stats.abandoned
         for stats in state.queue.values()
     )
+    last_error = next(
+        (stats.last_error for stats in state.queue.values() if stats.last_error),
+        None,
+    )
+    if last_error:
+        return SourceHealth("failed", last_error)
     if failed:
         return SourceHealth("failed", f"{failed} failures")
     depth = sum(stats.queue_depth for stats in state.queue.values())
     if depth:
         return SourceHealth("busy", f"depth={depth}")
-    dropped = sum(stats.dropped for stats in state.queue.values())
-    if dropped:
-        return SourceHealth("failed", f"{dropped} dropped")
     processed = sum(stats.processed for stats in state.queue.values())
     if processed:
         return SourceHealth("ok", f"{processed} processed")
+    dropped = sum(stats.dropped for stats in state.queue.values())
+    if dropped:
+        return SourceHealth("idle", f"{dropped} dropped")
     return SourceHealth("idle")
 
 
@@ -370,7 +376,12 @@ def _adapter_health(state) -> SourceHealth:
 def _failed_queue(stats) -> bool:
     return bool(
         stats is not None
-        and (stats.failed or stats.cleanup_failures or stats.abandoned)
+        and (
+            stats.failed
+            or stats.cleanup_failures
+            or stats.abandoned
+            or stats.last_error
+        )
     )
 
 

@@ -365,6 +365,8 @@ def test_vlm_config_defaults_overrides_and_validation(tmp_path):
                   language: en
                   prompt: Describe the frame briefly in concise English.
                   max_caption_chars: 120
+                  max_image_edge: 448
+                  max_image_pixels: 200000
                 """
             ),
         )
@@ -380,6 +382,8 @@ def test_vlm_config_defaults_overrides_and_validation(tmp_path):
         language="en",
         prompt="Describe the frame briefly in concise English.",
         max_caption_chars=120,
+        max_image_edge=448,
+        max_image_pixels=200000,
     )
 
     with pytest.raises(ConfigError, match="vlm.max_new_tokens"):
@@ -388,6 +392,10 @@ def test_vlm_config_defaults_overrides_and_validation(tmp_path):
         Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  timeout_seconds: 0\n"))
     with pytest.raises(ConfigError, match="vlm.model"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  model: ''\n"))
+    with pytest.raises(ConfigError, match="vlm.max_image_edge"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  max_image_edge: 0\n"))
+    with pytest.raises(ConfigError, match="vlm.max_image_pixels"):
+        Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  max_image_pixels: 0\n"))
     with pytest.raises(ConfigError, match="vlm.unexpected"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "vlm:\n  unexpected: true\n"))
 

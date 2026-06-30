@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +78,48 @@ def test_faster_whisper_asr_transcribes_pcm_utterance_with_fake_model():
         getattr(audio, "dtype", "")
     ) == "float32"
     assert list(audio) == pytest.approx([-1.0, 0.0, 32767 / 32768])
+
+
+def test_faster_whisper_asr_uses_noop_progress_during_lazy_transcription(
+    monkeypatch,
+):
+    class ExplodingTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            raise ValueError("bad value(s) in fds_to_keep")
+
+    fake_transcribe_module = SimpleNamespace(tqdm=ExplodingTqdm)
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper.transcribe",
+        fake_transcribe_module,
+    )
+
+    class TqdmUsingSegments:
+        def __iter__(self):
+            progress = fake_transcribe_module.tqdm(total=1, disable=True)
+            progress.update(1)
+            progress.close()
+            yield SimpleNamespace(text=" audio ok ")
+
+    class TqdmUsingModel:
+        def transcribe(self, audio, **kwargs):
+            return TqdmUsingSegments(), SimpleNamespace(language="it")
+
+    asr = FasterWhisperAsr(
+        AsrConfig(device="cpu", compute_type="int8"),
+        model_factory=lambda *args, **kwargs: TqdmUsingModel(),
+    )
+
+    text = asr.transcribe(
+        SpeechSegment(
+            samples=struct.pack("<h", 0),
+            sample_rate=16_000,
+            ts=12.0,
+        )
+    )
+
+    assert text == "audio ok"
+    assert fake_transcribe_module.tqdm is ExplodingTqdm
 
 
 def test_faster_whisper_model_setup_failure_is_actionable():

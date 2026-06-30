@@ -341,6 +341,82 @@ def test_status_bar_exposes_asr_busy_and_vlm_failure():
     assert "latest_failure=video/vlm" in status
 
 
+def test_drops_only_queue_pressure_does_not_render_failed():
+    state = DashboardState(
+        queue={
+            "audio": QueueChannelDiagnostics(dropped=2),
+            "video": QueueChannelDiagnostics(dropped=1),
+        }
+    )
+
+    status = state.render_status_bar()
+
+    assert state.source_health["queue"].status != "failed"
+    assert "queue=failed" not in status
+    assert "queue failed=0 dropped=3 abandoned=0 cleanup=0" in status
+
+
+def test_queue_last_error_still_renders_failed():
+    state = DashboardState(
+        queue={
+            "audio": QueueChannelDiagnostics(
+                processed=4,
+                last_error="audio queue timed out",
+            )
+        }
+    )
+
+    status = state.render_status_bar()
+
+    assert state.source_health["queue"].status == "failed"
+    assert state.source_health["queue"].detail == "audio queue timed out"
+    assert "queue=failed" in status
+    assert "latest_failure=audio/queue: audio queue timed out" in status
+
+
+def test_technical_event_lines_still_show_dropped_queue_counts():
+    state = DashboardState(
+        queue={
+            "audio": QueueChannelDiagnostics(processed=4, dropped=2),
+            "video": QueueChannelDiagnostics(processed=3, dropped=1),
+        }
+    )
+
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+
+    assert "audio/queue: dropped=2" in event_text
+    assert "video/queue: dropped=1" in event_text
+
+
+def test_productive_audio_video_health_stays_ok_with_queue_drops():
+    state = DashboardState(
+        audio_transcriptions=[
+            _audio_perception("audio produttivo", "streamer", 1.0),
+        ],
+        video_captions=[
+            _video_perception("caption produttiva", 2.0),
+        ],
+        video=VideoDiagnostics(frames_seen=8, sampled=4, captioned=1),
+        queue={
+            "audio": QueueChannelDiagnostics(processed=4, dropped=2),
+            "video": QueueChannelDiagnostics(processed=3, dropped=1),
+        },
+    )
+
+    status = state.render_status_bar()
+
+    assert state.source_health["audio"].status == "ok"
+    assert state.source_health["video"].status == "ok"
+    assert state.source_health["asr"].status == "ok"
+    assert state.source_health["vlm"].status == "ok"
+    assert state.source_health["queue"].status != "failed"
+    assert "audio=ok" in status
+    assert "video=ok" in status
+    assert "asr=ok" in status
+    assert "vlm=ok" in status
+    assert "queue=failed" not in status
+
+
 def test_source_health_failures_do_not_hide_behind_recent_successes():
     state = DashboardState(
         chat_messages=[
