@@ -84,7 +84,7 @@ look like a real chat message that would have been sent publicly.
 
 ## Blocked by
 
-- Blocked by [05-re-msg-normalizer-and-local-display.md](./05-re-msg-normalizer-and-local-display.md)
+- Blocked by [05-re-msg-normalizer-and-local-display.md](./done/05-re-msg-normalizer-and-local-display.md)
 
 ## User stories addressed
 

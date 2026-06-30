@@ -1233,6 +1233,144 @@ def test_tui_commentator_output_goes_to_dashboard_not_console(
     assert agent.observability_snapshot().messages == ["Commento privato."]
 
 
+def test_tui_original_chat_output_goes_to_dashboard_as_re_msg(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    def transport(*, url, headers, body, timeout):
+        del url, headers, body, timeout
+        from minnarone.openrouter import HttpResponse
+
+        payload = {
+            "choices": [
+                {"message": {"content": "re : boss fight\nmsg : bella giocata"}}
+            ]
+        }
+        return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  enabled: true
+                  style: original_chat
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+        minnarone_output=MinnaroneOutputStream(),
+    )
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="minnarone guarda qui",
+            speaker="alice",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    captured = capsys.readouterr()
+    assert "re : boss fight" not in captured.out
+    state = agent.observability_snapshot()
+    assert state.messages == ["RE: boss fight\nMSG: bella giocata"]
+    panel_text = {panel.title: panel.text for panel in state.render_panels()}
+    assert "RE: boss fight" in panel_text["MINNARONE"]
+    assert "MSG: bella giocata" in panel_text["MINNARONE"]
+
+
+def test_console_original_chat_output_prints_re_msg_locally(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    def transport(*, url, headers, body, timeout):
+        del url, headers, body, timeout
+        from minnarone.openrouter import HttpResponse
+
+        payload = {
+            "choices": [
+                {"message": {"content": "re : boss fight\nmsg : bella giocata"}}
+            ]
+        }
+        return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  enabled: true
+                  style: original_chat
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+    )
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="minnarone guarda qui",
+            speaker="alice",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    captured = capsys.readouterr()
+    assert "[PRIVATE] RE: boss fight" in captured.out
+    assert "MSG: bella giocata" in captured.out
+
+
 def test_router_override_keeps_minnarone_output_stream_inactive(tmp_path):
     from minnarone.fakes import FakeOutputRouter
     from minnarone.output_sink import MinnaroneOutputStream

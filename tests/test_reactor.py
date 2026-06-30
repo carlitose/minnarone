@@ -499,3 +499,126 @@ def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
     assert "bob: chat non trigger" in chat_recent
     assert "alice: minnarone guarda qui" not in chat_recent
     assert llm.last_prompt.count("minnarone guarda qui") == 1
+
+
+def test_original_chat_reactor_routes_normalized_display_text(tmp_path):
+    from minnarone.human import HumanLikeness
+
+    class SpySenser(Senser):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.agent_message_notes: list[float] = []
+
+        def note_agent_message(self, ts: float) -> None:
+            self.agent_message_notes.append(ts)
+            super().note_agent_message(ts)
+
+    class RecordingEventRecorder:
+        def __init__(self):
+            self.outputs: list[tuple[str, OutputMode]] = []
+
+        def record_trigger(self, trigger):
+            del trigger
+
+        def record_minnarone_output(self, message, mode):
+            self.outputs.append((message, mode))
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = SpySenser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="re : boss fight\nmsg : bella giocata")
+    router = FakeOutputRouter()
+    recorder = RecordingEventRecorder()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+        human=HumanLikeness(min_delay=0.0, max_delay=100.0),
+        event_recorder=recorder,
+    )
+    chat.perceive("minnarone guarda qui", speaker="alice", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [
+        ("RE: boss fight\nMSG: bella giocata", OutputMode.PRIVATE)
+    ]
+    assert recorder.outputs == [
+        ("RE: boss fight\nMSG: bella giocata", OutputMode.PRIVATE)
+    ]
+    assert reactor.recent_messages() == ["bella giocata"]
+    assert len(senser.agent_message_notes) == 1
+
+
+def test_operator_commentary_reactor_leaves_re_msg_text_unnormalized(tmp_path):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.OPERATOR,
+    )
+    llm = FakeLLMProvider(message="re : boss fight\nmsg : bella giocata")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+    )
+    chat.perceive("minnarone guarda qui", speaker="alice", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [
+        ("re : boss fight\nmsg : bella giocata", OutputMode.PRIVATE)
+    ]
+
+
+def test_original_chat_end_conv_stays_visible_and_window_open_for_now(tmp_path):
+    from minnarone.human import HumanLikeness
+
+    class SpySenser(Senser):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.agent_message_notes: list[float] = []
+
+        def note_agent_message(self, ts: float) -> None:
+            self.agent_message_notes.append(ts)
+            super().note_agent_message(ts)
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = SpySenser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="RE: idle\nMSG: #end_conv")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+        human=HumanLikeness(min_delay=0.0, max_delay=100.0),
+    )
+    chat.perceive("minnarone ci sei?", speaker="alice", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [("RE: idle\nMSG: #end_conv", OutputMode.PRIVATE)]
+    assert "alice" in senser.open_windows()
+    assert reactor.recent_messages() == []
+    assert senser.agent_message_notes == []
