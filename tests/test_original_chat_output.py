@@ -74,4 +74,4 @@ def test_marks_end_conv_without_hiding_it_from_display_text():
 
     assert response.message == "#end_conv"
     assert response.end_conversation is True
-    assert response.display_text == "RE: idle\nMSG: #end_conv"
+    assert response.display_text == "RE: idle\nMSG: #end_conv\n(skip: not sent)"

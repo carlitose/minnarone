@@ -6,6 +6,8 @@ un messaggio sul canale pubblico; senza menzione, nessun output.
 
 import asyncio
 
+import pytest
+
 from minnarone.chat import ChatPerceiver
 from minnarone.console import ConsoleOutputRouter  # noqa: F401 (import sanity)
 from minnarone.fakes import FakeLLMProvider, FakeMemory, FakeOutputRouter
@@ -584,7 +586,7 @@ def test_operator_commentary_reactor_leaves_re_msg_text_unnormalized(tmp_path):
     ]
 
 
-def test_original_chat_end_conv_stays_visible_and_window_open_for_now(tmp_path):
+def test_original_chat_end_conv_stays_visible_and_closes_window(tmp_path):
     from minnarone.human import HumanLikeness
 
     class SpySenser(Senser):
@@ -618,7 +620,144 @@ def test_original_chat_end_conv_stays_visible_and_window_open_for_now(tmp_path):
 
     asyncio.run(reactor.run_once())
 
-    assert router.sent == [("RE: idle\nMSG: #end_conv", OutputMode.PRIVATE)]
-    assert "alice" in senser.open_windows()
+    assert router.sent == [
+        ("RE: idle\nMSG: #end_conv\n(skip: not sent)", OutputMode.PRIVATE)
+    ]
+    assert "alice" not in senser.open_windows()
     assert reactor.recent_messages() == []
     assert senser.agent_message_notes == []
+
+
+def test_original_chat_end_conv_closes_window_before_router_failure(tmp_path):
+    calls: list[str] = []
+
+    class TrackingSenser(Senser):
+        def close_window(self, interlocutor: str) -> bool:
+            calls.append(f"close_window:{interlocutor}")
+            return super().close_window(interlocutor)
+
+    class FailingRouter(FakeOutputRouter):
+        async def route(self, message: str, mode: OutputMode) -> None:
+            del mode
+            calls.append(f"route:{message}")
+            raise RuntimeError("router unavailable")
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = TrackingSenser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="RE: idle\nMSG: #end_conv")
+    router = FailingRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+    )
+    chat.perceive("minnarone ci sei?", speaker="alice", ts=1.0)
+
+    with pytest.raises(RuntimeError, match="router unavailable"):
+        asyncio.run(reactor.run_once())
+
+    assert calls == [
+        "close_window:alice",
+        "route:RE: idle\nMSG: #end_conv\n(skip: not sent)",
+    ]
+    assert "alice" not in senser.open_windows()
+    assert router.sent == []
+    assert reactor.recent_messages() == []
+
+
+def test_original_chat_end_conv_close_window_failure_prevents_display(tmp_path):
+    calls: list[str] = []
+
+    class FailingSenser(Senser):
+        def close_window(self, interlocutor: str) -> bool:
+            calls.append(f"close_window:{interlocutor}")
+            raise RuntimeError("close_window failed")
+
+    class TrackingRouter(FakeOutputRouter):
+        async def route(self, message: str, mode: OutputMode) -> None:
+            calls.append(f"route:{message}")
+            await super().route(message, mode)
+
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = FailingSenser(store, agent_name="Minnarone")
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="RE: idle\nMSG: #end_conv")
+    router = TrackingRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+    )
+    chat.perceive("minnarone ci sei?", speaker="alice", ts=1.0)
+
+    with pytest.raises(RuntimeError, match="close_window failed"):
+        asyncio.run(reactor.run_once())
+
+    assert calls == ["close_window:alice"]
+    assert router.sent == []
+    assert reactor.recent_messages() == []
+
+
+def test_original_chat_idle_end_conv_stays_visible_without_interlocutor(tmp_path):
+    class FakeClock:
+        def __init__(self, start=0.0):
+            self.t = start
+
+        def __call__(self):
+            return self.t
+
+        def advance(self, dt):
+            self.t += dt
+
+    class StrictSenser(Senser):
+        def close_window(self, interlocutor: str) -> bool:
+            if interlocutor is None:
+                raise AssertionError("idle end-conversation has no interlocutor")
+            return super().close_window(interlocutor)
+
+    clock = FakeClock(start=0.0)
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    senser = StrictSenser(
+        store,
+        agent_name="Minnarone",
+        clock=clock,
+        idle_interval=10.0,
+    )
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="RE: idle\nMSG: #end_conv")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PRIVATE,
+    )
+
+    clock.advance(11.0)
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [
+        ("RE: idle\nMSG: #end_conv\n(skip: not sent)", OutputMode.PRIVATE)
+    ]
+    assert senser.open_windows() == {}
+    assert reactor.recent_messages() == []

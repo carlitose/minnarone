@@ -142,6 +142,8 @@ class Reactor:
         """
         if self._uses_original_chat_style():
             response = normalize_original_chat_response(message)
+            if response.end_conversation and trigger.interlocutor is not None:
+                self._senser.close_window(trigger.interlocutor)
             await self._route_local_output(response.display_text)
             if response.message and not response.end_conversation:
                 self._note_self_message(response.message)

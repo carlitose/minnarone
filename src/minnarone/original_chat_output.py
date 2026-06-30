@@ -49,10 +49,15 @@ def normalize_original_chat_response(raw_text: str) -> OriginalChatResponse:
     if not message and not seen_label:
         message = "\n".join(raw_lines)
 
+    end_conversation = message == END_CONV_SENTINEL
+    display_text = f"RE: {reason}\nMSG: {message}"
+    if end_conversation:
+        display_text = f"{display_text}\n(skip: not sent)"
+
     return OriginalChatResponse(
         reason=reason,
         message=message,
-        end_conversation=message == END_CONV_SENTINEL,
+        end_conversation=end_conversation,
         raw_text=raw_text,
-        display_text=f"RE: {reason}\nMSG: {message}",
+        display_text=display_text,
     )
