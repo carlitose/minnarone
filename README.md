@@ -146,6 +146,112 @@ La guida operatore include anche smoke manuali per trascrivere un `.pcm` con
 `faster-whisper`, estrarre speaker embedding con `sherpa-onnx`, e avviare il
 runtime console con `twitch.audio: true`.
 
+### Commentatore locale su Teams (cattura SO)
+
+Minnarone può fare da **commentatore locale** su una call Teams a cui partecipi:
+osserva l'**audio di sistema** (le voci degli altri partecipanti, catturate dal
+loopback dell'uscita audio) e lo **schermo** (slide, volti, testo condivisi), e
+stampa i commenti solo sulla **console locale** (`[PRIVATE]`). Non invia nulla
+dentro la riunione: nessun messaggio, nessun audio, nessun output pubblico.
+
+Il preset pronto all'uso è [examples/teams-commentator.yaml](examples/teams-commentator.yaml)
+(`adapter: os_capture`, `mode: private`, `commentator.enabled: true`).
+
+#### Installazione
+
+La cattura del SO vive nell'extra `os-capture` (audio di sistema via `soundcard`,
+schermo via `mss`):
+
+```bash
+pip install -e '.[os-capture]'   # oppure: uv sync --extra os-capture
+```
+
+L'extra `os-capture` copre solo la **cattura raw**. Per far girare davvero i
+modelli servono anche:
+
+- l'extra `audio` (faster-whisper + sherpa-onnx) perché l'audio venga trascritto
+  e diarizzato (ASR/speaker);
+- l'extra `vlm` (transformers + torch) perché lo schermo venga descritto dal
+  captioner Qwen2-VL (import lazy: il modello si carica alla prima descrizione).
+
+```bash
+pip install -e '.[os-capture,audio,vlm]'
+```
+
+Con il solo `os-capture` puoi fare diagnostica di cattura (sotto) ma non ASR/VLM.
+
+#### Setup
+
+1. **Uscita audio di default**: il loopback cattura l'**uscita audio predefinita
+   del sistema**. Imposta come dispositivo di uscita di default quello su cui
+   Teams riproduce l'audio (Windows: *Impostazioni → Audio → Uscita*; Linux: il
+   sink PulseAudio corrispondente). Se Teams suona su un altro dispositivo, il
+   loopback catturerà il silenzio.
+2. **Permesso di cattura schermo**: autorizza il processo (es. il terminale) a
+   registrare lo schermo. Su macOS è *Impostazioni di sistema → Privacy e
+   sicurezza → Registrazione schermo*; senza il permesso i frame arrivano
+   vuoti/neri.
+3. **Selezione del monitor**: scegli quale schermo catturare con
+   `os_capture.monitor` (1 = monitor primario; l'indice 0 unisce tutti i
+   monitor). Lo stesso indice è esposto dallo smoke come `--monitor`.
+
+#### Diagnostica (`minnarone-oscapture-smoke`)
+
+Prima di attivare ASR/VLM conviene verificare che audio e schermo vengano
+davvero catturati. Lo smoke della cattura SO è **capture-only** (nessun ASR/VLM,
+non richiede `OPENROUTER_API_KEY`) e scrive artifact bounded nella directory
+`--output`: `raw/audio/*.pcm` (PCM mono 16 kHz s16le), `raw/video/*.jpg`, e
+`stats.json` con conteggi ed eventuali failure.
+
+Verifica la cattura audio dal loopback dell'uscita di default:
+
+```bash
+minnarone-oscapture-smoke \
+  --duration 30 \
+  --output ./.smoke/os-audio \
+  --audio \
+  --audio-chunk-seconds 1.0
+```
+
+Verifica la cattura dello schermo dal monitor scelto:
+
+```bash
+minnarone-oscapture-smoke \
+  --duration 30 \
+  --output ./.smoke/os-video \
+  --video \
+  --video-fps 1.0 \
+  --monitor 1
+```
+
+Per controllare solo la segmentazione VAD sull'audio (conteggi/durate senza
+ASR), usa `--vad-diagnostic` (abilita anche l'audio): `stats.json` includerà
+`vad_utterances` e `vad_utterance_durations_ms`.
+
+```bash
+minnarone-oscapture-smoke \
+  --duration 30 \
+  --output ./.smoke/os-vad \
+  --vad-diagnostic
+```
+
+#### Avvio
+
+Valida prima a secco (nessun hardware aperto, nessuna rete), poi avvia il loop:
+
+```bash
+python -m minnarone examples/teams-commentator.yaml --check
+python -m minnarone examples/teams-commentator.yaml
+```
+
+#### Limiti multi-platform
+
+- **Windows** (WASAPI) e **Linux** (monitor PulseAudio): loopback dell'uscita di
+  default **nativo**, nessun tooling aggiuntivo.
+- **macOS**: `soundcard` **non** supporta il loopback. Serve un device di
+  loopback esterno (es. BlackHole) impostato come uscita di default per far
+  arrivare l'audio di sistema alla cattura.
+
 ### Esempio di config (`config.yaml`)
 
 ```yaml
