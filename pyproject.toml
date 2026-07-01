@@ -18,6 +18,7 @@ dependencies = [
 minnarone = "minnarone.cli:main"
 minnarone-twitch-chat-smoke = "minnarone.twitch_smoke:chat_main"
 minnarone-twitch-smoke = "minnarone.twitch_smoke:main"
+minnarone-oscapture-smoke = "minnarone.oscapture_smoke:main"
 
 [project.optional-dependencies]
 dev = [

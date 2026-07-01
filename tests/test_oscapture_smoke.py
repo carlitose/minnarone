@@ -12,7 +12,8 @@ import json
 import pytest
 
 from minnarone.audio import AudioChunk, SpeechSegment
-from minnarone.oscapture_smoke import run_oscapture_smoke
+from minnarone.oscapture_smoke import main, run_oscapture_smoke
+from minnarone.twitch_smoke_artifacts import SmokeStats
 from minnarone.video import VideoFrame
 
 
@@ -288,3 +289,141 @@ def test_run_oscapture_smoke_disabling_audio_does_not_iterate_audio_source(tmp_p
 
     assert audio_source.iterated is False
     assert stats.video_events == 1
+
+
+# --- CLI (main) ---------------------------------------------------------------
+#
+# I test della CLI pilotano `main(argv)` monkeypatchando `run_oscapture_smoke`
+# con un fake: nessun hardware viene aperto. Verificano parsing, validazione e
+# mapping degli exit code (0 successo / 1 failure di cattura / 2 input invalido).
+
+
+def _base_args(tmp_path):
+    return ["--duration", "1", "--output", str(tmp_path / "smoke")]
+
+
+def test_cli_help_opens(capsys):
+    # argparse solleva SystemExit(0) su --help; main lo intercetta e ritorna 0.
+    code = main(["--help"])
+    assert code == 0
+    assert "minnarone-oscapture-smoke" in capsys.readouterr().out
+
+
+def test_cli_audio_and_video_success(tmp_path, monkeypatch):
+    calls = []
+
+    async def fake_smoke(**kwargs):
+        calls.append(kwargs)
+        return SmokeStats(
+            audio_events=1,
+            audio_samples_saved=1,
+            video_events=1,
+            video_frames_saved=1,
+        )
+
+    monkeypatch.setattr("minnarone.oscapture_smoke.run_oscapture_smoke", fake_smoke)
+
+    code = main(
+        _base_args(tmp_path)
+        + ["--audio", "--video", "--monitor", "2", "--sample-rate", "8000"]
+    )
+
+    assert code == 0
+    assert calls[0]["enable_audio"] is True
+    assert calls[0]["enable_video"] is True
+    assert calls[0]["monitor"] == 2
+    assert calls[0]["sample_rate"] == 8000
+
+
+def test_cli_requires_at_least_one_channel(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        "minnarone.oscapture_smoke.run_oscapture_smoke",
+        _fail_if_called,
+    )
+
+    code = main(_base_args(tmp_path))
+
+    assert code == 2
+    assert "almeno" in capsys.readouterr().err
+
+
+def test_cli_rejects_non_positive_duration(tmp_path, capsys):
+    code = main(["--duration", "0", "--output", str(tmp_path / "smoke"), "--audio"])
+    assert code == 2
+    assert "--duration" in capsys.readouterr().err
+
+
+def test_cli_rejects_nonfinite_video_fps(tmp_path, capsys):
+    code = main(_base_args(tmp_path) + ["--video", "--video-fps", "nan"])
+    assert code == 2
+    assert "--video-fps" in capsys.readouterr().err
+
+
+def test_cli_rejects_invalid_monitor(tmp_path, capsys):
+    code = main(_base_args(tmp_path) + ["--video", "--monitor", "0"])
+    assert code == 2
+    assert "--monitor" in capsys.readouterr().err
+
+
+def test_cli_rejects_invalid_vad_mode(tmp_path, capsys):
+    code = main(_base_args(tmp_path) + ["--audio", "--vad-diagnostic", "--vad-mode", "5"])
+    assert code == 2
+    assert "--vad-mode" in capsys.readouterr().err
+
+
+def test_cli_rejects_invalid_vad_frame_ms(tmp_path, capsys):
+    code = main(
+        _base_args(tmp_path) + ["--audio", "--vad-diagnostic", "--vad-frame-ms", "15"]
+    )
+    assert code == 2
+    assert "--vad-frame-ms" in capsys.readouterr().err
+
+
+def test_cli_rejects_negative_caps(tmp_path, capsys):
+    code = main(_base_args(tmp_path) + ["--audio", "--max-audio-samples", "-1"])
+    assert code == 2
+    assert "--max-audio-samples" in capsys.readouterr().err
+
+
+def test_cli_capture_failure_maps_to_exit_1(tmp_path, monkeypatch, capsys):
+    async def fake_smoke(**_kwargs):
+        raise OSError("device di loopback non disponibile")
+
+    monkeypatch.setattr("minnarone.oscapture_smoke.run_oscapture_smoke", fake_smoke)
+
+    code = main(_base_args(tmp_path) + ["--audio"])
+
+    assert code == 1
+    assert "fallito" in capsys.readouterr().err
+
+
+def test_cli_zero_events_maps_to_exit_1(tmp_path, monkeypatch, capsys):
+    async def fake_smoke(**_kwargs):
+        return SmokeStats(audio_events=0)
+
+    monkeypatch.setattr("minnarone.oscapture_smoke.run_oscapture_smoke", fake_smoke)
+
+    code = main(_base_args(tmp_path) + ["--audio"])
+
+    assert code == 1
+    assert "fallito" in capsys.readouterr().err
+
+
+def test_cli_vad_diagnostic_reports_utterances(tmp_path, monkeypatch, capsys):
+    async def fake_smoke(**_kwargs):
+        return SmokeStats(
+            audio_events=1,
+            vad_utterances=2,
+            vad_utterance_durations_ms=[300.0, 450.0],
+        )
+
+    monkeypatch.setattr("minnarone.oscapture_smoke.run_oscapture_smoke", fake_smoke)
+
+    code = main(_base_args(tmp_path) + ["--audio", "--vad-diagnostic"])
+
+    assert code == 0
+    assert "vad_utterances=2" in capsys.readouterr().out
+
+
+async def _fail_if_called(**_kwargs):
+    raise AssertionError("run_oscapture_smoke non deve essere invocato")

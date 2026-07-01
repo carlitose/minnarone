@@ -24,43 +24,13 @@ from .twitch_video import TwitchVideoReader, validate_video_fps
 from .vad import StreamingVad, VadConfig, WebRtcVadDetector
 
 
-def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog=prog,
-        description="Cattura Twitch in sola lettura su artifact smoke locali.",
-    )
-    parser.add_argument("--channel", required=True, help="canale Twitch da leggere")
-    parser.add_argument(
-        "--duration",
-        type=float,
-        required=True,
-        help="durata della cattura in secondi",
-    )
-    parser.add_argument(
-        "--output",
-        required=True,
-        help="directory degli artifact smoke da scrivere",
-    )
-    parser.add_argument(
-        "--audio",
-        action="store_true",
-        help="abilita cattura audio raw via Streamlink/FFmpeg",
-    )
-    parser.add_argument(
-        "--no-chat",
-        action="store_true",
-        help="disabilita la cattura chat IRC",
-    )
-    parser.add_argument(
-        "--video",
-        action="store_true",
-        help="abilita cattura video raw via Streamlink/FFmpeg",
-    )
-    parser.add_argument(
-        "--quality",
-        default="best",
-        help="qualità Streamlink da usare per media raw",
-    )
+def add_common_smoke_arguments(parser: argparse.ArgumentParser) -> None:
+    """Aggiunge gli argomenti comuni agli smoke Twitch e cattura SO.
+
+    Fattorizza i flag audio/VAD/video condivisi (`--audio-chunk-seconds`,
+    `--max-audio-samples`, la famiglia `--vad-*`, `--video-fps`,
+    `--max-video-frames`) per evitare duplicazione tra le due CLI (no R0801).
+    """
     parser.add_argument(
         "--audio-chunk-seconds",
         type=float,
@@ -114,6 +84,46 @@ def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
         default=3,
         help="numero massimo di frame .jpg da salvare",
     )
+
+
+def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Cattura Twitch in sola lettura su artifact smoke locali.",
+    )
+    parser.add_argument("--channel", required=True, help="canale Twitch da leggere")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        required=True,
+        help="durata della cattura in secondi",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="directory degli artifact smoke da scrivere",
+    )
+    parser.add_argument(
+        "--audio",
+        action="store_true",
+        help="abilita cattura audio raw via Streamlink/FFmpeg",
+    )
+    parser.add_argument(
+        "--no-chat",
+        action="store_true",
+        help="disabilita la cattura chat IRC",
+    )
+    parser.add_argument(
+        "--video",
+        action="store_true",
+        help="abilita cattura video raw via Streamlink/FFmpeg",
+    )
+    parser.add_argument(
+        "--quality",
+        default="best",
+        help="qualità Streamlink da usare per media raw",
+    )
+    add_common_smoke_arguments(parser)
     return parser.parse_args(list(argv))
 
 
