@@ -49,6 +49,7 @@ video = [
 os-capture = [
     "mss>=10.2",
     "numpy>=1.26",
+    "pillow>=10",
     "soundcard>=0.4",
 ]
 vlm = [

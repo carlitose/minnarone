@@ -872,6 +872,7 @@ os-capture = [
     { name = "mss" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pillow" },
     { name = "soundcard" },
 ]
 speaker = [
@@ -905,6 +906,7 @@ requires-dist = [
     { name = "mss", marker = "extra == 'os-capture'", specifier = ">=10.2" },
     { name = "numpy", marker = "extra == 'os-capture'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'video'", specifier = ">=1.26" },
+    { name = "pillow", marker = "extra == 'os-capture'", specifier = ">=10" },
     { name = "pillow", marker = "extra == 'vlm'", specifier = ">=10" },
     { name = "pylint", marker = "extra == 'dev'", specifier = ">=4.0.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
