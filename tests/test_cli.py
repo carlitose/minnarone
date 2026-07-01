@@ -30,7 +30,7 @@ def _valid_config(tmp_path):
             llm_provider: grok
             agent_name: minnarone
             os_capture:
-              audio: true
+              audio: false
               video: true
             """
         ),

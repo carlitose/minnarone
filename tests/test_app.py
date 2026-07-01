@@ -23,6 +23,7 @@ from minnarone.app import (
 from minnarone.audio import AudioChunk
 from minnarone.config import CommentatorStyle, Config, ConfigError
 from minnarone.console import ConsoleOutputRouter
+from minnarone.os_capture import OsCaptureAdapter
 from minnarone.output import OutputMode
 from minnarone.perception import Perception, Source
 from minnarone.reactor import Reactor
@@ -63,8 +64,13 @@ def _write_workspace(
 
     # La sezione os_capture è obbligatoria quando adapter == os_capture (che è
     # il default innocuo dei test): senza di essa la Config verrebbe rifiutata.
+    # Default video-only: il perceiver video è LAZY (il captioner VLM si
+    # costruisce al primo frame) e la sorgente device è lazy, quindi `build_agent`
+    # cabla l'adapter senza aprire hardware né richiedere il backend ASR (che il
+    # canale audio esigerebbe eagerly, come su Twitch). I test audio abilitano il
+    # canale esplicitamente e iniettano le sorgenti/perceiver.
     os_capture_block = (
-        "os_capture:\n  audio: true\n  video: true\n"
+        "os_capture:\n  audio: false\n  video: true\n"
         if adapter == "os_capture"
         else ""
     )
@@ -1647,7 +1653,7 @@ def test_agent_name_defaults_when_omitted(tmp_path):
             adapter: os_capture
             llm_provider: grok
             os_capture:
-              audio: true
+              audio: false
               video: true
             """
         ),
@@ -1659,14 +1665,123 @@ def test_agent_name_defaults_when_omitted(tmp_path):
     assert agent is not None
 
 
-def test_os_capture_config_builds_agent_without_adapter(tmp_path):
-    # In questo slice l'adapter os_capture NON è ancora cablato: build_agent
-    # deve costruire l'agente con adapter None (nessun device aperto).
+def test_os_capture_config_builds_lazy_video_adapter_without_opening_device(tmp_path):
+    # os_capture è cablato: build_agent costruisce un OsCaptureAdapter con
+    # sorgenti device LAZY. Al build (come al --check) NON si apre alcun device:
+    # il canale video è lazy (captioner VLM + sorgente schermo differiti), quindi
+    # l'agente si compone senza hardware né backend ML installato.
     cfg = Config.load(_write_workspace(tmp_path))
     assert cfg.adapter == "os_capture"
     assert cfg.os_capture is not None
     agent = build_agent(cfg, transport=_fake_transport)
-    assert agent.adapter is None
+    assert isinstance(agent.adapter, OsCaptureAdapter)
+    assert agent.adapter.channels() == {"video"}
+    # La queue bounded è cablata per il canale video model-backed (ADR
+    # backpressure): stesso trattamento di Twitch.
+    assert agent.perception_queue is not None
+    assert set(agent.perception_queue_stats().channels) == {"video"}
+
+
+class _CollectingAudioPerceiver:
+    """Perceiver audio fake: registra i payload instradati dalla pompa."""
+
+    def __init__(self) -> None:
+        self.payloads = []
+
+    def perceive_event(self, event: RawEvent) -> None:
+        self.payloads.append(event.payload)
+        return None
+
+
+def test_os_capture_runtime_feeds_store_from_injected_audio_and_video_sources(
+    tmp_path,
+):
+    # Tracer bullet SENZA hardware: si iniettano sorgenti device fake (liste
+    # in-memory di AudioChunk/VideoFrame) e perceiver che scrivono nello store.
+    # `run()` deve pompare audio+video nello store passando dalla queue bounded.
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            extra=textwrap.dedent(
+                """
+                os_capture:
+                  audio: true
+                  video: true
+                """
+            ),
+        )
+    )
+
+    audio_source = [
+        AudioChunk(
+            samples=b"hello",
+            sample_rate=16_000,
+            source_label="system",
+            ts=1.0,
+        )
+    ]
+    video_source = [VideoFrame(pixels="frame", source_label="screen", ts=2.0)]
+
+    audio_perceiver = _CollectingAudioPerceiver()
+    video_perceiver = _CollectingVideoPerceiver()
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        audio_perceiver=audio_perceiver,  # type: ignore[arg-type]
+        video_perceiver=video_perceiver,  # type: ignore[arg-type]
+        os_capture_audio_source=audio_source,
+        os_capture_video_source=video_source,
+    )
+
+    assert isinstance(agent.adapter, OsCaptureAdapter)
+    assert agent.adapter.channels() == {"audio", "video"}
+    assert set(agent.perceivers) >= {"audio", "video"}
+    # Audio e video passano dalla queue bounded (policy ADR invariata).
+    assert agent.perception_queue is not None
+    assert set(agent.perception_queue_stats().channels) == {"audio", "video"}
+
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    assert [chunk.samples for chunk in audio_perceiver.payloads] == [b"hello"]
+    assert [frame.pixels for frame in video_perceiver.payloads] == ["frame"]
+    assert agent.perception_queue_stats().channels["audio"].processed == 1
+    assert agent.perception_queue_stats().channels["video"].processed == 1
+
+
+def test_os_capture_build_does_not_open_device_when_source_not_injected(tmp_path):
+    # Con il canale video abilitato ma nessuna sorgente iniettata, il runtime usa
+    # la sorgente device LAZY: build (e --check) NON devono aprire mss/soundcard.
+    # `make_device_screen_capture_source` solleva NotImplementedError SOLO se
+    # iterata; qui non deve essere invocata al build.
+    cfg = Config.load(_write_workspace(tmp_path))
+    # Nessuna eccezione: il device è differito, non aperto in costruzione.
+    agent = build_agent(cfg, transport=_fake_transport)
+    assert isinstance(agent.adapter, OsCaptureAdapter)
+
+
+def test_os_capture_enabled_audio_without_perceiver_raises_config_error(tmp_path):
+    # Coerenza speculare a Twitch: canale abilitato ma perceiver/backend non
+    # costruibile → ConfigError chiaro (l'ASR locale non è installato nei test).
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            extra=textwrap.dedent(
+                """
+                os_capture:
+                  audio: true
+                  video: false
+                """
+            ),
+        )
+    )
+    with pytest.raises(ConfigError, match="os_capture.audio"):
+        build_agent(
+            cfg,
+            transport=_fake_transport,
+            os_capture_audio_source=[],
+        )
 
 
 # --- Fix 1: il loop del Summarizer parte nel percorso live ------------------
@@ -1718,8 +1833,13 @@ def test_run_starts_summarizer_loop(tmp_path, monkeypatch):
             extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
         )
     )
-    agent = build_agent(
-        cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"
+    # Percorso "reactor drives": nessun adapter live (né device os_capture), così
+    # è il loop di reazione a guidare la durata (questo test verifica proprio quel
+    # ramo di run()). Si annulla l'adapter/queue device cablati di default.
+    agent = replace(
+        build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"),
+        adapter=None,
+        perception_queue=None,
     )
 
     # Una percezione nello store così `summarize()` fa effettivamente lavoro.
@@ -1820,14 +1940,18 @@ def test_dispatch_routes_chat_event_to_store(tmp_path):
 
 
 def test_dispatch_skips_unconfigured_channel(tmp_path):
-    """Un canale senza perceiver (audio/video AFK) viene saltato, non crasha."""
+    """Un canale senza perceiver configurato viene saltato, non crasha.
+
+    La config di default os_capture cabla il canale "video" (perceiver lazy) ma
+    NON "audio": un evento su "audio" (o su un canale ignoto) viene ignorato in
+    silenzio, senza crash né percezioni scritte.
+    """
     cfg = Config.load(_write_workspace(tmp_path, mode="public"))
     agent = build_agent(
         cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"
     )
     assert "audio" not in agent.perceivers
-    assert "video" not in agent.perceivers
-    # Nessuna eccezione, nessuna percezione scritta.
+    # Nessuna eccezione, nessuna percezione scritta per un canale non cablato.
     agent.dispatch(RawEvent(channel="audio", payload=object(), ts=1.0))
     assert agent.store.tail(10) == []
 
@@ -1860,12 +1984,18 @@ def test_run_pumps_chat_perception_end_to_end(tmp_path, monkeypatch):
             )
         ]
     )
-    agent = build_agent(
-        cfg,
-        transport=_fake_transport,
-        store_path=tmp_path / "p.jsonl",
-        router=capture,
-        adapter=adapter,
+    # Adapter iniettato chat-only: il canale video (cablato di default) non è
+    # esercitato qui, quindi si annulla la sua queue bounded per mantenere il
+    # test focalizzato sul percorso chat → senser → reactor → output.
+    agent = replace(
+        build_agent(
+            cfg,
+            transport=_fake_transport,
+            store_path=tmp_path / "p.jsonl",
+            router=capture,
+            adapter=adapter,
+        ),
+        perception_queue=None,
     )
 
     asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
@@ -1986,8 +2116,13 @@ def test_run_without_adapter_stops_cleanly_on_reactor_stop(tmp_path, monkeypatch
             extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
         )
     )
-    agent = build_agent(
-        cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"
+    # Percorso "reactor drives": si annulla l'adapter/queue device cablati di
+    # default per esercitare il ramo senza sorgente live di run() (la cattura
+    # device resta il passo manuale, come prima del capstone).
+    agent = replace(
+        build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"),
+        adapter=None,
+        perception_queue=None,
     )
     assert agent.adapter is None
 
