@@ -420,6 +420,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
         "device_map",
         "torch_dtype",
         "attn_implementation",
+        "quantization",
         "max_new_tokens",
         "timeout_seconds",
         "language",
@@ -440,6 +441,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
             device_map=data.get("device_map", "auto"),  # type: ignore[arg-type]
             torch_dtype=data.get("torch_dtype", "auto"),  # type: ignore[arg-type]
             attn_implementation=data.get("attn_implementation"),  # type: ignore[arg-type]
+            quantization=data.get("quantization"),  # type: ignore[arg-type]
             max_new_tokens=data.get("max_new_tokens", 48),  # type: ignore[arg-type]
             timeout_seconds=data.get("timeout_seconds", 30.0),  # type: ignore[arg-type]
             language=data.get("language", "en"),  # type: ignore[arg-type]

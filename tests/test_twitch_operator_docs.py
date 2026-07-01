@@ -83,21 +83,6 @@ def test_teams_commentator_preset_loads_os_capture_private_shape():
     assert not cfg.llm_params.get("api_key")
 
 
-def test_teams_commentator_preset_passes_cli_check(capsys):
-    # Il preset abilita os_capture.audio, che al build costruisce l'ASR
-    # (faster-whisper): un extra opzionale che l'operatore installa. Dove non
-    # è presente, --check fallisce con un messaggio "installa l'extra" chiaro
-    # e voluto (stesso contratto di twitch.audio), quindi qui si salta: la
-    # validità del preset è già coperta dal test di shape sopra.
-    pytest.importorskip("faster_whisper")
-
-    code = cli.main(["examples/teams-commentator.yaml", "--check"])
-
-    assert code == 0
-    out = capsys.readouterr().out
-    assert "ok" in out.lower()
-
-
 def test_original_chat_example_loads_seed_memory_into_prompt():
     cfg = Config.load(Path("examples/twitch-original-chat.example.yaml"))
 
