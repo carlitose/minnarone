@@ -9,8 +9,8 @@
 #   python -m minnarone examples/teams-commentator.yaml --check
 
 mode: private              # obbligatorio con commentator.enabled: true (solo output locale)
-soul_path: soul.md         # identità dell'agente (percorso relativo a questo file)
-facts_dir: facts           # cartella dei fatti per interlocutore/canale
+soul_path: original-chat-memory/soul.md  # identità dell'agente (relativo a questo file)
+facts_dir: original-chat-memory/facts    # cartella dei fatti per interlocutore/canale
 adapter: os_capture        # sorgente: cattura audio/video a livello di sistema operativo
 llm_provider: grok         # provider LLM; la API key arriva dall'ambiente
 agent_name: minnarone      # nome che l'agente riconosce come rivolto a sé
