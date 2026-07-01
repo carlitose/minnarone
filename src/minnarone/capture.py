@@ -230,32 +230,106 @@ def _to_pcm_s16le(frames: object, np: object) -> bytes:
 
 
 def make_device_screen_capture_source(
-    *, source_label: str = "screen", fps: float = 1.0
+    *,
+    monitor: int = 1,
+    source_label: str = "screen",
+    fps: float = 1.0,
 ) -> AsyncIterator[VideoFrame]:
-    """Percorso OPZIONALE: backend di cattura schermo reale (NON usato AFK).
+    """Percorso OPZIONALE: backend di cattura schermo reale via `mss`.
 
-    Costruisce un frame source che legge dallo schermo del sistema. Importa la
-    dipendenza pesante (es. `mss`/`PyAV` per i frame, un VLM a valle per le
-    caption) SOLO qui dentro, così il modulo si carica senza device né pacchetti
-    di visione installati e senza scaricare modelli. Questo percorso non è
-    esercitato nei test (richiede uno schermo e permessi); è documentato come lo
-    slot dove innestare la cattura reale.
+    Costruisce un frame source che legge lo schermo del sistema con `mss`,
+    emettendo `VideoFrame` con i pixel in `ndarray` RGB `HxWx3` uint8 —
+    esattamente il formato che il `Captioner` Qwen2-VL già consuma (come il
+    percorso video Twitch via PyAV). Con `source_label="screen"` e `ts` corrente.
+
+    Import LAZY: `mss` e `numpy` (extra `os-capture`) sono importati solo quando
+    il generatore viene iterato, MAI al caricamento del modulo né alla
+    costruzione. Lo schermo si apre alla PRIMA iterazione, non alla chiamata:
+    così `--check` e il build non toccano il device. È il chiamante (la pompa di
+    `start()`) a innescare l'apertura iterando.
+
+    Args:
+        monitor: indice del monitor `mss` da catturare. La lista `sct.monitors`
+            ha indice 0 = tutti i monitor uniti, indice 1 = monitor primario
+            (default, allineato a `OsCaptureConfig.monitor`).
+        source_label: provenienza marcata sui frame; default "screen".
+        fps: frame al secondo emessi; fra un frame e l'altro si attende `1/fps`.
+
+    Errori operatore: se manca l'extra, se l'indice `monitor` non esiste, o se la
+    cattura fallisce (permessi negati / nessuno schermo), solleva `RuntimeError`
+    con un messaggio chiaro alla prima iterazione.
 
     Note di permessi macOS:
         * La cattura dello schermo richiede il permesso "Screen Recording" in
           Privacy & Security; senza, le API restituiscono frame vuoti/neri.
         * Il VLM per le caption (es. Qwen2-VL) è una dipendenza pesante a parte,
           iniettata come `Captioner` nel `VideoPerceiver`, non importata qui.
-
-    Sollevare a chi cabla l'app la scelta del backend concreto.
     """
-    del fps
-    raise NotImplementedError(
-        "make_device_screen_capture_source è il percorso opzionale di cattura "
-        "schermo reale: cablare un backend (es. mss/PyAV) implementando un "
-        "iterabile di VideoFrame, e iniettare un Captioner VLM nel "
-        "VideoPerceiver. Non disponibile in ambiente senza schermo/GPU."
-    )
+
+    async def _source() -> AsyncIterator[VideoFrame]:
+        # Import pesante LAZY: valutato solo alla prima iterazione, non al
+        # caricamento del modulo né alla costruzione del generatore.
+        try:
+            import mss as mss_module
+            import numpy as np
+        except ImportError as exc:  # pragma: no cover - richiede ambiente senza extra
+            raise RuntimeError(
+                "cattura schermo non disponibile: installa l'extra "
+                "'os-capture' (mss + numpy)"
+            ) from exc
+
+        # Apri lo schermo alla PRIMA iterazione e seleziona il monitor per
+        # indice. sct.monitors[0] = tutti i monitor uniti, [1] = primario.
+        try:
+            with mss_module.mss() as sct:
+                # Guardia esplicita: l'indicizzazione negativa di Python NON
+                # solleverebbe IndexError (monitor=-1 prenderebbe l'ultimo), ma
+                # il contratto promette un errore chiaro per ogni indice inesistente.
+                if monitor < 0 or monitor >= len(sct.monitors):
+                    raise RuntimeError(
+                        f"monitor {monitor} inesistente: sono disponibili gli "
+                        f"indici 0..{len(sct.monitors) - 1} "
+                        "(0 = tutti i monitor, 1 = primario)"
+                    )
+                target = sct.monitors[monitor]
+
+                # Pacing: attende 1/fps fra un frame e l'altro (fps > 0).
+                delay = 1.0 / fps if fps > 0 else 0.0
+                while True:
+                    # sct.grab() è BLOCCANTE: la si esegue in un thread per non
+                    # stallare l'event loop (che deve restare reattivo a stop()
+                    # e cancellazione fra un frame e l'altro).
+                    shot = await asyncio.to_thread(sct.grab, target)
+                    yield VideoFrame(
+                        pixels=_screen_shot_to_rgb(shot, np),
+                        source_label=source_label,
+                        ts=time.time(),
+                    )
+                    if delay:
+                        await asyncio.sleep(delay)
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - errore operatore chiaro
+            raise RuntimeError(
+                "cattura dello schermo fallita: verifica i permessi (macOS: "
+                "'Screen Recording' in Privacy & Security) e la presenza di uno "
+                "schermo"
+            ) from exc
+
+    return _source()
+
+
+def _screen_shot_to_rgb(shot: object, np: object) -> object:
+    """Converte uno `ScreenShot` `mss` (BGRA) in un `ndarray` RGB `HxWx3` uint8.
+
+    `mss` consegna i pixel in BGRA (4 canali). Si scarta il canale alfa e si
+    inverte l'ordine dei canali BGR->RGB con `np.flip(..., 2)`: è la variante
+    numpy più efficiente e produce l'`HxWx3` uint8 atteso a valle dal
+    `Captioner` (via `Image.fromarray`), coerente col percorso video PyAV.
+    """
+    frame = np.asarray(shot, dtype=np.uint8)  # type: ignore[attr-defined]
+    # Scarta alfa (primi 3 canali) e inverte BGR->RGB sull'ultimo asse.
+    return np.ascontiguousarray(np.flip(frame[:, :, :3], 2))  # type: ignore[attr-defined]
 
 
 # Alias sottili di back-compat. La codebase è fresca e i nuovi chiamanti usano

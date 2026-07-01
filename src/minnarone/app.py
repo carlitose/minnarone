@@ -392,7 +392,7 @@ def _lazy_device_video_source(config: OsCaptureConfig) -> Captured:
 
     async def _source() -> AsyncIterator[VideoFrame]:
         async for frame in make_device_screen_capture_source(
-            source_label="screen", fps=config.video_fps
+            monitor=config.monitor, source_label="screen", fps=config.video_fps
         ):
             yield frame
 

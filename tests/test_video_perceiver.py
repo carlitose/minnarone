@@ -300,11 +300,15 @@ def test_screen_capture_stop_does_not_pull_extra_frame(tmp_path):
     assert pulled["n"] == 1  # nessun frame extra estratto dopo lo stop
 
 
-def test_device_screen_capture_source_is_optional_and_not_loaded_afk():
-    # Il backend di cattura schermo reale è opzionale: non disponibile AFK, ma
-    # il modulo si carica senza dipendenze pesanti (nessun VLM/PyAV importato).
-    with pytest.raises(NotImplementedError):
-        make_device_screen_capture_source()
+def test_device_screen_capture_source_is_lazy_and_touches_no_hardware():
+    # Il backend di cattura schermo reale è un percorso opzionale LAZY:
+    # costruirlo ritorna un async generator senza importare mss né aprire alcuno
+    # schermo (il device si apre solo alla prima iterazione). Così build e
+    # --check non toccano hardware e il modulo si carica senza l'extra.
+    source = make_device_screen_capture_source()
+    assert hasattr(source, "__anext__")
+    # Chiude il generatore senza mai iterarlo: nessuno schermo aperto.
+    asyncio.run(source.aclose())
 
 
 def test_integration_adapter_frames_through_perceiver_land_in_store(tmp_path):

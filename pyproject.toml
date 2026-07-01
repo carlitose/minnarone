@@ -42,9 +42,11 @@ video = [
     "numpy>=1.26",
     "streamlink>=6",
 ]
-# Cattura audio di sistema (loopback) via soundcard. Opzionale: import lazy in
-# make_device_capture_source, così il core si carica senza soundcard/numpy.
+# Cattura audio di sistema (loopback) via soundcard e cattura schermo via mss.
+# Opzionale: import lazy in make_device_capture_source /
+# make_device_screen_capture_source, così il core si carica senza queste dipendenze.
 os-capture = [
+    "mss>=10.2",
     "numpy>=1.26",
     "soundcard>=0.4",
 ]
