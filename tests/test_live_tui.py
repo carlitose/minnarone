@@ -35,6 +35,9 @@ def _write_config(tmp_path):
                 "adapter: os_capture",
                 "llm_provider: grok",
                 "agent_name: minnarone",
+                "os_capture:",
+                "  audio: true",
+                "  video: true",
                 "senser_interval: 0.01",
                 "summarizer_interval: 60",
             ]

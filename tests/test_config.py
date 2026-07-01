@@ -28,6 +28,9 @@ VALID_YAML = textwrap.dedent(
     llm_provider: grok
     llm_params:
       thinking: low
+    os_capture:
+      audio: true
+      video: true
     disclosure:
       announce_ai: true
     retention:
@@ -42,6 +45,9 @@ MINIMAL_YAML = textwrap.dedent(
     facts_dir: facts
     adapter: os_capture
     llm_provider: grok
+    os_capture:
+      audio: true
+      video: true
     """
 )
 
@@ -99,11 +105,13 @@ def test_load_resolves_memory_paths_relative_to_config_file(tmp_path):
 
 
 def test_config_positional_constructor_contract_is_preserved():
+    # Adapter neutro (né twitch né os_capture) così il contratto posizionale è
+    # verificabile senza fornire una sezione sorgente obbligatoria.
     cfg = Config(
         OutputMode.PUBLIC,
         "soul.md",
         "facts",
-        "os_capture",
+        "none",
         "grok",
         "custom-name",
         {"thinking": "low"},
@@ -112,6 +120,7 @@ def test_config_positional_constructor_contract_is_preserved():
     assert cfg.agent_name == "custom-name"
     assert cfg.llm_params == {"thinking": "low"}
     assert cfg.twitch is None
+    assert cfg.os_capture is None
 
 
 def test_twitch_config_parses_and_normalizes_channel(tmp_path):
@@ -142,6 +151,61 @@ def test_twitch_adapter_rejects_wrong_twitch_object_type():
             adapter="twitch",
             llm_provider="grok",
             twitch="not-a-config",  # type: ignore[arg-type]
+        )
+
+
+def test_config_parses_os_capture_section(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace(
+                "os_capture:\n  audio: true\n  video: true\n",
+                textwrap.dedent(
+                    """
+                    os_capture:
+                      audio: false
+                      video: true
+                      audio_chunk_seconds: 2.0
+                      video_fps: 3.0
+                      monitor: 2
+                    """
+                ),
+            ),
+        )
+    )
+    assert cfg.adapter == "os_capture"
+    assert cfg.os_capture is not None
+    assert cfg.os_capture.audio is False
+    assert cfg.os_capture.video is True
+    assert cfg.os_capture.audio_chunk_seconds == 2.0
+    assert cfg.os_capture.video_fps == 3.0
+    assert cfg.os_capture.monitor == 2
+
+
+def test_os_capture_adapter_requires_os_capture_section(tmp_path):
+    bad = MINIMAL_YAML.replace("os_capture:\n  audio: true\n  video: true\n", "")
+    with pytest.raises(ConfigError, match="os_capture"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_os_capture_section_must_be_a_table(tmp_path):
+    bad = MINIMAL_YAML.replace(
+        "os_capture:\n  audio: true\n  video: true\n",
+        "os_capture: not-a-table\n",
+    )
+    with pytest.raises(ConfigError, match="tabella"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_os_capture_adapter_rejects_wrong_os_capture_object_type():
+    with pytest.raises(ConfigError, match="OsCaptureConfig"):
+        Config(
+            mode=OutputMode.PUBLIC,
+            soul_path="soul.md",
+            facts_dir="facts",
+            adapter="os_capture",
+            llm_provider="grok",
+            os_capture="not-a-config",  # type: ignore[arg-type]
         )
 
 

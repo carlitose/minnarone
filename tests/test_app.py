@@ -61,6 +61,14 @@ def _write_workspace(
     facts_dir.mkdir(exist_ok=True)
     (facts_dir / "canale.md").write_text("Canale Twitch di test.", encoding="utf-8")
 
+    # La sezione os_capture è obbligatoria quando adapter == os_capture (che è
+    # il default innocuo dei test): senza di essa la Config verrebbe rifiutata.
+    os_capture_block = (
+        "os_capture:\n  audio: true\n  video: true\n"
+        if adapter == "os_capture"
+        else ""
+    )
+
     # Dedent PRIMA della sostituzione, così un `extra` multilinea (le cui righe
     # 2+ non sono indentate) non sballa il calcolo dell'indentazione comune.
     template = textwrap.dedent(
@@ -72,6 +80,7 @@ def _write_workspace(
         llm_provider: grok
         agent_name: minnarone
         {twitch_block}
+        {os_capture_block}
         disclosure:
           announce_ai: {announce_ai}
         retention:
@@ -88,6 +97,7 @@ def _write_workspace(
             facts_dir=facts_dir,
             adapter=adapter,
             twitch_block=twitch_block,
+            os_capture_block=os_capture_block,
             announce_ai=str(announce_ai).lower(),
             auto_memory=str(auto_memory).lower(),
             extra=extra,
@@ -1636,6 +1646,9 @@ def test_agent_name_defaults_when_omitted(tmp_path):
             facts_dir: {facts_dir}
             adapter: os_capture
             llm_provider: grok
+            os_capture:
+              audio: true
+              video: true
             """
         ),
         encoding="utf-8",
@@ -1644,6 +1657,16 @@ def test_agent_name_defaults_when_omitted(tmp_path):
     assert cfg.agent_name  # default non vuoto
     agent = build_agent(cfg, transport=_fake_transport)
     assert agent is not None
+
+
+def test_os_capture_config_builds_agent_without_adapter(tmp_path):
+    # In questo slice l'adapter os_capture NON è ancora cablato: build_agent
+    # deve costruire l'agente con adapter None (nessun device aperto).
+    cfg = Config.load(_write_workspace(tmp_path))
+    assert cfg.adapter == "os_capture"
+    assert cfg.os_capture is not None
+    agent = build_agent(cfg, transport=_fake_transport)
+    assert agent.adapter is None
 
 
 # --- Fix 1: il loop del Summarizer parte nel percorso live ------------------

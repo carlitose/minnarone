@@ -506,6 +506,7 @@ class Config:
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     auto_memory: bool = False
     twitch: TwitchConfig | None = None
+    os_capture: OsCaptureConfig | None = None
     vad: VadConfig = field(default_factory=VadConfig)
     asr: AsrConfig = field(default_factory=AsrConfig)
     speaker_embedding: SpeakerEmbeddingConfig = field(
@@ -527,6 +528,10 @@ class Config:
                 raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
         if self.twitch is not None and not isinstance(self.twitch, TwitchConfig):
             raise ConfigError("twitch deve essere una TwitchConfig")
+        if self.os_capture is not None and not isinstance(
+            self.os_capture, OsCaptureConfig
+        ):
+            raise ConfigError("os_capture deve essere una OsCaptureConfig")
         if not isinstance(self.vad, VadConfig):
             raise ConfigError("vad deve essere una VadConfig")
         if not isinstance(self.asr, AsrConfig):
@@ -546,6 +551,8 @@ class Config:
         self.commentator.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
+        if self.adapter == "os_capture" and self.os_capture is None:
+            raise ConfigError("adapter 'os_capture' richiede la sezione 'os_capture'")
         if self.senser_interval <= 0:
             raise ConfigError("senser_interval deve essere > 0")
         if self.idle_interval <= 0:
@@ -587,6 +594,14 @@ class Config:
         if twitch_raw is not None and not isinstance(twitch_raw, dict):
             raise ConfigError("'twitch' deve essere una tabella")
         twitch = TwitchConfig.from_dict(twitch_raw) if twitch_raw is not None else None
+        os_capture_raw = data.get("os_capture")
+        if os_capture_raw is not None and not isinstance(os_capture_raw, dict):
+            raise ConfigError("'os_capture' deve essere una tabella")
+        os_capture = (
+            OsCaptureConfig.from_dict(os_capture_raw)
+            if os_capture_raw is not None
+            else None
+        )
         vad_raw = data.get("vad", {})
         if not isinstance(vad_raw, dict):
             raise ConfigError("'vad' deve essere una tabella")
@@ -626,6 +641,7 @@ class Config:
                 adapter=data.get("adapter"),  # type: ignore[arg-type]
                 llm_provider=data.get("llm_provider"),  # type: ignore[arg-type]
                 twitch=twitch,
+                os_capture=os_capture,
                 agent_name=str(data.get("agent_name", "minnarone")),
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]
                 senser_interval=float(data.get("senser_interval", 0.5)),
