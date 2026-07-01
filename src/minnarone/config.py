@@ -118,6 +118,20 @@ class CommentatorConfig:
             )
 
 
+def _coerce_config_float(value: object, field_name: str) -> float:
+    """Converte un valore numerico in float, rifiutando i booleani.
+
+    Condivisa fra `TwitchConfig` e `OsCaptureConfig`: `True`/`False` sono
+    interi in Python, quindi vanno rifiutati esplicitamente prima di `float()`.
+    """
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} deve essere numerico")
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{field_name} deve essere numerico") from exc
+
+
 @dataclass(frozen=True, slots=True)
 class TwitchConfig:
     """Configurazione dell'adapter Twitch.
@@ -199,12 +213,77 @@ class TwitchConfig:
 
     @staticmethod
     def _coerce_float(value: object, field_name: str) -> float:
-        if isinstance(value, bool):
-            raise ConfigError(f"{field_name} deve essere numerico")
+        return _coerce_config_float(value, field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class OsCaptureConfig:
+    """Configurazione dell'adapter di cattura del sistema operativo.
+
+    Osserva l'output audio/video della macchina locale (es. una call Teams)
+    invece di uno stream remoto. Modella la sezione `os_capture:` del file YAML.
+    """
+
+    audio: bool = True
+    video: bool = True
+    audio_chunk_seconds: float = 1.0
+    video_fps: float = 1.0
+    monitor: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ("audio", "video"):
+            if not isinstance(getattr(self, name), bool):
+                raise ConfigError(f"os_capture.{name} deve essere booleano")
+        if not (self.audio or self.video):
+            raise ConfigError("os_capture deve abilitare almeno audio o video")
+
+        audio_chunk_seconds = _coerce_config_float(
+            self.audio_chunk_seconds,
+            "os_capture.audio_chunk_seconds",
+        )
         try:
-            return float(value)  # type: ignore[arg-type]
+            pcm_chunk_size_bytes(audio_chunk_seconds)
         except (TypeError, ValueError) as exc:
-            raise ConfigError(f"{field_name} deve essere numerico") from exc
+            raise ConfigError(f"os_capture.audio_chunk_seconds: {exc}") from exc
+        object.__setattr__(self, "audio_chunk_seconds", audio_chunk_seconds)
+
+        raw_video_fps = _coerce_config_float(self.video_fps, "os_capture.video_fps")
+        try:
+            video_fps = validate_video_fps(raw_video_fps)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"os_capture.video_fps: {exc}") from exc
+        object.__setattr__(self, "video_fps", video_fps)
+
+        if (
+            isinstance(self.monitor, bool)
+            or not isinstance(self.monitor, int)
+            or self.monitor < 1
+        ):
+            raise ConfigError("os_capture.monitor deve essere un intero >= 1")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "OsCaptureConfig":
+        """Costruisce e valida il blocco `os_capture:`, rifiutando campi ignoti."""
+        allowed = {
+            "audio",
+            "video",
+            "audio_chunk_seconds",
+            "video_fps",
+            "monitor",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "campi os_capture non riconosciuti: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        return cls(
+            audio=data.get("audio", True),  # type: ignore[arg-type]
+            video=data.get("video", True),  # type: ignore[arg-type]
+            audio_chunk_seconds=data.get("audio_chunk_seconds", 1.0),  # type: ignore[arg-type]
+            video_fps=data.get("video_fps", 1.0),  # type: ignore[arg-type]
+            monitor=data.get("monitor", 1),  # type: ignore[arg-type]
+        )
 
 
 def _vad_config_from_dict(data: dict[str, object]) -> VadConfig:

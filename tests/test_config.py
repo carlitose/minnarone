@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from minnarone.asr import AsrConfig
-from minnarone.config import CommentatorConfig, CommentatorStyle, Config, ConfigError
+from minnarone.config import (
+    CommentatorConfig,
+    CommentatorStyle,
+    Config,
+    ConfigError,
+    OsCaptureConfig,
+)
 from minnarone.output import OutputMode
 from minnarone.speaker import SpeakerClusteringConfig, SpeakerEmbeddingConfig
 from minnarone.vad import VadConfig
@@ -160,6 +166,62 @@ def test_invalid_twitch_config_fails_clearly(tmp_path, line, replacement, messag
     bad = TWITCH_YAML.replace(line, replacement)
     with pytest.raises(ConfigError, match=message):
         Config.load(_write(tmp_path, bad))
+
+
+def test_os_capture_config_defaults_applied():
+    cfg = OsCaptureConfig.from_dict({})
+    assert cfg.audio is True
+    assert cfg.video is True
+    assert cfg.audio_chunk_seconds == 1.0
+    assert cfg.video_fps == 1.0
+    assert cfg.monitor == 1
+
+
+def test_os_capture_config_parses_overrides():
+    cfg = OsCaptureConfig.from_dict(
+        {
+            "audio": False,
+            "video": True,
+            "audio_chunk_seconds": 2.0,
+            "video_fps": 3.0,
+            "monitor": 2,
+        }
+    )
+    assert cfg.audio is False
+    assert cfg.video is True
+    assert cfg.audio_chunk_seconds == 2.0
+    assert cfg.video_fps == 3.0
+    assert cfg.monitor == 2
+
+
+def test_os_capture_config_rejects_unknown_field():
+    with pytest.raises(ConfigError, match="os_capture non riconosciuti"):
+        OsCaptureConfig.from_dict({"moitor": 1})
+
+
+def test_os_capture_config_requires_at_least_one_channel():
+    with pytest.raises(ConfigError, match="almeno audio o video"):
+        OsCaptureConfig.from_dict({"audio": False, "video": False})
+
+
+@pytest.mark.parametrize(
+    "data, message",
+    [
+        ({"audio": "yes"}, "os_capture.audio"),
+        ({"video": 1}, "os_capture.video"),
+        ({"audio_chunk_seconds": 0}, "os_capture.audio_chunk_seconds"),
+        ({"audio_chunk_seconds": True}, "os_capture.audio_chunk_seconds"),
+        ({"video_fps": 0}, "os_capture.video_fps"),
+        ({"video_fps": True}, "os_capture.video_fps"),
+        ({"monitor": 0}, "os_capture.monitor"),
+        ({"monitor": True}, "os_capture.monitor"),
+        ({"monitor": 1.5}, "os_capture.monitor"),
+        ({"monitor": "1"}, "os_capture.monitor"),
+    ],
+)
+def test_os_capture_config_validation_rules(data, message):
+    with pytest.raises(ConfigError, match=message):
+        OsCaptureConfig.from_dict(data)
 
 
 def test_summarizer_interval_parsed_and_validated(tmp_path):
