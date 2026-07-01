@@ -374,13 +374,10 @@ def _lazy_device_audio_source(config: OsCaptureConfig) -> Captured:
     al `--check`: lo si chiama dentro il generatore async, così l'hardware si
     apre soltanto quando la pompa inizia a iterare dentro `start()`.
     """
-    # TODO(issue 07): inoltrare config.audio_chunk_seconds a
-    # make_device_capture_source quando il backend reale accetterà quel
-    # parametro; oggi lo stub non lo consuma (il video già inoltra video_fps).
-    del config
-
     async def _source() -> AsyncIterator[AudioChunk]:
-        async for chunk in make_device_capture_source(source_label="system"):
+        async for chunk in make_device_capture_source(
+            source_label="system", chunk_seconds=config.audio_chunk_seconds
+        ):
             yield chunk
 
     return _source()

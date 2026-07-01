@@ -26,6 +26,8 @@ nomi di dominio per i chiamanti.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from typing import Protocol
 
@@ -123,30 +125,108 @@ def os_screen_capture(source: Captured) -> StreamCaptureAdapter:
 
 
 def make_device_capture_source(
-    *, sample_rate: int = 16_000, source_label: str = "mic"
+    *,
+    sample_rate: int = 16_000,
+    source_label: str = "system",
+    chunk_seconds: float = 1.0,
 ) -> AsyncIterator[AudioChunk]:
-    """Percorso OPZIONALE: backend di cattura da device reale (NON usato AFK).
+    """Percorso OPZIONALE: cattura reale dell'audio di SISTEMA (loopback).
 
-    Costruisce un capture source che legge dal device audio del sistema. Importa
-    la dipendenza pesante (es. `sounddevice`) SOLO qui dentro, così il modulo si
-    carica senza device né pacchetti audio installati. Questo percorso non è
-    esercitato nei test (richiede hardware e permessi); è documentato come lo
-    slot dove innestare la cattura reale.
+    Backend concreto della cattura dell'uscita di default via `soundcard`
+    (WASAPI su Windows, monitor PulseAudio su Linux). Emette `AudioChunk` in
+    formato PCM mono 16 kHz signed 16-bit little-endian (quello atteso da
+    VAD/ASR), con `source_label="system"` e `ts` corrente.
 
-    Note di permessi macOS:
-        * Il microfono richiede il permesso "Microphone" in Privacy & Security.
-        * L'audio di SISTEMA non è catturabile dalle API standard: serve un
-          device di loopback (es. BlackHole / un Aggregate Device) instradato
-          come input. Documentare il setup nell'app di riferimento.
+    Import LAZY: `soundcard` e `numpy` (extra `os-capture`) sono importati solo
+    quando il generatore viene iterato, MAI al caricamento del modulo né alla
+    costruzione. Il device di loopback si apre alla PRIMA iterazione, non alla
+    chiamata: così `--check` e il build non toccano l'hardware. È il chiamante
+    (la pompa di `start()`) a innescare l'apertura iterando.
 
-    Sollevare a chi cabla l'app la scelta del backend concreto.
+    Args:
+        sample_rate: frequenza dei chunk emessi (Hz); default 16 kHz.
+        source_label: provenienza marcata sui chunk; default "system" (audio di
+            sistema), distinto da "mic" per lo speaker tagging.
+        chunk_seconds: durata approssimativa di ogni chunk (secondi).
+
+    Errori operatore: se non esiste un device di loopback per l'uscita di
+    default (nessun monitor / driver mancante) o i permessi lo negano, solleva
+    `RuntimeError` con un messaggio chiaro alla prima iterazione.
+
+    Note macOS: `soundcard` NON supporta il loopback su macOS; serve un device
+    di loopback esterno (es. BlackHole) instradato come input. Documentato
+    nell'app di riferimento.
     """
-    raise NotImplementedError(
-        "make_device_capture_source è il percorso opzionale di cattura reale: "
-        "cablare un backend di device (es. sounddevice + loopback di sistema) "
-        "implementando un iterabile di AudioChunk. Non disponibile in ambiente "
-        "senza device."
-    )
+
+    async def _source() -> AsyncIterator[AudioChunk]:
+        # Import pesante LAZY: valutato solo alla prima iterazione, non al
+        # caricamento del modulo né alla costruzione del generatore.
+        try:
+            import numpy as np
+            import soundcard as sc
+        except ImportError as exc:  # pragma: no cover - richiede ambiente senza extra
+            raise RuntimeError(
+                "cattura audio di sistema non disponibile: installa l'extra "
+                "'os-capture' (soundcard + numpy)"
+            ) from exc
+
+        # Apri il loopback dell'uscita di DEFAULT. Su Windows/Linux il device
+        # monitor dello speaker di default si ottiene per nome con
+        # include_loopback=True; macOS non lo supporta.
+        try:
+            speaker = sc.default_speaker()
+            loopback = sc.get_microphone(
+                str(speaker.name), include_loopback=True
+            )
+        except Exception as exc:  # noqa: BLE001 - fallback errore operatore chiaro
+            raise RuntimeError(
+                "nessun device di loopback per l'uscita di default: verifica "
+                "driver/monitor audio e permessi (macOS non supporta il "
+                "loopback: serve un device esterno come BlackHole)"
+            ) from exc
+
+        # numframes per chunk: durata * sample_rate, almeno 1 frame.
+        numframes = max(1, int(round(sample_rate * chunk_seconds)))
+        try:
+            with loopback.recorder(samplerate=sample_rate, channels=1) as rec:
+                while True:
+                    # record() ritorna un array float32 frames×channels in
+                    # [-1, 1]; è una chiamata BLOCCANTE finché numframes non
+                    # sono disponibili, quindi la si esegue in un thread per non
+                    # stallare l'event loop (che deve restare reattivo a video,
+                    # reactor e a stop()/cancellazione durante il chunk).
+                    frames = await asyncio.to_thread(rec.record, numframes)
+                    yield AudioChunk(
+                        samples=_to_pcm_s16le(frames, np),
+                        sample_rate=sample_rate,
+                        source_label=source_label,
+                        ts=time.time(),
+                    )
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - errore operatore chiaro
+            raise RuntimeError(
+                f"cattura del loopback fallita ({speaker.name}): permessi o "
+                "device non disponibili"
+            ) from exc
+
+    return _source()
+
+
+def _to_pcm_s16le(frames: object, np: object) -> bytes:
+    """Converte un array float32 (frames×channels) in PCM mono s16le.
+
+    `soundcard` consegna campioni float32 in [-1, 1]. Il downmix a mono media i
+    canali, poi si scala a signed 16-bit little-endian (il formato opaco che i
+    chunk audio portano fino a VAD/ASR).
+    """
+    arr = np.asarray(frames, dtype=np.float32)  # type: ignore[attr-defined]
+    if arr.ndim > 1:
+        # Downmix a mono: media sui canali.
+        arr = arr.mean(axis=1)
+    arr = np.clip(arr, -1.0, 1.0)  # type: ignore[attr-defined]
+    # np.rint: arrotonda al più vicino (evita il bias di troncamento verso zero).
+    return np.rint(arr * 32767.0).astype("<i2").tobytes()  # type: ignore[attr-defined]
 
 
 def make_device_screen_capture_source(
