@@ -1,23 +1,30 @@
-"""Test del TwitchPublicOutputRouter: tracer bullet shadow (slice 03).
+"""Test del TwitchPublicOutputRouter: shadow + live send (slice 03 + 07).
 
 Il router compone la PublicSendPolicy, un display sink locale e un event
 recorder. In shadow mode la decisione della policy determina se il messaggio
 appare localmente con il marcatore [SHADOW] o viene scartato silenziosamente
-(drop). Nessun invio reale: questa slice costruisce solo il percorso shadow.
+(drop). Con un sender collegato, una decisione `send` invoca il sender reale,
+mostra il marcatore [SENT] in locale e registra l'evento. Fallimenti del sender
+alimentano l'auto-degrado della policy e saltano il turno.
 """
 
 import asyncio
 import io
 
+from minnarone.config import TwitchSendMode
 from minnarone.output import OutputMode, OutputRouter
 from minnarone.public_send import (
     ACTION_DROP,
+    ACTION_SEND,
     ACTION_SHADOW,
+    PolicySnapshot,
     REASON_BUDGET_MINUTE,
+    REASON_KILL_SWITCH,
     REASON_OK,
     SendDecision,
 )
 from minnarone.shadow_router import TwitchPublicOutputRouter
+from minnarone.twitch_chat_sender import TwitchSendConnectionError, TwitchSendError
 
 
 # --- Fakes per isolamento del router ----------------------------------------
@@ -31,6 +38,70 @@ class StubPolicy:
 
     def decide(self, message: str, channel: str) -> SendDecision:
         return self._decision
+
+
+class SpyPolicy:
+    """Policy with success/failure tracking and configurable auto-degrade."""
+
+    def __init__(
+        self,
+        decision: SendDecision,
+        *,
+        failure_threshold: int = 3,
+    ) -> None:
+        self._decision = decision
+        self._failure_threshold = failure_threshold
+        self.success_calls = 0
+        self.failure_calls = 0
+        self._kill_switch = False
+        self._promoted = True
+
+    def decide(self, message: str, channel: str) -> SendDecision:
+        if self._kill_switch:
+            return SendDecision(ACTION_SHADOW, REASON_KILL_SWITCH)
+        return self._decision
+
+    def record_success(self) -> None:
+        self.success_calls += 1
+        self.failure_calls = 0
+
+    def record_failure(self) -> None:
+        self.failure_calls += 1
+        if self.failure_calls >= self._failure_threshold:
+            self._kill_switch = True
+            self._promoted = False
+
+    def snapshot(self) -> PolicySnapshot:
+        return PolicySnapshot(
+            mode=TwitchSendMode.LIVE,
+            promoted=self._promoted,
+            kill_switch=self._kill_switch,
+            consecutive_failures=self.failure_calls,
+            minute_remaining=10,
+            hour_remaining=20,
+            last_decision=self._decision,
+        )
+
+
+class FakeSender:
+    """Sender fake: registra i messaggi inviati, opzionalmente fallisce."""
+
+    def __init__(self, *, fail: TwitchSendError | None = None) -> None:
+        self.sent: list[str] = []
+        self._fail = fail
+        self.started = False
+        self.stopped = False
+
+    async def send(self, text: str) -> None:
+        if self._fail is not None:
+            raise self._fail
+        self.sent.append(text)
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
 
 
 def _make_router(
@@ -400,3 +471,452 @@ def test_end_conv_public_does_not_shadow(tmp_path):
     assert reactor.recent_messages() == []
     # The router should not have been called (no last_decision)
     assert router.last_decision is None
+
+
+# --- 10. Live send: sender invocato su decisione send -------------------------
+
+
+def test_send_decision_with_sender_calls_send_and_displays_sent_marker():
+    """A send decision with a sender calls sender.send() and displays [SENT]."""
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao a tutti", OutputMode.PUBLIC))
+    assert sender.sent == ["ciao a tutti"]
+    assert "[SENT] ciao a tutti" in buf.getvalue()
+
+
+def test_send_decision_calls_policy_record_success():
+    """A successful send calls policy.record_success()."""
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert policy.success_calls == 1
+
+
+def test_send_decision_records_send_event():
+    """A successful send records a send_decision event with action=send."""
+    recorder = FakeEventRecorder()
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        event_recorder=recorder,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert len(recorder.events) == 1
+    assert recorder.events[0]["action"] == ACTION_SEND
+    assert recorder.events[0]["reason"] == REASON_OK
+
+
+def test_send_without_sender_falls_back_to_shadow():
+    """A send decision without a sender falls back to [SHADOW] display."""
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert "[SHADOW] ciao" in buf.getvalue()
+    assert "[SENT]" not in buf.getvalue()
+
+
+# --- 11. Sender failure: record, display failed, skip turn --------------------
+
+
+def test_sender_failure_displays_failed_marker():
+    """A sender failure displays [FAILED] marker."""
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert "[FAILED] ciao" in buf.getvalue()
+    assert "[SENT]" not in buf.getvalue()
+    assert "[SHADOW]" not in buf.getvalue()
+
+
+def test_sender_failure_calls_policy_record_failure():
+    """A sender failure calls policy.record_failure()."""
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert policy.failure_calls == 1
+    assert policy.success_calls == 0
+
+
+def test_sender_failure_records_failed_event():
+    """A sender failure records a send_decision event with action=failed."""
+    recorder = FakeEventRecorder()
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        event_recorder=recorder,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert len(recorder.events) >= 1
+    failed_events = [e for e in recorder.events if e["action"] == "failed"]
+    assert len(failed_events) == 1
+    assert "connection lost" in failed_events[0]["reason"]
+    assert failed_events[0]["channel"] == "testchannel"
+
+
+def test_sender_failure_does_not_record_success_event():
+    """A failed send must NOT record a success (action=send) event."""
+    recorder = FakeEventRecorder()
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        event_recorder=recorder,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    send_events = [e for e in recorder.events if e["action"] == ACTION_SEND]
+    assert len(send_events) == 0
+
+
+def test_sender_failure_preserves_last_decision_for_bookkeeping():
+    """A failed send keeps last_decision as 'send' for reactor bookkeeping.
+
+    The reactor uses last_decision to determine if bookkeeping should run.
+    A failed send should be treated as 'sent' for conservative bookkeeping.
+    """
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert router.last_decision is not None
+    assert router.last_decision.action == ACTION_SEND
+
+
+# --- 12. Auto-degrade at failure threshold ------------------------------------
+
+
+def test_auto_degrade_records_transition_event():
+    """At failure threshold, auto-degrade records a transition event."""
+    recorder = FakeEventRecorder()
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(
+        SendDecision(ACTION_SEND, REASON_OK),
+        failure_threshold=2,
+    )
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        event_recorder=recorder,
+        sender=sender,
+    )
+    # First failure: below threshold
+    asyncio.run(router.route("msg1", OutputMode.PUBLIC))
+    degrade_events = [e for e in recorder.events if e["action"] == "auto_degrade"]
+    assert len(degrade_events) == 0
+
+    # Second failure: crosses threshold, triggers auto-degrade
+    asyncio.run(router.route("msg2", OutputMode.PUBLIC))
+    degrade_events = [e for e in recorder.events if e["action"] == "auto_degrade"]
+    assert len(degrade_events) == 1
+    assert degrade_events[0]["reason"] == "kill_switch"
+
+
+def test_auto_degrade_flips_subsequent_decisions_to_shadow():
+    """After auto-degrade, subsequent decisions are shadow with kill_switch."""
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(
+        SendDecision(ACTION_SEND, REASON_OK),
+        failure_threshold=2,
+    )
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+        sender=sender,
+    )
+    # Two failures to trigger auto-degrade
+    asyncio.run(router.route("msg1", OutputMode.PUBLIC))
+    asyncio.run(router.route("msg2", OutputMode.PUBLIC))
+
+    # Next message: policy is now kill-switched, returns shadow
+    asyncio.run(router.route("msg3", OutputMode.PUBLIC))
+    assert router.last_decision is not None
+    assert router.last_decision.action == ACTION_SHADOW
+    assert router.last_decision.reason == REASON_KILL_SWITCH
+    # Sender should NOT have been called for the shadow message
+    assert sender.sent == []
+    assert "[SHADOW] msg3" in buf.getvalue()
+
+
+# --- 13. Shadow path unchanged with sender present ---------------------------
+
+
+def test_shadow_decision_with_sender_does_not_call_sender():
+    """A shadow decision should never call the sender, even if present."""
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_SHADOW, REASON_OK))
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert sender.sent == []
+    assert "[SHADOW] ciao" in buf.getvalue()
+    assert policy.success_calls == 0
+    assert policy.failure_calls == 0
+
+
+def test_drop_decision_with_sender_does_not_call_sender():
+    """A drop decision should never call the sender, even if present."""
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_DROP, REASON_BUDGET_MINUTE))
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=buf,
+        sender=sender,
+    )
+    asyncio.run(router.route("ciao", OutputMode.PUBLIC))
+    assert sender.sent == []
+    assert buf.getvalue() == ""
+
+
+# --- 14. Bookkeeping: sent message appears in reactor recent -----------------
+
+
+def test_sent_message_appears_in_recent_messages(tmp_path):
+    """A sent message should update the reactor's own-message history."""
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    store.append(
+        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+    )
+    sender = FakeSender()
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        sender=sender,
+    )
+    reactor = _build_reactor(
+        store=store,
+        router=router,
+        llm_response="RE: greeting\nMSG: ciao a tutti",
+    )
+    asyncio.run(reactor.run_once())
+    assert "ciao a tutti" in reactor.recent_messages()
+    assert sender.sent == ["ciao a tutti"]
+
+
+def test_failed_send_updates_bookkeeping_conservatively(tmp_path):
+    """A failed send updates bookkeeping as if sent (conservative per PRD)."""
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    store.append(
+        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+    )
+    sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
+    policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
+    router = TwitchPublicOutputRouter(
+        policy=policy,
+        channel="testchannel",
+        stream=io.StringIO(),
+        sender=sender,
+    )
+    reactor = _build_reactor(
+        store=store,
+        router=router,
+        llm_response="RE: greeting\nMSG: ciao a tutti",
+    )
+    asyncio.run(reactor.run_once())
+    # Conservative bookkeeping: message is remembered even after failure
+    assert "ciao a tutti" in reactor.recent_messages()
+
+
+# --- 15. App wiring: live sessions start shadowed ----------------------------
+
+
+def test_live_config_starts_shadowed(tmp_path, monkeypatch):
+    """Live config + immediate trigger produces shadow, not send."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:fake-write")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    cfg = Config.load(_write_workspace(tmp_path, send_mode="live"))
+    agent = build_agent(cfg, transport=_fake_transport)
+    assert isinstance(agent.router, TwitchPublicOutputRouter)
+    # Feed a mention so the reactor triggers
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone ci sei?",
+            speaker="user1",
+        )
+    )
+    asyncio.run(agent.reactor.run_once())
+    # Decision should be shadow (not promoted yet), never send
+    assert agent.router.last_decision is not None
+    assert agent.router.last_decision.action == ACTION_SHADOW
+
+
+def test_live_config_wires_sender_into_router(tmp_path, monkeypatch):
+    """Live config should construct a sender and wire it into the router."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:fake-write")
+    cfg = Config.load(_write_workspace(tmp_path, send_mode="live"))
+
+    async def fake_connect():
+        from tests.test_twitch_chat_sender import _FakeIRCStream
+        return _FakeIRCStream()
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        twitch_send_connect=fake_connect,
+    )
+    assert isinstance(agent.router, TwitchPublicOutputRouter)
+    assert agent.router._sender is not None
+    assert agent.sender is not None
+
+
+def test_shadow_config_does_not_construct_sender(tmp_path, monkeypatch):
+    """Shadow config should not construct a sender."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    cfg = Config.load(_write_workspace(tmp_path, send_mode="shadow"))
+    agent = build_agent(cfg, transport=_fake_transport)
+    assert isinstance(agent.router, TwitchPublicOutputRouter)
+    assert agent.router._sender is None
+    assert agent.sender is None
+
+
+def test_off_config_does_not_construct_sender(tmp_path, monkeypatch):
+    """Off config should not construct a sender."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    cfg = Config.load(_write_workspace(tmp_path, send_mode="off"))
+    agent = build_agent(cfg, transport=_fake_transport)
+    assert isinstance(agent.router, ConsoleOutputRouter)
+    assert agent.sender is None
+
+
+# --- 16. Sender lifecycle: agent starts and stops cleanly ---------------------
+
+
+def test_agent_starts_and_stops_cleanly_with_sender(tmp_path, monkeypatch):
+    """Agent starts and stops cleanly with a fake sender in the task group."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:fake-write")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from dataclasses import replace
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            send_mode="live",
+        )
+    )
+    sender = FakeSender()
+    adapter = FakeSourceAdapter([], channels=set())
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+    )
+    # Replace the real sender with a fake one for lifecycle testing
+    agent = replace(agent, sender=sender, adapter=None, perception_queue=None)
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        await asyncio.sleep(0.05)
+        agent.reactor.stop()
+        await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(drive())
+    assert sender.started is True
+    assert sender.stopped is True
+
+
+def test_agent_surfaces_sender_stop_failure(tmp_path, monkeypatch):
+    """Sender stop failure is surfaced, not swallowed."""
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:fake")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:fake-write")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    import pytest
+    from dataclasses import replace
+
+    class FailingStopSender(FakeSender):
+        async def stop(self) -> None:
+            raise RuntimeError("sender stop exploded")
+
+    cfg = Config.load(
+        _write_workspace(tmp_path, send_mode="live"),
+    )
+    sender = FailingStopSender()
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+    )
+    agent = replace(agent, sender=sender, adapter=None, perception_queue=None)
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        await asyncio.sleep(0.05)
+        agent.reactor.stop()
+        with pytest.raises(RuntimeError, match="sender stop exploded"):
+            await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(drive())

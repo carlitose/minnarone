@@ -95,7 +95,8 @@ from .speaker import (
 )
 from .store import PerceptionStore
 from .summarizer import Summarizer
-from .twitch_chat import ConnectIRC
+from .twitch_chat import ConnectIRC, _connect_twitch_irc
+from .twitch_chat_sender import TwitchChatSender
 from .twitch_stream import TwitchStreamAdapter
 from .twitch_video import TwitchVideoStreamOpener, VideoFrameDecoder
 from .vad import StreamingVad, WebRtcVadDetector
@@ -177,6 +178,8 @@ class Agent:
     minnarone_output: MinnaroneOutputStream | None = None
     speaker_diagnostics: object | None = None
     video_diagnostics: object | None = None
+    send_policy: object | None = None
+    sender: object | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -272,7 +275,14 @@ class Agent:
 
         In entrambi i casi l'arresto è pulito: nessun task orfano, e una
         `CancelledError` (run() cancellato) ferma tutto e si propaga.
+
+        Il sender (se presente) viene avviato prima dei task e fermato nel
+        finally; i fallimenti di stop vengono riportati come gli altri errori
+        di shutdown dell'adapter, mai inghiottiti.
         """
+        if self.sender is not None:
+            await self.sender.start()
+
         reactor_task = asyncio.create_task(
             self.reactor.run(interval=self.config.senser_interval)
         )
@@ -299,10 +309,23 @@ class Agent:
             reactor_task.cancel()
             summarizer_task.cancel()
             pump_task.cancel()
+            # Stop sender before gathering child results; capture its error
+            # so it can be reported alongside other shutdown failures.
+            sender_error: BaseException | None = None
+            if self.sender is not None:
+                try:
+                    await self.sender.stop()
+                except BaseException as exc:
+                    if isinstance(exc, asyncio.CancelledError):
+                        sender_error = None
+                    else:
+                        sender_error = exc
             results = await asyncio.gather(
                 reactor_task, summarizer_task, pump_task, return_exceptions=True
             )
             errors = _unexpected_shutdown_errors(results)
+            if sender_error is not None:
+                errors.append(sender_error)
             if errors:
                 _raise_shutdown_errors(errors)
 
@@ -332,8 +355,13 @@ def _build_router(
     channel: str | None = None,
     event_recorder: object | None = None,
     clock: Callable[[], float] | None = None,
-) -> OutputRouter:
-    """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice)."""
+    sender: object | None = None,
+) -> tuple[OutputRouter, PublicSendPolicy | None]:
+    """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice).
+
+    Returns (router, send_policy) where send_policy is non-None only when
+    the send path is active.
+    """
     if mode is OutputMode.PUBLIC:
         if (
             send_config is not None
@@ -345,16 +373,18 @@ def _build_router(
                 send_config,
                 clock=clock if clock is not None else time.monotonic,
             )
-            return TwitchPublicOutputRouter(
+            router = TwitchPublicOutputRouter(
                 policy=policy,
                 channel=channel or "",
                 event_recorder=event_recorder,
+                sender=sender,
             )
-        return ConsoleOutputRouter()
+            return router, policy
+        return ConsoleOutputRouter(), None
     if commentator_style is not None:
-        return ConsoleOutputRouter()
+        return ConsoleOutputRouter(), None
     # private: accettata, ma il percorso di output segnala not-implemented.
-    return PrivateNotImplementedRouter()
+    return PrivateNotImplementedRouter(), None
 
 
 def _default_store_path(config: Config) -> Path:
@@ -652,6 +682,7 @@ def build_agent(
     minnarone_output: MinnaroneOutputStream | None = None,
     adapter: SourceAdapter | None = None,
     twitch_chat_connect: ConnectIRC | None = None,
+    twitch_send_connect: ConnectIRC | None = None,
     audio_perceiver: AudioPerceiver | None = None,
     video_perceiver: VideoPerceiver | None = None,
     perception_queue: BoundedLocalPerceptionQueue | None = None,
@@ -766,7 +797,22 @@ def build_agent(
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None
     )
+    # Costruzione del sender: SOLO quando il config dichiara mode: live.
+    # off/shadow non costruiscono il sender né leggono il token di scrittura.
+    sender: TwitchChatSender | None = None
+    if (
+        config.twitch is not None
+        and config.twitch.send.mode is TwitchSendMode.LIVE
+    ):
+        sender = TwitchChatSender(
+            channel=config.twitch.channel,
+            username=os.environ["TWITCH_BOT_USERNAME"],
+            oauth_token=os.environ[TWITCH_SEND_TOKEN_ENV_VAR],
+            connect=twitch_send_connect or _connect_twitch_irc,
+        )
+
     active_minnarone_output: MinnaroneOutputStream | None = None
+    send_policy: PublicSendPolicy | None = None
     if router is not None:
         out_router = router
         if isinstance(router, TuiPrivateOutputRouter):
@@ -775,17 +821,30 @@ def build_agent(
         minnarone_output is not None
         and config.commentator.uses_local_output(config.mode)
     ):
-        out_router = TuiPrivateOutputRouter(minnarone_output)
-        active_minnarone_output = minnarone_output
-    else:
         send_config = config.twitch.send if config.twitch is not None else None
         twitch_channel = config.twitch.channel if config.twitch is not None else None
-        out_router = _build_router(
+        public_router, send_policy = _build_router(
             config.mode,
             commentator_style=commentator_style,
             send_config=send_config,
             channel=twitch_channel,
             event_recorder=event_recorder,
+            sender=sender,
+        )
+        out_router = TuiPrivateOutputRouter(
+            minnarone_output, public_router=public_router,
+        )
+        active_minnarone_output = minnarone_output
+    else:
+        send_config = config.twitch.send if config.twitch is not None else None
+        twitch_channel = config.twitch.channel if config.twitch is not None else None
+        out_router, send_policy = _build_router(
+            config.mode,
+            commentator_style=commentator_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            event_recorder=event_recorder,
+            sender=sender,
         )
 
     # I perceiver audio/video si costruiscono con GLI STESSI helper per Twitch e
@@ -880,6 +939,8 @@ def build_agent(
         minnarone_output=active_minnarone_output,
         speaker_diagnostics=speaker_diagnostics,
         video_diagnostics=video_perceiver,
+        send_policy=send_policy,
+        sender=sender,
     )
 
 
