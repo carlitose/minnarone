@@ -34,7 +34,7 @@ def source_counts(state) -> SourceCounts:
 
 
 def source_health(state) -> dict[str, SourceHealth]:
-    return {
+    health: dict[str, SourceHealth] = {
         "chat": _chat_health(state),
         "audio": _audio_health(state),
         "video": _video_health(state),
@@ -45,6 +45,10 @@ def source_health(state) -> dict[str, SourceHealth]:
         "queue": _queue_health(state),
         "adapter": _adapter_health(state),
     }
+    send = _send_health(state)
+    if send is not None:
+        health["send"] = send
+    return health
 
 
 def latest_failure(state) -> str | None:
@@ -80,11 +84,12 @@ def render_status_bar(state) -> str:
         "llm",
         "queue",
         "adapter",
+        "send",
     )
     health_text = " ".join(
         f"{name}={health[name].status}"
         for name in health_names
-        if health[name].status != "unknown"
+        if name in health and health[name].status != "unknown"
     )
     if not health_text:
         health_text = "unknown"
@@ -123,6 +128,9 @@ def render_status_bar(state) -> str:
             f"adapter_dropped={adapter_dropped}",
         ]
     )
+    send = getattr(state, "send", None)
+    if send is not None:
+        parts.append(f"budget={send.minute_remaining}/{send.hour_remaining}")
     return _compact(" | ".join(part for part in parts if part), 320)
 
 
@@ -379,6 +387,22 @@ def _adapter_health(state) -> SourceHealth:
     if produced:
         return SourceHealth("ok", f"{produced} produced")
     return SourceHealth("idle")
+
+
+def _send_health(state) -> SourceHealth | None:
+    send = getattr(state, "send", None)
+    if send is None:
+        return None
+    if send.kill_switch:
+        return SourceHealth("failed", "kill_switch")
+    if send.consecutive_failures:
+        return SourceHealth("failed", f"{send.consecutive_failures} consecutive failures")
+    if send.last_action is None:
+        return SourceHealth("idle")
+    if send.last_action == "drop":
+        reason = send.last_reason or "dropped"
+        return SourceHealth("idle", reason)
+    return SourceHealth("ok", f"mode={send.mode}")
 
 
 def _failed_queue(stats) -> bool:

@@ -69,3 +69,10 @@ class TuiPrivateOutputRouter(OutputRouter):
             self.stream.append(message, mode)
             return
         await self._public_router.route(message, mode)
+        # Capture PUBLIC messages with send markers for dashboard MINNARONE panel.
+        last = getattr(self._public_router, "last_decision", None)
+        if last is not None:
+            if last.action == "send":
+                self.stream.append(f"[SENT] {message}", mode)
+            elif last.action != "drop":
+                self.stream.append(f"[SHADOW] {message}", mode)

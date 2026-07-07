@@ -124,6 +124,24 @@ class VideoDiagnostics:
 
 
 @dataclass(frozen=True, slots=True)
+class SendDiagnostics:
+    """Plain read-only send-path state for dashboard display (issue 04).
+
+    Mirrors ``PolicySnapshot`` as simple data: no reference to the live
+    policy object, so the dashboard stays read-only by design.
+    """
+
+    mode: str = "off"
+    promoted: bool = False
+    kill_switch: bool = False
+    consecutive_failures: int = 0
+    minute_remaining: int = 0
+    hour_remaining: int = 0
+    last_action: str | None = None
+    last_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AdapterChannelDiagnostics:
     """Capture adapter counters for one channel."""
 
@@ -170,6 +188,7 @@ class DashboardState:
     video: VideoDiagnostics = field(default_factory=VideoDiagnostics)
     latest_prompt: PromptObservation | None = None
     memory_summary: str = ""
+    send: SendDiagnostics | None = None
     channel: str | None = None
     started_at: datetime | None = None
     now: datetime | None = None
@@ -410,6 +429,19 @@ class DashboardState:
         else:
             lines.append("(nessuno)")
 
+        if self.send is not None:
+            lines.append("== Send ==")
+            s = self.send
+            lines.append(
+                f"mode={s.mode} promoted={s.promoted} "
+                f"kill_switch={s.kill_switch} failures={s.consecutive_failures}"
+            )
+            lines.append(f"budget={s.minute_remaining}/{s.hour_remaining}")
+            if s.last_action is not None:
+                lines.append(f"last={s.last_action}/{s.last_reason}")
+            else:
+                lines.append("last=(none)")
+
         return "\n".join(lines)
 
 
@@ -472,6 +504,7 @@ def snapshot(
     adapter=None,
     prompt_recorder=None,
     summarizer=None,
+    send_policy=None,
     channel: str | None = None,
     started_at: datetime | None = None,
     now: datetime | None = None,
@@ -537,6 +570,7 @@ def snapshot(
     video = _video_diagnostics(video_perceiver)
     latest_prompt = _latest_prompt_observation(prompt_recorder)
     memory_summary = _current_memory_summary(summarizer)
+    send = _send_diagnostics(send_policy)
 
     return DashboardState(
         perceptions=perceptions,
@@ -553,6 +587,7 @@ def snapshot(
         video=video,
         latest_prompt=latest_prompt,
         memory_summary=memory_summary,
+        send=send,
         channel=_safe_status_value(channel),
         started_at=started_at,
         now=now or (datetime.now(UTC) if started_at is not None else None),
@@ -717,4 +752,24 @@ def _video_diagnostics(video_perceiver) -> VideoDiagnostics:
         captioned=getattr(stats, "captioned", 0),
         empty_captions=getattr(stats, "empty_captions", 0),
         failed=getattr(stats, "failed", 0),
+    )
+
+
+def _send_diagnostics(send_policy) -> SendDiagnostics | None:
+    if send_policy is None:
+        return None
+    snap_method = getattr(send_policy, "snapshot", None)
+    if snap_method is None:
+        return None
+    snap = snap_method()
+    last = getattr(snap, "last_decision", None)
+    return SendDiagnostics(
+        mode=getattr(getattr(snap, "mode", None), "value", str(getattr(snap, "mode", "off"))),
+        promoted=getattr(snap, "promoted", False),
+        kill_switch=getattr(snap, "kill_switch", False),
+        consecutive_failures=getattr(snap, "consecutive_failures", 0),
+        minute_remaining=getattr(snap, "minute_remaining", 0),
+        hour_remaining=getattr(snap, "hour_remaining", 0),
+        last_action=getattr(last, "action", None) if last is not None else None,
+        last_reason=getattr(last, "reason", None) if last is not None else None,
     )

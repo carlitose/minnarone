@@ -223,6 +223,7 @@ class Agent:
             adapter=self.adapter,
             prompt_recorder=self.prompt_recorder,
             summarizer=self.summarizer,
+            send_policy=self.send_policy,
             channel=channel,
             started_at=started_at,
         )

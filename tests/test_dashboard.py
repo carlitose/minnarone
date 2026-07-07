@@ -1069,3 +1069,257 @@ def test_snapshot_windows_are_defensive_copies(tmp_path):
     # mutare lo snapshot NON tocca lo stato di conversazione vivo
     state.windows[who].last_seen = 999999.0
     assert senser.open_windows()[who].last_seen == live_before
+
+
+# --- Send diagnostics (issue 04) ------------------------------------------
+
+
+def test_snapshot_exposes_send_diagnostics_from_policy():
+    """The snapshot wires a policy snapshot into a plain SendDiagnostics."""
+    from minnarone.dashboard import SendDiagnostics
+
+    class FakePolicy:
+        def snapshot(self):
+            from minnarone.config import TwitchSendMode
+            from minnarone.public_send import PolicySnapshot, SendDecision
+
+            return PolicySnapshot(
+                mode=TwitchSendMode.SHADOW,
+                promoted=False,
+                kill_switch=False,
+                consecutive_failures=0,
+                minute_remaining=5,
+                hour_remaining=20,
+                last_decision=SendDecision(action="shadow", reason="ok"),
+            )
+
+    state = snapshot(send_policy=FakePolicy())
+
+    assert state.send is not None
+    assert isinstance(state.send, SendDiagnostics)
+    assert state.send.mode == "shadow"
+    assert state.send.promoted is False
+    assert state.send.kill_switch is False
+    assert state.send.consecutive_failures == 0
+    assert state.send.minute_remaining == 5
+    assert state.send.hour_remaining == 20
+    assert state.send.last_action == "shadow"
+    assert state.send.last_reason == "ok"
+
+
+def test_snapshot_send_diagnostics_none_when_no_policy():
+    """Without a send policy, send diagnostics are None."""
+    state = snapshot()
+    assert state.send is None
+
+
+def test_send_health_idle_before_any_decision():
+    """Before any decision, send health is idle."""
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(mode="shadow", minute_remaining=5, hour_remaining=20),
+    )
+
+    assert state.source_health["send"].status == "idle"
+
+
+def test_send_health_ok_after_successful_shadow_decision():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            minute_remaining=4,
+            hour_remaining=19,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    assert state.source_health["send"].status == "ok"
+
+
+def test_send_health_ok_after_successful_send_decision():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="live",
+            promoted=True,
+            minute_remaining=4,
+            hour_remaining=19,
+            last_action="send",
+            last_reason="ok",
+        ),
+    )
+
+    assert state.source_health["send"].status == "ok"
+
+
+def test_send_health_failed_with_kill_switch():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="live",
+            kill_switch=True,
+            consecutive_failures=3,
+            minute_remaining=5,
+            hour_remaining=20,
+            last_action="shadow",
+            last_reason="kill_switch",
+        ),
+    )
+
+    assert state.source_health["send"].status == "failed"
+    assert "kill_switch" in state.source_health["send"].detail
+
+
+def test_status_bar_includes_send_budget():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            minute_remaining=3,
+            hour_remaining=18,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    status = state.render_status_bar()
+    assert "send=ok" in status
+    assert "budget=3/18" in status
+
+
+def test_tui_router_captures_shadow_messages_in_minnarone_panel():
+    """PUBLIC messages routed through the shadow router appear in the
+    MinnaroneOutputStream with [SHADOW] markers for the MINNARONE panel."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.SHADOW,
+        allowed_channels=["#test"],
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    stdout_sink = io.StringIO()
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink,
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    asyncio.run(router.route("Ciao chat!", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SHADOW] Ciao chat!"]
+
+
+def test_tui_router_captures_sent_messages_in_minnarone_panel():
+    """PUBLIC messages that are SENT (not shadow) appear with [SENT] marker."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.LIVE,
+        allowed_channels=["#test"],
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    policy.promote()
+    stdout_sink = io.StringIO()
+
+    class FakeSender:
+        async def send(self, message: str) -> None:
+            pass  # successful send
+
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink, sender=FakeSender(),
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    asyncio.run(router.route("Ciao chat!", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SENT] Ciao chat!"]
+
+
+def test_render_text_includes_send_section():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            promoted=False,
+            kill_switch=False,
+            consecutive_failures=0,
+            minute_remaining=5,
+            hour_remaining=20,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    rendered = state.render_text()
+    assert "== Send ==" in rendered
+    assert "mode=shadow" in rendered
+    assert "promoted=False" in rendered
+    assert "kill_switch=False" in rendered
+    assert "failures=0" in rendered
+    assert "budget=5/20" in rendered
+    assert "last=shadow/ok" in rendered
+
+
+def test_render_text_omits_send_section_when_no_policy():
+    state = DashboardState()
+    rendered = state.render_text()
+    assert "== Send ==" not in rendered
+
+
+def test_tui_router_does_not_capture_dropped_messages():
+    """Dropped PUBLIC messages do NOT appear in MinnaroneOutputStream."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.SHADOW,
+        allowed_channels=["#test"],
+        max_per_minute=1,
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    stdout_sink = io.StringIO()
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink,
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    # First message consumes the minute budget
+    asyncio.run(router.route("First", OutputMode.PUBLIC))
+    # Second message is dropped (budget exhausted)
+    asyncio.run(router.route("Dropped", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SHADOW] First"]
+    assert "Dropped" not in " ".join(messages)
