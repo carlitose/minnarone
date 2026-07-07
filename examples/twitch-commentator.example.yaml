@@ -1,6 +1,7 @@
 # Local Twitch commentator example.
-# Output is private/local console only: Minnarone does not send PRIVMSG lines to
-# Twitch and does not need a chat write/send scope.
+# Output is private/local console only (mode: private). In private mode, no
+# public Twitch messages are sent regardless of twitch.send configuration.
+# No chat write/send scope is required.
 # Chat capture still needs read-only IRC credentials in environment if
 # `twitch.chat: true`:
 #   TWITCH_BOT_USERNAME

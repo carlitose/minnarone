@@ -131,7 +131,7 @@ def test_twitch_example_documents_console_only_runtime():
     text = Path("examples/twitch.example.yaml").read_text(encoding="utf-8")
 
     assert "console" in text.lower()
-    assert "non invia messaggi" in text.lower()
+    assert "no privmsg sent" in text.lower()
 
 
 def test_twitch_operator_docs_cover_setup_smoke_artifacts_and_troubleshooting():
@@ -221,7 +221,7 @@ def test_twitch_operator_docs_describe_console_runtime_with_optional_audio():
     assert "chat-only" in text
     assert "twitch.audio: true" in text
     assert "console" in text
-    assert "does not send chat messages" in text
+    assert "twitch.send.mode: off" in text
     assert "does not yet wire" not in text
 
 
@@ -332,8 +332,8 @@ def test_twitch_operator_docs_cover_local_commentator_mode():
         "mode: private",
         "[PRIVATE]",
         "TUI/dashboard",
-        "no `PRIVMSG` write",
-        "no public chat write/send scope",
+        "no PRIVMSG is",
+        "no public chat write/send",
         "Italian comments",
         "commentator.idle_interval",
         "examples/twitch-commentator.example.yaml",
@@ -439,7 +439,7 @@ def test_twitch_operator_docs_cover_live_tui_replay_and_acceptance_workflow():
         "gitignored",
         "disk safety",
         "read-only",
-        "does not send public Twitch messages",
+        "twitch.send.mode: shadow",
         "Manual Live Acceptance Checklist",
     ]
     for phrase in required:
@@ -492,7 +492,7 @@ def test_twitch_operator_docs_cover_full_commentator_run_workflow():
         "--check",
         "[PRIVATE]",
         "No public Twitch messages are sent",
-        "public Twitch output remains out of scope",
+        "PRIVMSG output is",
         "Live Observability TUI",
         "--tui",
         "Replay TUI",
@@ -512,11 +512,13 @@ def test_twitch_operator_docs_do_not_show_direct_secret_exports():
         "export OPENROUTER_API_KEY=",
         "export TWITCH_OAUTH_TOKEN=",
         "export TWITCH_BOT_USERNAME=",
+        "export TWITCH_SEND_OAUTH_TOKEN=",
     ]
     for phrase in forbidden:
         assert phrase not in text
     assert 'read -r -s -p "OPENROUTER_API_KEY: "' in text
     assert 'read -r -s -p "TWITCH_OAUTH_TOKEN: "' in text
+    assert 'read -r -s -p "TWITCH_SEND_OAUTH_TOKEN: "' in text
 
 
 def test_readme_private_commentator_wording_is_not_contradictory():
@@ -525,6 +527,68 @@ def test_readme_private_commentator_wording_is_not_contradictory():
     assert "private+commentator = console locale" in text
     assert "private solo = whisper v2" in text
     assert "commentatore locale su console" in text
+    # The README accurately states that private mode never sends PRIVMSG.
+    assert "nessun messaggio PRIVMSG" in text
+
+
+def test_twitch_operator_docs_cover_public_chat_send_section():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Public Chat Send",
+        "Single-Writer Invariant",
+        "TwitchChatSender",
+        "Dedicated Bot Account",
+        "chat:edit",
+        "Write Token",
+        "TWITCH_SEND_OAUTH_TOKEN",
+        "Allow-List Workflow",
+        "allowed_channels",
+        "Shadow Rehearsal Workflow",
+        "twitch.send.mode: shadow",
+        "Live Enablement Checklist",
+        "kill-switch",
+        "attended-only",
+        "Budget and Rate Guidance",
+        "max_per_minute",
+        "max_per_hour",
+        "failure_threshold",
+        "Send Safety Summary",
+        "mode: shadow",
+        "mode: live",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_single_writer_invariant_searchable():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    assert "Only `TwitchChatSender` may write `PRIVMSG`" in text
+
+
+def test_twitch_operator_docs_no_live_mode_in_example_yaml():
+    """Example configs must show shadow at most; live appears only in docs."""
+    for name in [
+        "examples/twitch.example.yaml",
+        "examples/twitch-commentator.example.yaml",
+        "examples/twitch-original-chat.example.yaml",
+    ]:
+        text = Path(name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.lstrip("# ").strip()
+            # Skip doc prose/comments that mention live as a concept
+            if stripped.startswith("mode:") and "live" in stripped:
+                assert False, f"{name} contains 'mode: live' as a config value"
+
+
+def test_twitch_operator_docs_no_real_tokens():
+    import re
+
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    # No string that looks like a real oauth token (30+ hex chars after prefix)
+    assert not re.search(r"oauth:[a-z0-9]{30,}", text)
 
 
 def test_twitch_operator_docs_troubleshoot_model_capture_diarization_video_vlm():

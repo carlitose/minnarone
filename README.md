@@ -74,8 +74,10 @@ dell'`os_capture` (mic + audio di sistema, registrazione schermo) resta il
 `run()` gira il solo motore di reazione + summarizer.
 
 Per usare Minnarone come commentatore locale, abilita `commentator.enabled:
-true` e usa `mode: private`: l'output resta sulla console locale (`[PRIVATE]`)
-e non esiste un path di invio pubblico Twitch.
+true` e usa `mode: private`: l'output resta sulla console locale (`[PRIVATE]`).
+In `mode: private` nessun messaggio PRIVMSG viene mai inviato su Twitch,
+indipendentemente dalla configurazione `twitch.send`. Per l'invio pubblico
+gated (shadow/live), vedi la [guida operatore Twitch](docs/twitch-operator.md).
 
 ### Smoke Twitch capture-only
 

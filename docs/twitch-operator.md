@@ -524,7 +524,8 @@ chat/audio instead of killing the whole agent.
 
 The main CLI can run Twitch through the existing public console output. It reads
 chat through Twitch IRC when `twitch.chat: true`, writes normal chat perceptions
-to the store, and does not send chat messages back to Twitch.
+to the store. By default (`twitch.send.mode: off`), no messages are sent back
+to Twitch; see *Public Chat Send* below for the gated send path.
 
 ```yaml
 adapter: twitch
@@ -602,8 +603,9 @@ Commentator mode keeps the public-chat persona available but adds an
 operator-facing stance for private/local commentary. Use `mode: private` plus
 `commentator.enabled: true`: output is routed to the local console as
 `[PRIVATE]`. The TUI/dashboard remains a separate read-only observability tool;
-this CLI path does not start it automatically. There is no Twitch send path and
-no `PRIVMSG` write; no public chat write/send scope is required. If
+this CLI path does not start it automatically. In `mode: private`, no PRIVMSG is
+ever sent regardless of `twitch.send` configuration; no public chat write/send
+scope is required. If
 `twitch.chat: true`, IRC credentials are still needed for read-only chat
 ingestion.
 
@@ -638,7 +640,8 @@ conservative public-console Twitch config with `commentator.enabled: false`.
 Use `examples/twitch-original-chat.example.yaml` when you want the private
 local dry-run to render what Minnarone would write as a Twitch chat user. The
 example keeps `mode: private`, `commentator.enabled: true`, and
-`commentator.style: original_chat`; it still has no public Twitch send path.
+`commentator.style: original_chat`; in `mode: private`, no public Twitch
+messages are sent.
 
 The example points at committed seed memory with paths relative to the config
 file:
@@ -715,8 +718,158 @@ Success signal for the first full run:
 - `perceptions.jsonl` receives chat/audio/video perceptions as enabled.
 - `Agent.observability_snapshot()` would show queue counters and failures if you
   attach the read-only TUI.
-- No public Twitch messages are sent. Minnarone does not write `PRIVMSG` lines
-  to Twitch in this runtime path, and public Twitch output remains out of scope.
+- No public Twitch messages are sent. In `mode: private`, PRIVMSG output is
+  guaranteed off regardless of `twitch.send` configuration.
+
+## Public Chat Send
+
+Minnarone can send public PRIVMSG messages to a Twitch channel when all of the
+following gates are satisfied: `mode: public`, `twitch.send.mode` is `shadow` or
+`live`, a valid write-scope token is present, the target channel is in the
+allow-list, and the per-minute/per-hour budget has not been exceeded. Every
+session starts in shadow regardless of config; live requires a manual TUI
+promotion.
+
+### Single-Writer Invariant
+
+Only `TwitchChatSender` may write `PRIVMSG` lines to Twitch IRC. Any other
+module that directly writes a `PRIVMSG` is a defect. This invariant holds across
+the entire codebase and should be enforced in code review.
+
+### Dedicated Bot Account
+
+Use a dedicated Twitch account for sending. Do not reuse your personal account
+or the read-only bot account used for chat capture.
+
+1. Create a new Twitch account for the bot at <https://www.twitch.tv/signup>.
+2. Register the account as a developer application at
+   <https://dev.twitch.tv/console/apps/create> to generate a client id.
+3. Generate an OAuth token with the `chat:edit` scope (required for PRIVMSG).
+   The read token (`TWITCH_OAUTH_TOKEN`) only needs `chat:read`; the write
+   token needs `chat:edit`. Keep them as separate credentials on separate
+   accounts when possible.
+
+### Write Token
+
+Store the write-scope token in the `TWITCH_SEND_OAUTH_TOKEN` environment
+variable. Never put it in YAML files, example configs, shell history intended
+for commits, or issue docs.
+
+```bash
+read -r -s -p "TWITCH_SEND_OAUTH_TOKEN: " TWITCH_SEND_OAUTH_TOKEN; echo; export TWITCH_SEND_OAUTH_TOKEN
+```
+
+The token may include or omit the `oauth:` prefix; the sender normalizes it
+internally. If the token is missing or empty at agent build time, send-capable
+modes (`shadow` and `live`) refuse to start.
+
+### Allow-List Workflow
+
+The `twitch.send.allowed_channels` list gates which channels the bot may send
+to. A channel must be explicitly listed before the bot will send (or shadow-log)
+messages there. This is the operator's explicit authorization step.
+
+Before adding a channel:
+
+1. Confirm the streamer has authorized the bot account to chat in their channel
+   (Twitch channel moderation settings, or direct agreement with the streamer).
+2. Add the channel name (lowercase, no `#` prefix) to `allowed_channels`.
+3. Verify with a shadow run before enabling live.
+
+### Shadow Rehearsal Workflow
+
+Shadow mode (`twitch.send.mode: shadow`) runs the full send decision pipeline
+-- budget checks, allow-list, policy evaluation -- but never transmits a
+PRIVMSG. Instead, shadow decisions are logged locally and visible in the TUI
+send observability panel.
+
+Use shadow to:
+
+- Verify the bot would send at an acceptable rate.
+- Inspect message quality before they reach a live audience.
+- Tune `max_per_minute` and `max_per_hour` to match the channel's pace.
+- Confirm allow-list and credential configuration are correct.
+
+Start with this config and observe the TUI for several minutes:
+
+```yaml
+mode: public
+adapter: twitch
+twitch:
+  channel: nomecanale
+  chat: true
+  send:
+    mode: shadow
+    allowed_channels:
+      - nomecanale
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+```
+
+### Live Enablement Checklist
+
+Live mode sends real PRIVMSG lines to Twitch. Treat it as attended-only.
+
+Before enabling live:
+
+- [ ] Shadow rehearsal ran successfully: message rate, quality, and timing look
+  correct.
+- [ ] The dedicated bot account has `chat:edit` scope and is authorized in the
+  target channel.
+- [ ] `TWITCH_SEND_OAUTH_TOKEN` is set in the shell environment.
+- [ ] The target channel is in `twitch.send.allowed_channels`.
+- [ ] You are running the TUI (`--tui`): live is TUI-only. The console runtime
+  has no promotion path.
+- [ ] You know the kill-switch key (`k`): it instantly reverts to shadow.
+- [ ] You will remain at the keyboard for the entire live session
+  (attended-only).
+
+To arm the config for live (the session still starts in shadow):
+
+```yaml
+twitch:
+  send:
+    mode: live
+    allowed_channels:
+      - nomecanale
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+```
+
+Then promote from the TUI:
+
+1. Start with `--tui`.
+2. Observe shadow decisions in the status bar (`send=shadow(armed)`).
+3. Press `p` twice within 3 seconds to promote to live (`send=live`).
+4. Press `k` once to kill-switch back to shadow at any time (`send=shadow(kill)`).
+
+Returning to live after a kill-switch requires a fresh confirmed promote
+(`p` + `p`). The kill-switch cannot be undone implicitly.
+
+### Budget and Rate Guidance
+
+The defaults (`max_per_minute: 1`, `max_per_hour: 20`) are conservative and
+well below Twitch IRC limits. Adjust based on channel pace:
+
+- **Quiet channels**: keep the defaults or lower `max_per_hour` to `10`.
+- **Active channels**: `max_per_minute: 2`, `max_per_hour: 30` is a reasonable
+  ceiling for a conversational bot. Going higher risks feeling spammy.
+- **`failure_threshold: 3`**: after 3 consecutive send failures, the policy
+  auto-degrades to shadow. This protects against network flaps flooding the
+  channel when connectivity is restored.
+
+### Send Safety Summary
+
+| Runtime mode | `twitch.send.mode` | Sends PRIVMSG? |
+|---|---|---|
+| Smoke commands | (n/a) | Never. Smoke is capture-only. |
+| `mode: private` | any | Never. Private mode guarantees no public output. |
+| `mode: public` | `off` | Never. Default; no send path is instantiated. |
+| `mode: public` | `shadow` | Never. Decisions are logged locally only. |
+| `mode: public` | `live` (not promoted) | Never. Every session starts in shadow until manually promoted via TUI. |
+| `mode: public` | `live` (promoted) | Yes, through `TwitchChatSender` only, gated by allow-list and budget. |
 
 ## Live Observability TUI
 
@@ -742,7 +895,8 @@ Prerequisites:
   `ffmpeg` on `PATH`, and configure the local ASR, speaker, and VLM model paths
   before the live run.
 - Use `mode: private` with `commentator.enabled: true` for local operator
-  commentary. No public Twitch send path is enabled by this workflow.
+  commentary. In `mode: private`, no PRIVMSG is sent regardless of other
+  configuration.
 
 Validate the config first:
 
@@ -758,11 +912,15 @@ uv run python -m minnarone path/to/twitch-commentator.local.yaml --tui
 
 The command creates a run directory under `.local/minnarone/runs/run-*` relative
 to the config's `facts_dir` parent. The TUI is intentionally read-only: panels,
-status labels, and the `PROMPT` tab are for operator inspection only. It has no
-input for writing Twitch chat, and this runtime does not send public Twitch
-messages.
+status labels, and the `PROMPT` tab are for operator inspection only. Promotion
+to live send and the kill-switch are TUI key commands (see *Public Chat Send*);
+the TUI itself never initiates a send autonomously.
 
-Operational safety summary: the live TUI is read-only and does not send public Twitch messages.
+Operational safety summary: the TUI is read-only. In `mode: private` or
+`twitch.send.mode: off`, no public Twitch messages are sent. In
+`twitch.send.mode: shadow`, messages are logged locally but never transmitted.
+Only `twitch.send.mode: live` with a manual TUI promotion sends real PRIVMSG
+lines; the kill-switch instantly reverts to shadow.
 
 Main dashboard panels:
 
@@ -1008,6 +1166,10 @@ Existing `adapter: os_capture` configs do not require a `twitch:` section.
 - VLM timeout or memory pressure: start with a smaller model, reduce
   `vlm.max_new_tokens`, increase `vlm.timeout_seconds`, keep `video_fps: 1.0`,
   and watch queue `failed`, `dropped`, and `abandoned` counters.
-- Public Twitch output: this local runtime intentionally does not send public
-  Twitch messages. If you see a `PRIVMSG` write in a custom harness, that path is
-  outside this operator workflow.
+- Public Twitch output: in `mode: private` or `twitch.send.mode: off`, no
+  public Twitch messages are sent. In `twitch.send.mode: shadow`, messages are
+  logged but not transmitted. Only `twitch.send.mode: live` with a manual TUI
+  promotion and a valid `TWITCH_SEND_OAUTH_TOKEN` sends real PRIVMSG lines. If
+  you see unexpected sends, check `twitch.send.mode` and whether the kill-switch
+  was triggered. Only `TwitchChatSender` is allowed to write PRIVMSG; any other
+  direct IRC write is a defect.

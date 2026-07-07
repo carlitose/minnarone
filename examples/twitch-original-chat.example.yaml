@@ -1,6 +1,7 @@
 # Local original-chat dry-run example.
-# Private/local only: Minnarone's output is rendered locally and this runtime
-# does not send PRIVMSG lines to Twitch.
+# Private/local only (mode: private): Minnarone's output is rendered locally.
+# In private mode, no public Twitch messages are sent regardless of twitch.send
+# configuration.
 # Chat capture still needs read-only IRC credentials in environment if
 # `twitch.chat: true`:
 #   TWITCH_BOT_USERNAME
