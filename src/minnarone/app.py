@@ -60,6 +60,7 @@ from .config import (
     Config,
     ConfigError,
     OsCaptureConfig,
+    TwitchSendConfig,
     TwitchSendMode,
 )
 from .console import ConsoleOutputRouter
@@ -77,10 +78,12 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
+from .public_send import PublicSendPolicy
 from .reactor import Reactor
 from .run_artifacts import RunSession
 from .run_events import RunEventRecorder
 from .senser import Senser
+from .shadow_router import TwitchPublicOutputRouter
 from .source import RawEvent, SourceAdapter
 from .speaker import (
     EmbeddingSpeakerTagger,
@@ -322,10 +325,31 @@ def _raise_shutdown_errors(errors: list[BaseException]) -> None:
 
 
 def _build_router(
-    mode: OutputMode, *, commentator_style: CommentatorStyle | None = None
+    mode: OutputMode,
+    *,
+    commentator_style: CommentatorStyle | None = None,
+    send_config: TwitchSendConfig | None = None,
+    channel: str | None = None,
+    event_recorder: object | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> OutputRouter:
     """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice)."""
     if mode is OutputMode.PUBLIC:
+        if (
+            send_config is not None
+            and send_config.mode is not TwitchSendMode.OFF
+        ):
+            import time
+
+            policy = PublicSendPolicy(
+                send_config,
+                clock=clock if clock is not None else time.monotonic,
+            )
+            return TwitchPublicOutputRouter(
+                policy=policy,
+                channel=channel or "",
+                event_recorder=event_recorder,
+            )
         return ConsoleOutputRouter()
     if commentator_style is not None:
         return ConsoleOutputRouter()
@@ -694,6 +718,16 @@ def build_agent(
     blocks = memory.load()
     # announce_ai è l'UNICO punto v2 cablato (coerente): fluisce nello stance.
     commentator_style = config.commentator.prompt_style
+    # Twitch + public: la persona pubblica È l'original_chat, indipendentemente
+    # dal commentator (che resta un concetto privato). Il prompt usa il contratto
+    # RE:/MSG:/#end_conv perché è il formato che il Reactor sa normalizzare per
+    # l'output su chat pubblica.
+    if (
+        config.adapter == "twitch"
+        and config.mode is OutputMode.PUBLIC
+        and commentator_style is None
+    ):
+        commentator_style = CommentatorStyle.ORIGINAL_CHAT
     prompt_builder = PromptBuilder(
         blocks,
         announce_ai=config.disclosure.announce_ai,
@@ -709,9 +743,21 @@ def build_agent(
         recorder=prompt_recorder,
     )
 
+    # Self-echo filter: se l'invio pubblico è attivo, il bot_identity è lo
+    # username del send-account (TWITCH_BOT_USERNAME). Le percezioni chat di
+    # questo speaker vengono escluse dai trigger e dalla finestra recente del
+    # prompt. Assente (send: off o non-Twitch) → nessun filtro.
+    bot_identity: str | None = None
+    if (
+        config.twitch is not None
+        and config.twitch.send.mode is not TwitchSendMode.OFF
+    ):
+        bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
+
     senser = Senser(
         store,
         agent_name=config.agent_name,
+        bot_identity=bot_identity,
         idle_interval=config.commentator.idle_interval_or(config.idle_interval),
     )
 
@@ -732,7 +778,15 @@ def build_agent(
         out_router = TuiPrivateOutputRouter(minnarone_output)
         active_minnarone_output = minnarone_output
     else:
-        out_router = _build_router(config.mode, commentator_style=commentator_style)
+        send_config = config.twitch.send if config.twitch is not None else None
+        twitch_channel = config.twitch.channel if config.twitch is not None else None
+        out_router = _build_router(
+            config.mode,
+            commentator_style=commentator_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            event_recorder=event_recorder,
+        )
 
     # I perceiver audio/video si costruiscono con GLI STESSI helper per Twitch e
     # os_capture: il canale è cablato se l'adapter dichiarato lo abilita.
@@ -767,6 +821,7 @@ def build_agent(
         # Summarizer): la callable zero-arg punta a `current_summary`.
         summary_provider=lambda: summarizer.current_summary,
         event_recorder=event_recorder,
+        bot_identity=bot_identity,
     )
 
     # Dispatcher di percezione per-canale. "chat" è sempre disponibile (nessun

@@ -54,6 +54,7 @@ class Reactor:
         human: HumanLikeness | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         event_recorder=None,
+        bot_identity: str | None = None,
     ) -> None:
         self._senser = senser
         self._prompt_builder = prompt_builder
@@ -86,6 +87,10 @@ class Reactor:
         # LLMError resta PER-TRIGGER dentro `run_once` (granularità più fine di
         # un ciclo), quindi il CadenceLoop non assorbe nulla.
         self._loop: CadenceLoop | None = None
+        # Self-echo filter: lowercased send-account username. Quando presente,
+        # le percezioni chat del bot vengono escluse dalla finestra recente del
+        # prompt, così l'LLM non le vede come terze parti.
+        self._bot_identity = bot_identity.lower() if bot_identity else None
 
     def recent_messages(self, n: int | None = None) -> list[str]:
         """Snapshot read-only degli ultimi messaggi instradati dall'agente.
@@ -144,9 +149,22 @@ class Reactor:
             response = normalize_original_chat_response(message)
             if response.end_conversation and trigger.interlocutor is not None:
                 self._senser.close_window(trigger.interlocutor)
-            await self._route_local_output(response.display_text)
-            if response.message and not response.end_conversation:
-                self._note_self_message(response.message)
+            if self._mode is OutputMode.PUBLIC:
+                # Public path: route the sendable message through the
+                # (possibly policy-aware) router. #end_conv is not a real
+                # message -- skip the router entirely.
+                if response.end_conversation:
+                    return
+                await self._route_local_output(response.message)
+                if self._last_route_was_dropped():
+                    return
+                if response.message:
+                    self._note_self_message(response.message)
+            else:
+                # Private path: unchanged behaviour.
+                await self._route_local_output(response.display_text)
+                if response.message and not response.end_conversation:
+                    self._note_self_message(response.message)
             return
 
         if self._human is None:
@@ -223,12 +241,37 @@ class Reactor:
 
     def _recent_for_prompt(self) -> list[Perception]:
         if not self._uses_original_chat_style():
-            return self._store.tail(self._recent_window)
+            return self._filter_self_perceptions(
+                self._store.tail(self._recent_window)
+            )
 
         recent: list[Perception] = []
         for spec in ORIGINAL_CHAT_CONTEXT_SPECS:
             recent.extend(self._tail_matching(spec.source, spec.type))
-        return sorted(recent, key=lambda p: p.ts)
+        return self._filter_self_perceptions(
+            sorted(recent, key=lambda p: p.ts)
+        )
+
+    def _filter_self_perceptions(
+        self, perceptions: list[Perception]
+    ) -> list[Perception]:
+        """Esclude le percezioni chat del bot dalla finestra recente del prompt.
+
+        Le percezioni proprie restano nello store (log fidelity, replay) ma
+        non devono apparire come chat di terzi nel prompt — sono già
+        rappresentate dalla sezione "messaggi propri recenti" (anti-ripetizione).
+        """
+        if self._bot_identity is None:
+            return perceptions
+        return [
+            p
+            for p in perceptions
+            if not (
+                p.source is Source.CHAT
+                and p.speaker is not None
+                and p.speaker.lower() == self._bot_identity
+            )
+        ]
 
     def _tail_matching(self, source: Source, type_: str) -> list[Perception]:
         tail_matching = getattr(self._store, "tail_matching", None)
@@ -251,3 +294,14 @@ class Reactor:
             getattr(self._prompt_builder, "commentator_style", None)
             is CommentatorStyle.ORIGINAL_CHAT
         )
+
+    def _last_route_was_dropped(self) -> bool:
+        """True se l'ultimo route ha prodotto un drop della policy.
+
+        Duck-typed: se il router non ha `last_decision` (es. ConsoleOutputRouter),
+        restituisce False (nessun concetto di "drop").
+        """
+        decision = getattr(self._router, "last_decision", None)
+        if decision is None:
+            return False
+        return decision.action == "drop"

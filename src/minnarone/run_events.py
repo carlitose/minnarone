@@ -49,6 +49,27 @@ class RunEventRecorder:
             }
         )
 
+    def record_send_decision(
+        self,
+        *,
+        message: str,
+        action: str,
+        reason: str,
+        channel: str,
+    ) -> None:
+        """Record a public-send policy decision (shadow/drop) for audit replay."""
+        self._append(
+            {
+                "kind": "send_decision",
+                "send_decision": {
+                    "message": _safe_text(message) or "",
+                    "action": _safe_text(action) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                    "channel": _safe_text(channel) or "",
+                },
+            }
+        )
+
     def _append(self, payload: dict[str, object]) -> None:
         with self._lock:
             self._sequence += 1

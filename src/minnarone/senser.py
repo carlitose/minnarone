@@ -112,6 +112,7 @@ class Senser:
         store: PerceptionStore,
         *,
         agent_name: str,
+        bot_identity: str | None = None,
         clock=time.time,
         idle_interval: float = _DEFAULT_IDLE_INTERVAL,
         window_ttl: float = _DEFAULT_WINDOW_TTL,
@@ -119,6 +120,7 @@ class Senser:
     ) -> None:
         self._store = store
         self._agent_name = agent_name.lower()
+        self._bot_identity = bot_identity.lower() if bot_identity else None
         # Match esatto a confine di parola (veloce); il fuzzy interviene solo se
         # questo fallisce, per tollerare i nomi storpiati senza falsi positivi.
         self._mention = re.compile(rf"\b{re.escape(agent_name)}\b", re.IGNORECASE)
@@ -269,6 +271,12 @@ class Senser:
 
     def _classify(self, p: Perception, now: float) -> Trigger | None:
         """Classifica una percezione in un eventuale trigger e aggiorna lo stato."""
+        # Self-echo filter: le percezioni chat del bot stesso (eco IRC) non
+        # producono trigger. Restano nello store (log fidelity) ma il Senser le
+        # ignora — impedisce il loop in cui il bot reagisce ai propri messaggi.
+        if self._is_self_perception(p):
+            return None
+
         # Consideriamo solo le percezioni con un interlocutore identificabile.
         # Per la CHAT l'interlocutore è lo speaker. Per l'AUDIO è interlocutore
         # SOLO lo STREAMER (EC02): un ospite o l'audio di un video riprodotto —
@@ -303,6 +311,14 @@ class Senser:
                 interlocutor=interlocutor,
             )
         return None
+
+    def _is_self_perception(self, p: Perception) -> bool:
+        """True se la percezione è un echo del bot stesso (solo chat)."""
+        if self._bot_identity is None:
+            return False
+        if p.source != Source.CHAT:
+            return False
+        return p.speaker is not None and p.speaker.lower() == self._bot_identity
 
     def _is_mention(self, text: str) -> bool:
         """Menzione del nome: match esatto a confine di parola o fuzzy (EC09)."""
