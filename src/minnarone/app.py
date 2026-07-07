@@ -55,7 +55,13 @@ from .capture import (
     make_device_screen_capture_source,
 )
 from .chat import ChatPerceiver
-from .config import Config, ConfigError, OsCaptureConfig
+from .config import (
+    TWITCH_SEND_TOKEN_ENV_VAR,
+    Config,
+    ConfigError,
+    OsCaptureConfig,
+    TwitchSendMode,
+)
 from .console import ConsoleOutputRouter
 from .dashboard import DashboardState, snapshot
 from .human import HumanLikeness
@@ -348,6 +354,24 @@ def _required_twitch_chat_credentials() -> tuple[str, str]:
             "credenziali Twitch chat mancanti: esporta " + ", ".join(missing)
         )
     return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
+
+
+def _required_twitch_send_credentials() -> None:
+    """Gate fail-fast di `twitch.send.mode: live`: token di scrittura presente.
+
+    Della variabile d'ambiente si verifica solo la PRESENZA: il valore non deve
+    mai finire in messaggi d'errore, log o artefatti. Il controllo vive nel
+    build (non nello schema di config) così `Config.load` resta puro rispetto
+    all'ambiente, mentre `--check` — che costruisce l'agente — fallisce subito.
+    """
+    # `.strip()`: un token di soli spazi è assente a tutti gli effetti; il
+    # valore serve solo al controllo di presenza e non viene mai propagato.
+    if not (os.environ.get(TWITCH_SEND_TOKEN_ENV_VAR) or "").strip():
+        raise ConfigError(
+            "credenziali Twitch send mancanti: esporta "
+            f"{TWITCH_SEND_TOKEN_ENV_VAR} (token Twitch con scope di "
+            "scrittura, distinto dal token di lettura)"
+        )
 
 
 def _require_media_perceiver(
@@ -652,6 +676,11 @@ def build_agent(
     - `OutputRouter` selezionato dalla modalità (`public`/`private`).
     - `Reactor(...)` che lega tutto insieme.
     """
+    # Gate fail-fast dell'invio pubblico: `twitch.send.mode: live` richiede il
+    # token di scrittura in ambiente, qualunque sia l'adapter iniettato.
+    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
+        _required_twitch_send_credentials()
+
     path = (
         Path(store_path)
         if store_path is not None

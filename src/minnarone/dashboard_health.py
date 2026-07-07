@@ -473,8 +473,12 @@ _SECRET_PATTERNS = (
     re.compile(r"bearer\s+[A-Za-z0-9._~+\-/=]+", re.IGNORECASE),
     re.compile(r"\bsk-or-[A-Za-z0-9._~+\-/=]+", re.IGNORECASE),
     re.compile(r"\bauthorization\s*:\s*\S+\s+[^\r\n]+", re.IGNORECASE),
+    # "TWITCH_SEND_OAUTH_TOKEN" è letterale di proposito (questo modulo resta
+    # senza import di progetto): deve restare allineato a
+    # `config.TWITCH_SEND_TOKEN_ENV_VAR`, il token di SCRITTURA per l'invio.
     re.compile(
-        r"(OPENROUTER_API_KEY|TWITCH_OAUTH_TOKEN|api[_-]?key|token)"
+        r"(OPENROUTER_API_KEY|TWITCH_SEND_OAUTH_TOKEN|TWITCH_OAUTH_TOKEN|"
+        r"api[_-]?key|token)"
         r"\s*[:=]\s*['\"]?[^'\",\s;]+['\"]?",
         re.IGNORECASE,
     ),

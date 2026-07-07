@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .config import TWITCH_SEND_TOKEN_ENV_VAR
 from .llm import LLMProvider, LLMResult
 
 PROMPT_CAPTURE_LIMIT = 50
@@ -70,8 +71,12 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "[redacted-openrouter-key]",
     ),
     (
+        # Il token di SCRITTURA va nominato esplicitamente: non è coperto né da
+        # `TWITCH_OAUTH_TOKEN` (non è una sua sottostringa) né da `\btoken`
+        # (il `_` prima di TOKEN annulla il boundary).
         re.compile(
-            r"\b(OPENROUTER_API_KEY|TWITCH_OAUTH_TOKEN|authorization|"
+            rf"\b(OPENROUTER_API_KEY|{TWITCH_SEND_TOKEN_ENV_VAR}|"
+            r"TWITCH_OAUTH_TOKEN|authorization|"
             r"api[_-]?key|token|password|secret)"
             r"\s*[:=]\s*"
             r"(?:\"[^\"]*\"|'[^']*'|[^,\r\n;]+)",

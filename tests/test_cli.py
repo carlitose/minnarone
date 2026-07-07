@@ -289,3 +289,69 @@ def test_cli_replay_launches_without_config_or_live_agent(tmp_path, monkeypatch)
 
     assert code == 0
     assert launched == [str(log)]
+
+
+def _twitch_send_config(tmp_path, send_block: str):
+    soul = tmp_path / "soul.md"
+    soul.write_text("io", encoding="utf-8")
+    facts_dir = tmp_path / "facts"
+    facts_dir.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        textwrap.dedent(
+            f"""
+            mode: public
+            soul_path: {soul}
+            facts_dir: {facts_dir}
+            adapter: twitch
+            llm_provider: grok
+            agent_name: minnarone
+            twitch:
+              channel: minnarone
+              chat: false
+              audio: false
+              video: true
+              send:
+            """
+        )
+        + textwrap.indent(textwrap.dedent(send_block), "    "),
+        encoding="utf-8",
+    )
+    return cfg
+
+
+def test_cli_check_fails_for_live_send_without_write_token(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _twitch_send_config(
+        tmp_path,
+        """
+        mode: live
+        allowed_channels: ["minnarone"]
+        """,
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "errore di config" in err
+    assert "TWITCH_SEND_OAUTH_TOKEN" in err
+
+
+def test_cli_check_passes_for_shadow_send_without_write_token(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _twitch_send_config(
+        tmp_path,
+        """
+        mode: shadow
+        """,
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 0
+    assert "ok" in capsys.readouterr().out.lower()

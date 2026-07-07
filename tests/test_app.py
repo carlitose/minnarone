@@ -21,7 +21,7 @@ from minnarone.app import (
     build_agent,
 )
 from minnarone.audio import AudioChunk
-from minnarone.config import CommentatorStyle, Config, ConfigError
+from minnarone.config import CommentatorStyle, Config, ConfigError, TwitchSendMode
 from minnarone.console import ConsoleOutputRouter
 from minnarone.os_capture import OsCaptureAdapter
 from minnarone.output import OutputMode
@@ -415,6 +415,63 @@ def test_twitch_chat_runtime_requires_clear_credentials(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigError, match="TWITCH_BOT_USERNAME.*TWITCH_OAUTH_TOKEN"):
         build_agent(cfg, transport=_fake_transport)
+
+
+def _live_send_twitch_config(tmp_path):
+    return Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                  send:
+                    mode: live
+                    allowed_channels: ["minnarone"]
+                """
+            ),
+        )
+    )
+
+
+def test_twitch_send_live_build_requires_write_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _live_send_twitch_config(tmp_path)
+
+    with pytest.raises(ConfigError, match="TWITCH_SEND_OAUTH_TOKEN") as excinfo:
+        build_agent(cfg, transport=_fake_transport)
+    # Il messaggio nomina la variabile, mai un valore di token.
+    assert "oauth:" not in str(excinfo.value)
+
+
+def test_twitch_send_live_build_rejects_whitespace_only_write_token(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    # Un token di soli spazi equivale a un token assente.
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "   ")
+    cfg = _live_send_twitch_config(tmp_path)
+
+    with pytest.raises(ConfigError, match="TWITCH_SEND_OAUTH_TOKEN"):
+        build_agent(cfg, transport=_fake_transport)
+
+
+def test_twitch_send_live_build_succeeds_with_write_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:finto-token-scrittura")
+    cfg = _live_send_twitch_config(tmp_path)
+
+    agent = build_agent(cfg, transport=_fake_transport)
+
+    assert agent.config.twitch.send.mode is TwitchSendMode.LIVE
 
 
 def test_twitch_chat_runtime_reacts_to_console_without_sending_chat(

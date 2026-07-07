@@ -281,6 +281,37 @@ def test_redaction_handles_quoted_and_non_bearer_secrets(tmp_path):
     assert "safe text" in combined
 
 
+def test_redaction_covers_twitch_send_write_token_env_var(tmp_path):
+    """Il token di SCRITTURA (`TWITCH_SEND_OAUTH_TOKEN`) va nominato a parte:
+    non è coperto né da `TWITCH_OAUTH_TOKEN` né dall'alternativa `\\btoken`."""
+    session = create_run_session(root=tmp_path / "runs")
+    recorder = PromptObservationRecorder(debug_dir=session.debug_dir)
+
+    recorder.record(
+        PromptObservation(
+            prompt=(
+                "TWITCH_SEND_OAUTH_TOKEN=segretissimo-token-di-scrittura\n"
+                "TWITCH_OAUTH_TOKEN=segreto-token-di-lettura\n"
+                "safe text"
+            ),
+            model="fake",
+            status="success",
+            started_at=datetime(2026, 6, 29, 10, 30, tzinfo=UTC),
+            completed_at=datetime(2026, 6, 29, 10, 30, 1, tzinfo=UTC),
+        )
+    )
+
+    latest = recorder.latest()
+    [path] = list((session.debug_dir / "prompts").glob("prompt-*.json"))
+    combined = f"{latest.prompt}\n{path.read_text(encoding='utf-8')}"
+
+    assert "segretissimo-token-di-scrittura" not in combined
+    assert "segreto-token-di-lettura" not in combined
+    assert "TWITCH_SEND_OAUTH_TOKEN=[redacted-secret]" in latest.prompt
+    assert "TWITCH_OAUTH_TOKEN=[redacted-secret]" in latest.prompt
+    assert "safe text" in combined
+
+
 def test_metadata_keys_are_redacted_before_display_and_persistence(tmp_path):
     session = create_run_session(root=tmp_path / "runs")
     recorder = PromptObservationRecorder(debug_dir=session.debug_dir)

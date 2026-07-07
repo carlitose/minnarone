@@ -525,6 +525,34 @@ def test_dashboard_failure_redaction_handles_base64_like_tokens():
     assert "\\[redacted\\]" in combined
 
 
+def test_dashboard_failure_redaction_covers_twitch_send_write_token():
+    """Il token di SCRITTURA (`TWITCH_SEND_OAUTH_TOKEN`) è nominato a parte
+    nel pattern di redazione, come il token di lettura."""
+
+    class FakeQueue:
+        def stats(self):
+            return _queue_stats(
+                audio=PerceptionQueueChannelStats(
+                    failed=1,
+                    last_error=(
+                        "irc send failed "
+                        "TWITCH_SEND_OAUTH_TOKEN=segretissimo-send "
+                        "TWITCH_OAUTH_TOKEN=segreto-lettura"
+                    ),
+                )
+            )
+
+    state = snapshot(perception_queue=FakeQueue())
+
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    status = state.render_status_bar()
+
+    combined = f"{event_text}\n{status}"
+    assert "segretissimo-send" not in combined
+    assert "segreto-lettura" not in combined
+    assert "\\[redacted\\]" in combined
+
+
 def test_snapshot_perceptions_limited_to_recent_n(tmp_path):
     store = _store(tmp_path)
     for i in range(10):
