@@ -42,6 +42,17 @@ perception_shutdown_timeout: 5.0
 llm_params:
   thinking: low            # parametri passati al provider
 
+# Vision captioning locale (Qwen2-VL). Il prompt di default del backend è
+# pensato per stream Twitch e porta il modello a inventare contesto Twitch:
+# per una call Teams serve un prompt neutro orientato al contenuto a schermo.
+vlm:
+  language: it
+  prompt: >-
+    Describe the visible screen content in one concise Italian sentence.
+    It may be a video call, shared slides, documents, or applications.
+    Mention only observable people, windows, UI, and readable text.
+    Do not speculate.
+
 # --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
 disclosure:
   announce_ai: false       # se l'agente dichiara di essere un'AI
