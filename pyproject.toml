@@ -52,8 +52,11 @@ os-capture = [
     "pillow>=10",
     "soundcard>=0.4",
 ]
+# bitsandbytes serve solo per vlm.quantization 4bit/8bit (richiede GPU CUDA);
+# transformers lo importa lazy. Escluso su macOS: non pubblica wheel darwin.
 vlm = [
     "accelerate>=0.26",
+    "bitsandbytes>=0.46.1; sys_platform != 'darwin'",
     "pillow>=10",
     "torch>=2.5",
     "torchvision>=0.20",
@@ -65,6 +68,18 @@ tui = ["textual>=0.50"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minnarone"]
+
+# Su Windows il torch di PyPI è CPU-only: per usare CUDA (es. quantizzazione
+# bitsandbytes del VLM) torch/torchvision arrivano dall'indice PyTorch cu126.
+# explicit=true: l'indice serve SOLO questi pacchetti, il resto resta su PyPI.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -87,7 +102,7 @@ sort_by_size = true
 known_first_party = ["minnarone"]
 optional_dependencies_dev_groups = ["dev"]
 package_module_name_map = { textual = ["textual"], "webrtcvad-wheels" = ["webrtcvad"], "faster-whisper" = ["faster_whisper"], "sherpa-onnx" = ["sherpa_onnx"], "sherpa-onnx-core" = ["sherpa_onnx"], pillow = ["PIL"] }
-per_rule_ignores = { DEP002 = ["accelerate", "sherpa-onnx", "sherpa-onnx-core", "torchvision"] }
+per_rule_ignores = { DEP002 = ["accelerate", "bitsandbytes", "sherpa-onnx", "sherpa-onnx-core", "torchvision"] }
 
 [tool.pylint.main]
 jobs = 0
