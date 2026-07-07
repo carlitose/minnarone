@@ -284,6 +284,47 @@ def ensure_live_tui_available() -> None:
         raise LiveTuiDependencyError(str(exc)) from exc
 
 
+def _call_build_app(
+    build_app: Callable[..., _LiveTuiApp],
+    provider: Callable[[], object],
+    send_commands: object | None,
+) -> _LiveTuiApp:
+    """Call build_app, passing send_commands if accepted.
+
+    Existing callers (including tests) may have build_app factories that do
+    not accept the ``send_commands`` keyword. We try the keyword first and
+    fall back to the positional-only signature for backward compatibility.
+    """
+    try:
+        return build_app(provider, send_commands=send_commands)
+    except TypeError:
+        return build_app(provider)
+
+
+def _build_send_commands(agent: _LiveAgent) -> object | None:
+    """Build a SendCommandSurface if the agent exposes a send_policy.
+
+    The surface is the TUI's narrow mutation channel: promote and kill-switch.
+    When no send_policy is present (console runtime, mode off/shadow), the TUI
+    stays fully read-only.
+    """
+    send_policy = getattr(agent, "send_policy", None)
+    if send_policy is None:
+        return None
+    from .send_commands import SendCommandSurface
+
+    # Try to find the event recorder for transition audit logging.
+    event_recorder = None
+    run_session = getattr(agent, "run_session", None)
+    if run_session is not None:
+        debug_dir = getattr(run_session, "debug_dir", None)
+        if debug_dir is not None:
+            from .run_events import RunEventRecorder
+
+            event_recorder = RunEventRecorder(debug_dir)
+    return SendCommandSurface(send_policy, event_recorder=event_recorder)
+
+
 def run_live_tui(
     agent: _LiveAgent,
     *,
@@ -308,7 +349,8 @@ def run_live_tui(
             "startup_timeout",
         )
         snapshots = _ObservabilitySnapshotBridge(agent.observability_snapshot)
-        app = build_app(snapshots.provider)
+        send_commands = _build_send_commands(agent)
+        app = _call_build_app(build_app, snapshots.provider, send_commands)
         runtime = _BackgroundAgentRuntime(
             agent,
             snapshots=snapshots,

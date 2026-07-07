@@ -101,3 +101,13 @@ class TwitchPublicOutputRouter(OutputRouter):
                 reason="kill_switch",
                 channel=self._channel,
             )
+            # Also record as a send_transition for unified replay (issue 08).
+            record_transition = getattr(
+                self._event_recorder, "record_send_transition", None
+            )
+            if callable(record_transition):
+                record_transition(
+                    transition="kill_switch",
+                    actor="auto",
+                    reason="failure_threshold_reached",
+                )

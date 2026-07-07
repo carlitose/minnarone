@@ -97,10 +97,14 @@ def _require_textual():
         raise RuntimeError(_MISSING_TEXTUAL_MSG) from exc
 
 
+_PROMOTE_CONFIRM_WINDOW = 3.0  # seconds to confirm a promote with second press
+
+
 def build_dashboard_app(
     snapshot_provider: Callable[[], DashboardState],
     *,
     refresh_interval: float = 0.5,
+    send_commands: object | None = None,
 ):
     """Costruisce l'app Textual che rende lo snapshot, aggiornandolo a intervalli.
 
@@ -109,11 +113,17 @@ def build_dashboard_app(
     la vista NON conosce le sorgenti vive, le legge solo attraverso lo snapshot,
     in sola lettura. `refresh_interval` regola ogni quanto la TUI ridisegna.
 
+    `send_commands` is an optional ``SendCommandSurface`` for promote/kill-switch
+    keybindings. When None the TUI stays fully read-only (no P/K keys).
+
     Solleva `RuntimeError` con un messaggio chiaro se `textual` non è presente.
     """
     _require_textual()
 
+    import time as _time
+
     from textual.app import App, ComposeResult
+    from textual.binding import Binding
     from textual.containers import Grid, VerticalScroll
     from textual.widgets import Header, Static, TabbedContent, TabPane
 
@@ -121,12 +131,19 @@ def build_dashboard_app(
         TITLE = "Minnarone — Observability"
         CSS = _DASHBOARD_CSS
 
+        BINDINGS = [
+            Binding("k", "kill_switch", "Kill-switch", show=send_commands is not None),
+            Binding("p", "promote", "Promote", show=send_commands is not None),
+        ]
+
         def __init__(self) -> None:
             super().__init__()
             self._provider = snapshot_provider
+            self._send_commands = send_commands
             self._panels: dict[str, Static] = {}
             self._status_bar: Static | None = None
             self._prompt_content: Static | None = None
+            self._promote_pending_at: float | None = None
 
         @property
         def panel_titles(self) -> list[str]:
@@ -165,6 +182,38 @@ def build_dashboard_app(
         def on_mount(self) -> None:
             self._render_snapshot()
             self.set_interval(refresh_interval, self._render_snapshot)
+
+        # -- Keybinding actions -----------------------------------------------
+
+        def action_kill_switch(self) -> None:
+            """Kill-switch: instant, single press, no confirmation."""
+            if self._send_commands is None:
+                return
+            kill = getattr(self._send_commands, "kill_switch", None)
+            if callable(kill):
+                kill()
+            # Cancel any pending promote confirmation
+            self._promote_pending_at = None
+
+        def action_promote(self) -> None:
+            """Promote: requires double-press within the confirm window."""
+            if self._send_commands is None:
+                return
+            now = _time.monotonic()
+            if (
+                self._promote_pending_at is not None
+                and (now - self._promote_pending_at) < _PROMOTE_CONFIRM_WINDOW
+            ):
+                # Second press within the window: confirm the promote
+                self._promote_pending_at = None
+                promote = getattr(self._send_commands, "promote", None)
+                if callable(promote):
+                    promote()
+            else:
+                # First press: enter pending-confirmation state
+                self._promote_pending_at = now
+
+        # -- Snapshot rendering -----------------------------------------------
 
         def _render_snapshot(self) -> None:
             try:

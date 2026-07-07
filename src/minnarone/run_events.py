@@ -70,6 +70,29 @@ class RunEventRecorder:
             }
         )
 
+    def record_send_transition(
+        self,
+        *,
+        transition: str,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Record a send-state transition (promote/kill-switch/auto-degrade).
+
+        Each transition carries an actor (``operator`` for manual actions,
+        ``auto`` for auto-degrade) and a reason string for audit replay.
+        """
+        self._append(
+            {
+                "kind": "send_transition",
+                "send_transition": {
+                    "transition": _safe_text(transition) or "unknown",
+                    "actor": _safe_text(actor) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                },
+            }
+        )
+
     def _append(self, payload: dict[str, object]) -> None:
         with self._lock:
             self._sequence += 1
