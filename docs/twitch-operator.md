@@ -600,8 +600,8 @@ default and pass through the same bounded media queue as audio.
 ## Local Commentator Mode
 
 Commentator mode keeps the public-chat persona available but adds an
-operator-facing stance for private/local commentary. Use `mode: private` plus
-`commentator.enabled: true`: output is routed to the local console as
+operator-facing stance for private/local commentary. Use `mode: private` with a
+`commentator.profiles` entry: output is routed to the local console as
 `[PRIVATE]`. The TUI/dashboard remains a separate read-only observability tool;
 this CLI path does not start it automatically. In `mode: private`, no PRIVMSG is
 ever sent regardless of `twitch.send` configuration; no public chat write/send
@@ -620,28 +620,28 @@ twitch:
   video: false
 
 commentator:
-  enabled: true
   language: it
-  idle_interval: 30.0
+  profiles:
+    operator:
+      idle_interval: 30.0
 ```
 
 The prompt stance tells Minnarone to act as a local commentator, write concise
 Italian comments for the operator, and use chat/audio/video perceptions as
-context. `commentator.idle_interval` overrides the global `idle_interval` only
+context. The profile's `idle_interval` overrides the global `idle_interval` only
 for this mode, so local commentary can be more proactive without changing the
 default public-chat behavior.
 
 See `examples/twitch-commentator.example.yaml` for a complete console-only
 commentator config. The existing `examples/twitch.example.yaml` remains the
-conservative public-console Twitch config with `commentator.enabled: false`.
+conservative public-console Twitch config with no commentator profiles.
 
 ### Original-Chat Dry-Run Seed Memory
 
 Use `examples/twitch-original-chat.example.yaml` when you want the private
 local dry-run to render what Minnarone would write as a Twitch chat user. The
-example keeps `mode: private`, `commentator.enabled: true`, and
-`commentator.style: original_chat`; in `mode: private`, no public Twitch
-messages are sent.
+example keeps `mode: private` with `commentator.profiles.original_chat`; in
+`mode: private`, no public Twitch messages are sent.
 
 The example points at committed seed memory with paths relative to the config
 file:
@@ -894,7 +894,7 @@ Prerequisites:
 - If `twitch.audio: true` or `twitch.video: true`, verify `streamlink` and
   `ffmpeg` on `PATH`, and configure the local ASR, speaker, and VLM model paths
   before the live run.
-- Use `mode: private` with `commentator.enabled: true` for local operator
+- Use `mode: private` with `commentator.profiles` for local operator
   commentary. In `mode: private`, no PRIVMSG is sent regardless of other
   configuration.
 
@@ -1027,7 +1027,7 @@ Use this checklist on a real live channel after the isolated smoke checks pass.
 It does not require or expect public Twitch output.
 
 - [ ] Start with a local config using `mode: private`,
-  `commentator.enabled: true`, and only the channels you intend to validate.
+  `commentator.profiles`, and only the channels you intend to validate.
 - [ ] Run `uv run python -m minnarone path/to/twitch-commentator.local.yaml
   --check`; it exits successfully without starting capture.
 - [ ] Run `uv run python -m minnarone path/to/twitch-commentator.local.yaml

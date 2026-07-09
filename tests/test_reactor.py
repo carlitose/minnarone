@@ -761,3 +761,69 @@ def test_original_chat_idle_end_conv_stays_visible_without_interlocutor(tmp_path
     ]
     assert senser.open_windows() == {}
     assert reactor.recent_messages() == []
+
+
+# --- #nothing sentinel (issue 08) -------------------------------------------
+
+
+def test_nothing_sentinel_suppresses_routing(tmp_path):
+    """LLM response of exactly '#nothing' produces zero routed messages."""
+    store, chat, llm, router, reactor = _build(tmp_path, llm_message="#nothing")
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == []
+    assert reactor.recent_messages() == []
+
+
+def test_nothing_sentinel_tolerates_whitespace(tmp_path):
+    """'  #nothing  ' (with whitespace) still suppresses routing."""
+    store, chat, llm, router, reactor = _build(
+        tmp_path, llm_message="  #nothing  "
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == []
+    assert reactor.recent_messages() == []
+
+
+def test_nothing_sentinel_tolerates_preceding_text(tmp_path):
+    """'No suggestion needed. #nothing' still suppresses routing."""
+    store, chat, llm, router, reactor = _build(
+        tmp_path, llm_message="No suggestion needed. #nothing"
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == []
+    assert reactor.recent_messages() == []
+
+
+def test_normal_response_routes_despite_nothing_sentinel_feature(tmp_path):
+    """A response without #nothing routes normally (no false positive)."""
+    store, chat, llm, router, reactor = _build(
+        tmp_path, llm_message="Here is my suggestion: do X"
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == [("Here is my suggestion: do X", OutputMode.PUBLIC)]
+    assert reactor.recent_messages() == ["Here is my suggestion: do X"]
+
+
+def test_nothing_with_end_conv_suppresses_routing(tmp_path):
+    """'#nothing and also #end_conv' suppresses routing (nothing wins)."""
+    store, chat, llm, router, reactor = _build(
+        tmp_path, llm_message="#nothing and also #end_conv"
+    )
+    chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
+
+    asyncio.run(reactor.run_once())
+
+    assert router.sent == []
+    assert reactor.recent_messages() == []

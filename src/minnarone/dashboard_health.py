@@ -48,6 +48,12 @@ def source_health(state) -> dict[str, SourceHealth]:
     send = _send_health(state)
     if send is not None:
         health["send"] = send
+    syn = _profile_health(getattr(state, "synthesizer_messages", []))
+    if syn is not None:
+        health["syn"] = syn
+    sug = _profile_health(getattr(state, "suggester_messages", []))
+    if sug is not None:
+        health["sug"] = sug
     return health
 
 
@@ -85,6 +91,8 @@ def render_status_bar(state) -> str:
         "queue",
         "adapter",
         "send",
+        "syn",
+        "sug",
     )
     health_text = " ".join(
         f"{name}={health[name].status}"
@@ -403,6 +411,17 @@ def _send_health(state) -> SourceHealth | None:
         reason = send.last_reason or "dropped"
         return SourceHealth("idle", reason)
     return SourceHealth("ok", f"mode={send.mode}")
+
+
+def _profile_health(messages: list[str]) -> SourceHealth | None:
+    """Health for a per-profile output stream (syn/sug).
+
+    Returns None when the profile is inactive (no messages), so the segment
+    is omitted from the status bar entirely.
+    """
+    if not messages:
+        return None
+    return SourceHealth("ok", f"{len(messages)} messages")
 
 
 def _failed_queue(stats) -> bool:

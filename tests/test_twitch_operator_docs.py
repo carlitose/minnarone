@@ -47,7 +47,7 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.vlm.device == "auto"
     assert cfg.vlm.max_new_tokens == 48
     assert cfg.vlm.language == "en"
-    assert cfg.commentator.enabled is False
+    assert len(cfg.commentator.profiles) == 0
 
 
 def test_twitch_commentator_example_config_loads_console_only_shape():
@@ -59,9 +59,10 @@ def test_twitch_commentator_example_config_loads_console_only_shape():
     assert cfg.twitch.chat is True
     assert cfg.twitch.audio is False
     assert cfg.twitch.video is False
-    assert cfg.commentator.enabled is True
+    assert len(cfg.commentator.profiles) > 0
     assert cfg.commentator.language == "it"
-    assert cfg.commentator.idle_interval == 30.0
+    assert CommentatorStyle.OPERATOR in cfg.commentator.profiles
+    assert cfg.commentator.profiles[CommentatorStyle.OPERATOR].idle_interval == 30.0
 
 
 def test_teams_commentator_preset_loads_os_capture_private_shape():
@@ -75,8 +76,8 @@ def test_teams_commentator_preset_loads_os_capture_private_shape():
     assert cfg.os_capture.video is True
     assert cfg.os_capture.video_fps == 1.0
     assert cfg.os_capture.monitor == 1
-    assert cfg.commentator.enabled is True
-    assert cfg.commentator.style is CommentatorStyle.OPERATOR
+    assert len(cfg.commentator.profiles) > 0
+    assert CommentatorStyle.OPERATOR in cfg.commentator.profiles
     assert cfg.commentator.language == "it"
     # Nessun VALORE segreto hardcoded nel preset: non deve dichiarare una chiave
     # (i commenti possono nominare OPENROUTER_API_KEY, che arriva dall'ambiente).
@@ -87,17 +88,19 @@ def test_original_chat_example_loads_seed_memory_into_prompt():
     cfg = Config.load(Path("examples/twitch-original-chat.example.yaml"))
 
     assert cfg.mode is OutputMode.PRIVATE
-    assert cfg.commentator.style is CommentatorStyle.ORIGINAL_CHAT
+    assert CommentatorStyle.ORIGINAL_CHAT in cfg.commentator.profiles
 
     blocks = FileMemory(soul_path=cfg.soul_path, facts_dir=cfg.facts_dir).load()
     assert blocks.soul.strip()
     assert blocks.facts.strip()
 
+    active = cfg.commentator.active_styles()
+    style = active[0] if active else None
     prefix = PromptBuilder(
         blocks,
         announce_ai=cfg.disclosure.announce_ai,
         commentator_language=cfg.commentator.language,
-        commentator_style=cfg.commentator.prompt_style,
+        commentator_style=style,
     ).stable_prefix()
 
     assert "[MEMORIA PERMANENTE]" in prefix
@@ -328,16 +331,16 @@ def test_twitch_operator_docs_cover_local_commentator_mode():
 
     required = [
         "Local Commentator Mode",
-        "commentator.enabled: true",
+        "commentator.profiles",
         "mode: private",
         "[PRIVATE]",
         "TUI/dashboard",
         "no PRIVMSG is",
         "no public chat write/send",
         "Italian comments",
-        "commentator.idle_interval",
+        "idle_interval",
         "examples/twitch-commentator.example.yaml",
-        "commentator.enabled: false",
+        "no commentator profiles",
     ]
     for phrase in required:
         assert phrase in text

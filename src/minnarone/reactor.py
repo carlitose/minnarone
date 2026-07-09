@@ -31,6 +31,11 @@ from .store import PerceptionStore
 # Quante percezioni di chat recenti includere nel prompt.
 _DEFAULT_RECENT_WINDOW = 15
 
+# Sentinella "non ho nulla da dire": se presente nella risposta LLM, il
+# Reactor salta l'instradamento. Analogo a `#end_conv` ma senza chiusura
+# della finestra — semplicemente silenzio.
+_NOTHING_SENTINEL = "#nothing"
+
 # Quanti messaggi propri recenti ricordare per il cancello di dedup
 # (HumanLikeness). Piccola finestra scorrevole: basta per scartare i ricalchi
 # immediati senza zavorrare la memoria.
@@ -144,7 +149,13 @@ class Reactor:
         - un quasi-duplicato viene scartato (non instradato);
         - altrimenti si attende il typing delay (await dello sleep iniettato:
           non blocca il loop) e poi si instrada il testo ripulito.
+
+        `#nothing` anywhere in the response means "nothing to say": skip
+        routing entirely, analogous to `#end_conv` suppression.
         """
+        if _NOTHING_SENTINEL in message:
+            return
+
         if self._uses_original_chat_style():
             response = normalize_original_chat_response(message)
             if response.end_conversation and trigger.interlocutor is not None:

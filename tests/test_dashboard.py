@@ -1323,3 +1323,204 @@ def test_tui_router_does_not_capture_dropped_messages():
     messages = [m.text for m in stream.recent_messages()]
     assert messages == ["[SHADOW] First"]
     assert "Dropped" not in " ".join(messages)
+
+
+# --- Per-profile output panels (issue 13) -----------------------------------
+
+
+def test_dashboard_state_has_per_profile_message_fields():
+    """DashboardState has synthesizer_messages and suggester_messages."""
+    state = DashboardState(
+        synthesizer_messages=["Riassunto della riunione."],
+        suggester_messages=["Suggerimento: prova questa strategia."],
+    )
+
+    assert state.synthesizer_messages == ["Riassunto della riunione."]
+    assert state.suggester_messages == ["Suggerimento: prova questa strategia."]
+
+
+def test_dashboard_state_per_profile_defaults_empty():
+    """Without explicit data, per-profile lists default to empty."""
+    state = DashboardState()
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_render_panels_includes_sintetizzatore_when_active():
+    """SINTETIZZATORE panel appears when synthesizer has messages."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi del discorso."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" in titles
+    panel_text = {p.title: p.text for p in panels}
+    assert "Sintesi del discorso." in panel_text["SINTETIZZATORE"]
+
+
+def test_render_panels_includes_suggerimenti_when_active():
+    """SUGGERIMENTI panel appears when suggester has messages."""
+    state = DashboardState(
+        suggester_messages=["Suggerimento strategico."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SUGGERIMENTI" in titles
+    panel_text = {p.title: p.text for p in panels}
+    assert "Suggerimento strategico." in panel_text["SUGGERIMENTI"]
+
+
+def test_render_panels_excludes_sintetizzatore_when_inactive():
+    """SINTETIZZATORE panel does NOT appear when no synthesizer messages."""
+    state = DashboardState()
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" not in titles
+
+
+def test_render_panels_excludes_suggerimenti_when_inactive():
+    """SUGGERIMENTI panel does NOT appear when no suggester messages."""
+    state = DashboardState()
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SUGGERIMENTI" not in titles
+
+
+def test_render_panels_includes_both_new_panels_when_both_active():
+    """Both SINTETIZZATORE and SUGGERIMENTI appear when both have messages."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" in titles
+    assert "SUGGERIMENTI" in titles
+    # The base 9 panels are still present.
+    assert "MINNARONE" in titles
+    assert "MEMORIA" in titles
+
+
+def test_render_panels_preserves_base_panels_order_with_new_panels():
+    """New panels appear after MEMORIA; base panel order unchanged."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    # The original 9 titles should appear in their original order.
+    base_titles = [
+        "IDLE", "FINESTRA CHAT", "STREAMER", "CHAT", "EVENTI",
+        "MINNARONE", "TRASCRIZIONE", "VIDEO", "MEMORIA",
+    ]
+    base_in_result = [t for t in titles if t in base_titles]
+    assert base_in_result == base_titles
+    # New panels come after the base ones.
+    assert titles.index("SINTETIZZATORE") > titles.index("MEMORIA")
+    assert titles.index("SUGGERIMENTI") > titles.index("SINTETIZZATORE")
+
+
+def test_snapshot_populates_per_profile_messages_from_output_streams():
+    """snapshot() reads per-profile streams into per-profile message fields."""
+    from minnarone.output import CommentatorStyle
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    syn_stream = MinnaroneOutputStream(clock=lambda: 10.0)
+    syn_stream.append("Sintesi riunione.", OutputMode.PRIVATE)
+
+    sug_stream = MinnaroneOutputStream(clock=lambda: 11.0)
+    sug_stream.append("Suggerimento tattico.", OutputMode.PRIVATE)
+
+    output_streams = {
+        CommentatorStyle.MEETING_SYNTHESIZER: syn_stream,
+        CommentatorStyle.SUGGESTER: sug_stream,
+    }
+
+    state = snapshot(output_streams=output_streams)
+
+    assert state.synthesizer_messages == ["Sintesi riunione."]
+    assert state.suggester_messages == ["Suggerimento tattico."]
+
+
+def test_snapshot_per_profile_empty_when_no_streams():
+    """Without output_streams, per-profile messages are empty."""
+    state = snapshot()
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_snapshot_per_profile_empty_when_stream_has_no_messages():
+    """A present but empty stream yields an empty list."""
+    from minnarone.output import CommentatorStyle
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    syn_stream = MinnaroneOutputStream(clock=lambda: 10.0)
+    output_streams = {CommentatorStyle.MEETING_SYNTHESIZER: syn_stream}
+
+    state = snapshot(output_streams=output_streams)
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_status_bar_includes_active_profile_segments():
+    """Status bar shows per-profile health segments when profiles are active."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    status = state.render_status_bar()
+
+    assert "syn=ok" in status
+    assert "sug=ok" in status
+
+
+def test_status_bar_omits_profile_segments_when_inactive():
+    """Status bar does NOT show profile segments when no messages."""
+    state = DashboardState()
+
+    status = state.render_status_bar()
+
+    assert "syn=" not in status
+    assert "sug=" not in status
+
+
+def test_render_text_includes_per_profile_sections():
+    """render_text() includes per-profile sections when messages exist."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    rendered = state.render_text()
+
+    assert "== SINTETIZZATORE ==" in rendered
+    assert "Sintesi." in rendered
+    assert "== SUGGERIMENTI ==" in rendered
+    assert "Suggerimento." in rendered
+
+
+def test_render_text_omits_per_profile_sections_when_empty():
+    """render_text() does NOT include per-profile sections when empty."""
+    state = DashboardState()
+
+    rendered = state.render_text()
+
+    assert "== SINTETIZZATORE ==" not in rendered
+    assert "== SUGGERIMENTI ==" not in rendered

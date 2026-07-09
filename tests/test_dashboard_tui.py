@@ -144,8 +144,11 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
 
     async def exercise_app():
         async with app.run_test(size=(100, 30)):
-            widgets = list(app.query(".dashboard-panel"))
-            content_widgets = list(app.query(".dashboard-panel-content"))
+            widgets = [w for w in app.query(".dashboard-panel") if w.display]
+            content_widgets = [
+                w for w in app.query(".dashboard-panel-content")
+                if w.parent is not None and w.parent.display
+            ]
             assert [widget.border_title for widget in widgets] == app.panel_titles
             return {
                 container.border_title: str(content.content)
@@ -359,7 +362,7 @@ def test_view_keeps_long_panel_content_bounded():
 
     async def exercise_app():
         async with app.run_test(size=(80, 24)):
-            widgets = list(app.query(".dashboard-panel"))
+            widgets = [w for w in app.query(".dashboard-panel") if w.display]
             regions = [widget.region for widget in widgets]
             assert len(widgets) == 9
             assert len(set(regions)) == 9
@@ -432,3 +435,102 @@ def test_view_does_not_swallow_dashboard_runtime_errors():
                 pass
 
     asyncio.run(exercise_app())
+
+
+# --- Per-profile TUI panels (issue 13) ----------------------------------------
+
+
+def test_tui_shows_sintetizzatore_panel_when_active():
+    """SINTETIZZATORE panel appears in the TUI when synthesizer has messages."""
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState(
+        synthesizer_messages=["Sintesi della riunione."],
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 40)):
+            visible = [w for w in app.query(".dashboard-panel") if w.display]
+            titles = [w.border_title for w in visible]
+            assert "SINTETIZZATORE" in titles
+            # Content should show the message.
+            content = app.query_one(
+                "#panel-sintetizzatore .dashboard-panel-content"
+            )
+            return str(content.content)
+
+    rendered = asyncio.run(exercise_app())
+    assert "Sintesi della riunione." in rendered
+
+
+def test_tui_shows_suggerimenti_panel_when_active():
+    """SUGGERIMENTI panel appears in the TUI when suggester has messages."""
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState(
+        suggester_messages=["Suggerimento tattico."],
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 40)):
+            visible = [w for w in app.query(".dashboard-panel") if w.display]
+            titles = [w.border_title for w in visible]
+            assert "SUGGERIMENTI" in titles
+            content = app.query_one(
+                "#panel-suggerimenti .dashboard-panel-content"
+            )
+            return str(content.content)
+
+    rendered = asyncio.run(exercise_app())
+    assert "Suggerimento tattico." in rendered
+
+
+def test_tui_hides_conditional_panels_when_inactive():
+    """SINTETIZZATORE and SUGGERIMENTI are hidden when no messages."""
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState()
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 30)):
+            visible = [w for w in app.query(".dashboard-panel") if w.display]
+            titles = [w.border_title for w in visible]
+            return titles
+
+    titles = asyncio.run(exercise_app())
+    assert "SINTETIZZATORE" not in titles
+    assert "SUGGERIMENTI" not in titles
+    # Base panels are present.
+    assert "MINNARONE" in titles
+    assert "MEMORIA" in titles
+
+
+def test_tui_grid_adapts_to_panel_count():
+    """Grid rows increase when conditional panels become active."""
+    pytest.importorskip("textual")
+
+    from minnarone.dashboard_tui import build_dashboard_app
+
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+    app = build_dashboard_app(lambda: state)
+
+    async def exercise_app():
+        async with app.run_test(size=(100, 50)):
+            visible = [w for w in app.query(".dashboard-panel") if w.display]
+            return len(visible)
+
+    visible_count = asyncio.run(exercise_app())
+    # 9 base + 2 conditional = 11 visible panels
+    assert visible_count == 11

@@ -33,8 +33,8 @@ Screen {
 
 #dashboard-grid {
     layout: grid;
-    grid-size: 3 3;
-    grid-rows: 1fr 1fr 1fr;
+    grid-size: 3 4;
+    grid-rows: 1fr 1fr 1fr 1fr;
     grid-columns: 1fr 1fr 1fr;
     grid-gutter: 1 1;
     height: 1fr;
@@ -97,6 +97,18 @@ def _require_textual():
         raise RuntimeError(_MISSING_TEXTUAL_MSG) from exc
 
 
+# Panel titles that appear only when the corresponding profile is active.
+# Compose creates widgets for all of them, but starts them hidden (display=False).
+# _render_snapshot() shows/hides them based on the current DashboardState.
+_CONDITIONAL_PANELS = {"SINTETIZZATORE", "SUGGERIMENTI"}
+
+# All possible panel titles in visual order, including conditional ones.
+_ALL_PANEL_TITLES = [
+    "IDLE", "FINESTRA CHAT", "STREAMER", "CHAT", "EVENTI",
+    "MINNARONE", "TRASCRIZIONE", "VIDEO", "MEMORIA",
+    "SINTETIZZATORE", "SUGGERIMENTI",
+]
+
 _PROMOTE_CONFIRM_WINDOW = 3.0  # seconds to confirm a promote with second press
 
 
@@ -141,6 +153,7 @@ def build_dashboard_app(
             self._provider = snapshot_provider
             self._send_commands = send_commands
             self._panels: dict[str, Static] = {}
+            self._panel_containers: dict[str, VerticalScroll] = {}
             self._status_bar: Static | None = None
             self._prompt_content: Static | None = None
             self._promote_pending_at: float | None = None
@@ -156,13 +169,17 @@ def build_dashboard_app(
             with TabbedContent(initial="dashboard-tab", id="main-tabs"):
                 with TabPane("DASHBOARD", id="dashboard-tab"):
                     with Grid(id="dashboard-grid"):
-                        for title in self.panel_titles:
+                        for title in _ALL_PANEL_TITLES:
                             with VerticalScroll(
                                 id=_panel_id(title),
                                 classes="dashboard-panel",
                                 can_focus=True,
                             ) as container:
                                 container.border_title = title
+                                # Conditional panels start hidden.
+                                if title in _CONDITIONAL_PANELS:
+                                    container.display = False
+                                self._panel_containers[title] = container
                                 content = Static(
                                     "(in attesa)",
                                     classes="dashboard-panel-content",
@@ -230,10 +247,28 @@ def build_dashboard_app(
                 return
             if self._status_bar is not None:
                 self._status_bar.update(state.render_status_bar())
+            # Update panel content and toggle visibility for conditional panels.
+            active_titles = {p.title for p in panels}
             for panel in panels:
                 widget = self._panels.get(panel.title)
                 if widget is not None:
                     widget.update(panel.text)
+            for title in _CONDITIONAL_PANELS:
+                container = self._panel_containers.get(title)
+                if container is not None:
+                    container.display = title in active_titles
+            # Adapt grid rows to visible panel count.
+            visible = sum(
+                1 for t in _ALL_PANEL_TITLES
+                if t not in _CONDITIONAL_PANELS or t in active_titles
+            )
+            rows = max((visible + 2) // 3, 1)
+            try:
+                grid = self.query_one("#dashboard-grid", Grid)
+                grid.styles.grid_size_rows = rows
+                grid.styles.grid_rows = "1fr " * rows
+            except Exception:  # noqa: BLE001 - grid may not be mounted yet.
+                pass
             if self._prompt_content is not None:
                 self._prompt_content.update(state.render_prompt_view())
 

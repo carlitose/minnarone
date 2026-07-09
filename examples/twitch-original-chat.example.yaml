@@ -24,10 +24,10 @@ twitch:
   video_fps: 1.0
 
 commentator:
-  enabled: true
-  style: original_chat
   language: it
-  idle_interval: 30.0
+  profiles:
+    original_chat:
+      idle_interval: 30.0
 
 senser_interval: 0.5
 idle_interval: 150.0

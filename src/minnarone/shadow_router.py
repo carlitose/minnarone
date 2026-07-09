@@ -34,13 +34,24 @@ class TwitchPublicOutputRouter(OutputRouter):
         stream: TextIO | None = None,
         event_recorder: object | None = None,
         sender: object | None = None,
+        echo: bool = True,
     ) -> None:
         self._policy = policy
         self._channel = channel
         self._stream = stream if stream is not None else sys.stdout
         self._event_recorder = event_recorder
         self._sender = sender
+        # `echo` stampa i marcatori [SHADOW]/[SENT]/[FAILED] su stdout: è il
+        # display del runtime console. Sotto la TUI (Textual) va spento —
+        # il display è gestito dal TuiPrivateOutputRouter che avvolge questo
+        # router e legge `last_decision` — altrimenti gli stdout sfondano lo
+        # schermo alternativo della TUI.
+        self._echo = echo
         self.last_decision: SendDecision | None = None
+
+    def _display(self, marker: str, message: str) -> None:
+        if self._echo:
+            print(f"{marker} {message}", file=self._stream)
 
     async def route(self, message: str, mode: OutputMode) -> None:
         if mode is not OutputMode.PUBLIC:
@@ -56,7 +67,7 @@ class TwitchPublicOutputRouter(OutputRouter):
             except TwitchSendError as exc:
                 # Failed send: display marker, feed policy, record event.
                 # The turn is skipped (no retry, no queue).
-                print(f"[FAILED] {message}", file=self._stream)
+                self._display("[FAILED]", message)
                 self._policy.record_failure()
                 if self._event_recorder is not None:
                     self._event_recorder.record_send_decision(
@@ -69,11 +80,11 @@ class TwitchPublicOutputRouter(OutputRouter):
                 return
 
             # Successful send: display marker, feed policy, record event.
-            print(f"[SENT] {message}", file=self._stream)
+            self._display("[SENT]", message)
             self._policy.record_success()
         elif decision.action != ACTION_DROP:
             # Shadow display (also handles send-without-sender as fallback).
-            print(f"[SHADOW] {message}", file=self._stream)
+            self._display("[SHADOW]", message)
 
         if self._event_recorder is not None:
             self._event_recorder.record_send_decision(

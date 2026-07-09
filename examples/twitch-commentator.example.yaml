@@ -26,11 +26,11 @@ twitch:
   video_fps: 1.0
 
 commentator:
-  enabled: true
-  style: operator
   language: it
-  # More proactive than the public-chat default, but still bounded.
-  idle_interval: 30.0
+  profiles:
+    operator:
+      # More proactive than the public-chat default, but still bounded.
+      idle_interval: 30.0
 
 senser_interval: 0.5
 idle_interval: 150.0

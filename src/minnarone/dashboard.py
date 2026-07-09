@@ -51,6 +51,7 @@ from .dashboard_health import (
 from .dashboard_health import (
     technical_event_lines as _technical_event_lines,
 )
+from .output import CommentatorStyle
 from .perception import Perception, format_perception_line
 from .prompt_observation import PromptObservation, sanitize_observation
 from .senser import ConversationWindow, Trigger
@@ -189,6 +190,8 @@ class DashboardState:
     latest_prompt: PromptObservation | None = None
     memory_summary: str = ""
     send: SendDiagnostics | None = None
+    synthesizer_messages: list[str] = field(default_factory=list)
+    suggester_messages: list[str] = field(default_factory=list)
     channel: str | None = None
     started_at: datetime | None = None
     now: datetime | None = None
@@ -210,8 +213,12 @@ class DashboardState:
         return _render_status_bar(self)
 
     def render_panels(self) -> list[DashboardPanel]:
-        """Render the screenshot-faithful dashboard panels in visual row order."""
-        return [
+        """Render the screenshot-faithful dashboard panels in visual row order.
+
+        The base 9 panels always appear. SINTETIZZATORE and SUGGERIMENTI are
+        appended only when the corresponding profile is active (has messages).
+        """
+        panels = [
             DashboardPanel("IDLE", self._render_idle_panel()),
             DashboardPanel("FINESTRA CHAT", self._render_chat_window_panel()),
             DashboardPanel("STREAMER", self._render_streamer_panel()),
@@ -222,6 +229,15 @@ class DashboardState:
             DashboardPanel("VIDEO", self._render_video_panel()),
             DashboardPanel("MEMORIA", self._render_memory_panel()),
         ]
+        if self.synthesizer_messages:
+            panels.append(
+                DashboardPanel("SINTETIZZATORE", self._render_synthesizer_panel())
+            )
+        if self.suggester_messages:
+            panels.append(
+                DashboardPanel("SUGGERIMENTI", self._render_suggester_panel())
+            )
+        return panels
 
     def _render_idle_panel(self) -> str:
         idle_triggers = [t for t in self.triggers if t.kind == "idle_comment"]
@@ -283,6 +299,12 @@ class DashboardState:
     def _render_memory_panel(self) -> str:
         summary = self.memory_summary.strip()
         return summary if summary else "(nessuna memoria)"
+
+    def _render_synthesizer_panel(self) -> str:
+        return "\n".join(self.synthesizer_messages) if self.synthesizer_messages else "(nessuna sintesi)"
+
+    def _render_suggester_panel(self) -> str:
+        return "\n".join(self.suggester_messages) if self.suggester_messages else "(nessun suggerimento)"
 
     def render_prompt_view(self) -> str:
         """Render the latest redacted prompt observation for the TUI prompt tab."""
@@ -442,6 +464,14 @@ class DashboardState:
             else:
                 lines.append("last=(none)")
 
+        if self.synthesizer_messages:
+            lines.append("== SINTETIZZATORE ==")
+            lines.extend(self.synthesizer_messages)
+
+        if self.suggester_messages:
+            lines.append("== SUGGERIMENTI ==")
+            lines.extend(self.suggester_messages)
+
         return "\n".join(lines)
 
 
@@ -498,6 +528,7 @@ def snapshot(
     senser=None,
     reactor=None,
     minnarone_output=None,
+    output_streams: dict[CommentatorStyle, object] | None = None,
     perception_queue=None,
     speaker_tagger=None,
     video_perceiver=None,
@@ -571,6 +602,12 @@ def snapshot(
     latest_prompt = _latest_prompt_observation(prompt_recorder)
     memory_summary = _current_memory_summary(summarizer)
     send = _send_diagnostics(send_policy)
+    synthesizer_messages = _per_profile_messages(
+        output_streams, CommentatorStyle.MEETING_SYNTHESIZER, recent_messages,
+    )
+    suggester_messages = _per_profile_messages(
+        output_streams, CommentatorStyle.SUGGESTER, recent_messages,
+    )
 
     return DashboardState(
         perceptions=perceptions,
@@ -588,6 +625,8 @@ def snapshot(
         latest_prompt=latest_prompt,
         memory_summary=memory_summary,
         send=send,
+        synthesizer_messages=synthesizer_messages,
+        suggester_messages=suggester_messages,
         channel=_safe_status_value(channel),
         started_at=started_at,
         now=now or (datetime.now(UTC) if started_at is not None else None),
@@ -599,6 +638,23 @@ def _current_memory_summary(summarizer) -> str:
         return ""
     summary = getattr(summarizer, "current_summary", "")
     return summary if isinstance(summary, str) else ""
+
+
+def _per_profile_messages(
+    output_streams: dict[CommentatorStyle, object] | None,
+    style: CommentatorStyle,
+    limit: int,
+) -> list[str]:
+    """Read recent messages from a per-profile MinnaroneOutputStream."""
+    if output_streams is None:
+        return []
+    stream = output_streams.get(style)
+    if stream is None:
+        return []
+    recent = getattr(stream, "recent_messages", None)
+    if recent is None:
+        return []
+    return [msg.text for msg in recent(limit)]
 
 
 def _tail_matching(

@@ -1,12 +1,20 @@
-# Preset pronto all'uso: commentatore locale su meeting Teams via cattura SO.
+# Preset pronto all'uso: assistente meeting su Teams via cattura SO.
 #
 # Osserva audio e schermo della macchina locale (una call Teams) e produce
-# commenti PRIVATI per il solo operatore: nessun output pubblico, nessuna chat
-# esterna. Le credenziali/API key restano FUORI da questo file: il provider LLM
-# legge la chiave dall'ambiente (es. OPENROUTER_API_KEY).
+# riassunti periodici (sintetizzatore) e suggerimenti contestuali (suggeritore)
+# PRIVATI per il solo operatore: nessun output pubblico, nessuna chat esterna.
+# Le credenziali/API key restano FUORI da questo file: il provider LLM legge
+# la chiave dall'ambiente (es. OPENROUTER_API_KEY).
+#
+# Profili attivi:
+#   - meeting_synthesizer: riassunto strutturato ogni 180s
+#   - suggester: suggerimenti contestuali su ogni percezione audio
+#
+# NO operator: niente commenti di tipo commentatore. Solo riassunti e
+# suggerimenti.
 #
 # Validazione a secco (nessun hardware aperto, nessuna rete):
-#   python -m minnarone examples/teams-commentator.yaml --check
+#   python -m minnarone examples/teams-meeting-assistant.yaml --check
 
 mode: private              # obbligatorio con commentator profiles attivi (solo output locale)
 soul_path: original-chat-memory/soul.md  # identità dell'agente (relativo a questo file)
@@ -25,12 +33,13 @@ os_capture:
   video_fps: 1.0           # frame al secondo campionati dallo schermo (basso di proposito)
   monitor: 1               # indice del monitor da catturare (>= 1)
 
-# Modalità commentatore: commenti privati destinati all'operatore.
+# Modalità assistente meeting: riassunti e suggerimenti privati per l'operatore.
 commentator:
-  language: it             # lingua dei commenti
+  language: it             # lingua dei riassunti e suggerimenti
   profiles:
-    operator:
-      idle_interval: 30.0  # commento proattivo se non arrivano trigger (secondi)
+    meeting_synthesizer:
+      interval_s: 180      # riassunto ogni 3 minuti (regolabile: 120-300s consigliato)
+    suggester: {}           # suggerimenti contestuali, nessun parametro specifico
 
 senser_interval: 0.5       # cadenza del Senser (secondi)
 idle_interval: 150.0       # fallback proattivo globale in assenza di trigger (secondi)

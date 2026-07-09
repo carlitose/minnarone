@@ -96,10 +96,9 @@ vlm:
   max_image_pixels: 500000
 
 commentator:
-  # Default public-chat persona remains available when this is false.
-  enabled: false
   language: it
-  idle_interval: null
+  # No profiles: commentator is disabled. The default public-chat persona
+  # remains available.
 
 llm_params:
   thinking: low

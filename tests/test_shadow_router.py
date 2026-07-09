@@ -132,6 +132,21 @@ def test_shadow_decision_displays_message_with_shadow_marker():
     assert "[SHADOW] ciao a tutti" in buf.getvalue()
 
 
+def test_echo_false_suppresses_stdout_but_keeps_last_decision():
+    # Sotto la TUI il display è del pannello (via wrapper); il router non deve
+    # stampare su stdout. `last_decision` resta valorizzato per il wrapper.
+    buf = io.StringIO()
+    router = TwitchPublicOutputRouter(
+        policy=StubPolicy(SendDecision(ACTION_SHADOW, REASON_OK)),
+        channel="testchannel",
+        stream=buf,
+        echo=False,
+    )
+    asyncio.run(router.route("ciao a tutti", OutputMode.PUBLIC))
+    assert buf.getvalue() == ""
+    assert router.last_decision == SendDecision(ACTION_SHADOW, REASON_OK)
+
+
 # --- 2. Drop non mostra nulla -----------------------------------------------
 
 
