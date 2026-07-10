@@ -430,15 +430,31 @@ def _default_store_path(config: Config) -> Path:
     return Path(config.facts_dir).resolve().parent / "perceptions.jsonl"
 
 
+def _twitch_token_is_effectively_empty(value: str | None) -> bool:
+    """True se il token è assente o è solo il prefisso `oauth:` senza contenuto.
+
+    Controllo offline: non valida che Twitch accetti il token, solo che ci sia
+    davvero qualcosa dopo l'eventuale prefisso `oauth:` (il footgun classico è
+    lasciare `TWITCH_OAUTH_TOKEN=oauth:` vuoto). Il valore non viene mai
+    propagato in errori/log.
+    """
+    text = (value or "").strip()
+    if text.lower().startswith("oauth:"):
+        text = text[len("oauth:") :].strip()
+    return not text
+
+
 def _required_twitch_chat_credentials() -> tuple[str, str]:
-    missing = [
-        name
-        for name in ("TWITCH_BOT_USERNAME", "TWITCH_OAUTH_TOKEN")
-        if not os.environ.get(name)
-    ]
+    missing: list[str] = []
+    if not (os.environ.get("TWITCH_BOT_USERNAME") or "").strip():
+        missing.append("TWITCH_BOT_USERNAME")
+    if _twitch_token_is_effectively_empty(os.environ.get("TWITCH_OAUTH_TOKEN")):
+        missing.append("TWITCH_OAUTH_TOKEN")
     if missing:
         raise ConfigError(
-            "credenziali Twitch chat mancanti: esporta " + ", ".join(missing)
+            "credenziali Twitch chat mancanti o vuote: imposta "
+            + ", ".join(missing)
+            + " (il token deve contenere un valore, non solo il prefisso)"
         )
     return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
 
@@ -451,13 +467,14 @@ def _required_twitch_send_credentials() -> None:
     build (non nello schema di config) così `Config.load` resta puro rispetto
     all'ambiente, mentre `--check` — che costruisce l'agente — fallisce subito.
     """
-    # `.strip()`: un token di soli spazi è assente a tutti gli effetti; il
-    # valore serve solo al controllo di presenza e non viene mai propagato.
-    if not (os.environ.get(TWITCH_SEND_TOKEN_ENV_VAR) or "").strip():
+    # Un token di soli spazi o solo prefisso `oauth:` è assente a tutti gli
+    # effetti; il valore serve solo al controllo e non viene mai propagato.
+    if _twitch_token_is_effectively_empty(os.environ.get(TWITCH_SEND_TOKEN_ENV_VAR)):
         raise ConfigError(
-            "credenziali Twitch send mancanti: esporta "
+            "credenziali Twitch send mancanti o vuote: esporta "
             f"{TWITCH_SEND_TOKEN_ENV_VAR} (token Twitch con scope di "
-            "scrittura, distinto dal token di lettura)"
+            "scrittura, distinto dal token di lettura, con un valore reale "
+            "e non solo il prefisso)"
         )
 
 

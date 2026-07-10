@@ -431,6 +431,34 @@ def test_twitch_chat_runtime_requires_clear_credentials(tmp_path, monkeypatch):
         build_agent(cfg, transport=_fake_transport)
 
 
+def test_twitch_chat_runtime_rejects_empty_token_after_oauth_prefix(
+    tmp_path, monkeypatch
+):
+    # Footgun: TWITCH_OAUTH_TOKEN=oauth: (prefisso senza valore). Deve fallire
+    # al build, non solo alla connessione IRC a runtime.
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+        )
+    )
+
+    with pytest.raises(ConfigError, match="TWITCH_OAUTH_TOKEN"):
+        build_agent(cfg, transport=_fake_transport)
+
+
 def _live_send_twitch_config(tmp_path):
     return Config.load(
         _write_workspace(
