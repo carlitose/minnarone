@@ -1,3 +1,26 @@
+## Resolution: NON NECESSARIO (2026-07-10)
+
+Deciso di **non implementare** questo ticket dopo il completamento di 01 e 03.
+Motivazione:
+
+- **01 (collasso `[ALTRO]`)** rende l'over-segmentation *invisibile* nell'output:
+  tutte le voci non-streamer sono `altro`, quindi il numero di cluster interni
+  non impatta più né il pannello TRASCRIZIONE né il prompt.
+- **03 (marking manuale)** rende lo streamer sbagliato *correggibile a mano*:
+  anche se l'auto-dominante fragile sbaglia per frammentazione, l'operatore
+  pinna il cluster giusto e questo revoca l'auto-pick.
+
+L'obiettivo dichiarato di questo ticket (merge/tetto per curare l'over-segmentation)
+è quindi superfluo per la fedeltà della diarizzazione.
+
+**Follow-up separato tracciato (non in questo ticket)**: resta un concern latente
+di *performance/memoria* — `OnlineSpeakerClusterer._clusters` cresce senza limite
+e `_best_cluster` fa uno scan O(n) per utterance (→ O(n²) su sessioni lunghe di
+ore). Non blocca l'accettazione (i run sono bounded 15–30 min). Se un run lungo
+mostrasse degrado di memoria/latenza, aprire un ticket dedicato "cap + pruning
+dei cluster per sessioni lunghe" (l'opzione "tetto" di questo ticket), separato
+dalla motivazione originale (over-segmentation) che qui è risolta.
+
 ## Parent Spec
 
 [speaker-diarization-over-segmentation.md](../../specs/speaker-diarization-over-segmentation.md)
