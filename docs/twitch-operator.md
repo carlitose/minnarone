@@ -77,7 +77,15 @@ Recommended starting points:
   `model: turbo`.
 - Speaker embedding: a local sherpa-onnx CAM++/3D-Speaker-style ONNX model with
   `speaker_embedding.dimension: 192`, `provider: cpu`, and `num_threads: 1` or
-  `2`. Set `speaker_embedding.model_path` to the actual `.onnx` file.
+  `2`. Set `speaker_embedding.model_path` to the actual `.onnx` file. Pick a
+  model that matches the stream language and domain: a Mandarin-trained model
+  such as `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx` depresses
+  same-speaker similarity on Italian (and other non-Mandarin) speech, which
+  drives over-segmentation into many clusters. The emitted label stays `altro`
+  for every non-streamer voice, so over-segmentation is not visible in the
+  label — it shows up as an inflated cluster count in the diagnostics. For
+  non-Mandarin streams prefer a language-matched or multilingual embedding
+  model.
 - VLM: a local Qwen2-VL-compatible Hugging Face model directory or model id in
   `vlm.model`. Captions are concise English by default because they are internal
   context for the LLM, not final user-facing prose.
@@ -242,7 +250,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 ```
@@ -277,15 +287,16 @@ PY
 
 Success means the printed dimension matches `speaker_embedding.dimension` and
 the norm is close to 1. In the live audio path, embeddings are clustered online:
-the dominant cluster after warmup is frozen as `streamer`, other stable clusters
-emit `speaker_N`, and short or unreliable utterances may emit `?` without
-updating centroids.
+the dominant cluster after warmup is frozen as `streamer`, every other cluster
+emits `altro`, and short or unreliable utterances emit `?` without updating
+centroids. The emitted label set is exactly `{streamer, altro, ?}` — distinct
+non-streamer speakers are not distinguished in the label.
 
 ## Local Speaker Clustering Smoke
 
 Use this synthetic smoke to isolate the online clustering thresholds without
 ASR, sherpa-onnx, audio bytes, or Twitch. It feeds normalized vectors directly
-into `OnlineSpeakerClusterer` so you can validate `streamer`, `speaker_N`, and
+into `OnlineSpeakerClusterer` so you can validate `streamer`, `altro`, and
 unknown short-utterance behavior before model-backed audio is enabled.
 
 ```bash
@@ -294,7 +305,7 @@ from minnarone.speaker import OnlineSpeakerClusterer, SpeakerClusteringConfig
 
 clusterer = OnlineSpeakerClusterer(
     SpeakerClusteringConfig(
-        threshold=0.6,
+        threshold=0.45,
         warmup_seconds=2.0,
         min_update_seconds=1.0,
     )
@@ -326,9 +337,18 @@ PY
 ```
 
 Success means the first short utterance prints `?`, later utterances produce
-stable `speaker_N` labels, and once `warmup_seconds` is reached the dominant
-cluster label becomes `streamer`. If speakers split too much, raise
-`threshold`; if speakers merge too much, lower it.
+labels drawn from `{streamer, altro, ?}`, and once `warmup_seconds` is reached
+the dominant cluster's label becomes `streamer` (every other cluster stays
+`altro`). `speaker_clustering.threshold` is the cosine-similarity join floor: an
+utterance joins an existing speaker only when its similarity is at or above the
+threshold, so a higher value produces more splitting. Splitting is not visible
+in the label — every non-streamer voice reads as `altro` regardless of how many
+clusters exist — so watch the `clusters` list printed by `stats()`: the number
+of distinct `cluster_id` rows is the cluster count. If one speaker splits into
+too many clusters (over-segmentation), lower `threshold` toward `0.4`–`0.5`; if
+different speakers merge into one cluster (under-segmentation), raise it. Around
+`0.45` is a reasonable starting point, not a universal value — the right
+threshold depends on the embedding model, language, and noise.
 
 Video-only, isolated from chat credentials:
 
@@ -559,7 +579,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -936,7 +958,7 @@ Main dashboard panels:
 - `MINNARONE`: recent local Minnarone output messages routed through the
   operator output stream.
 - `TRASCRIZIONE`: recent ASR `audio/speech` transcriptions with speaker labels
-  such as `streamer`, `speaker_N`, or `?`.
+  drawn from `streamer`, `altro`, or `?`.
 - `VIDEO`: video counters (`frames`, `sampled`, `captioned`, `failed`) followed
   by recent VLM captions.
 - `MEMORIA`: the current short-term memory summary from the summarizer, or
@@ -1105,7 +1127,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 ```
@@ -1145,12 +1169,19 @@ Existing `adapter: os_capture` configs do not require a `twitch:` section.
 - Empty ASR output: confirm the `.pcm` file is non-empty, run
   `--vad-diagnostic`, and check that `vad_utterances` is greater than zero. If
   VAD is too strict, lower `vad.mode`; if noise leaks through, raise it.
-- Speaker over-segmentation: if one person becomes many `speaker_N` labels,
-  raise `speaker_clustering.threshold` toward `0.65` or `0.7`, and require
-  longer speech before trusting updates with `min_update_seconds`.
-- Speaker under-segmentation: if different people collapse into one label, lower
-  `speaker_clustering.threshold` toward `0.5` or `0.55`, then re-check cluster
-  talk time in observability.
+- Speaker over-segmentation: every non-streamer voice reads as `altro`, so a
+  single person splitting into many clusters is invisible in the label — spot it
+  by an inflated cluster count (distinct `cluster_id` rows) or fragmented
+  talk-time in the observability diagnostics. Lower
+  `speaker_clustering.threshold` toward `0.45` (or `0.4` if it still splits). The
+  threshold is the cosine-similarity join floor (higher = more splitting), so
+  raising it makes over-segmentation worse. Also require longer speech before
+  trusting updates with `min_update_seconds`, and confirm the embedding model
+  matches the stream language (a Mandarin `zh-cn` model on Italian speech is a
+  common cause; see the speaker embedding note above).
+- Speaker under-segmentation: if different people collapse into a single cluster,
+  raise `speaker_clustering.threshold` toward `0.55` or `0.6`, then re-check the
+  cluster count and per-cluster talk time in observability.
 - Speaker model path errors: verify `speaker_embedding.model_path` points to a
   real ONNX file and that `speaker_embedding.dimension` matches the model.
 - No PyAV frames: run the PyAV frame validation command, then try lower

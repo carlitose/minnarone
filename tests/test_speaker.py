@@ -27,21 +27,45 @@ def test_clusterer_updates_matching_centroid_and_creates_new_speaker():
         )
     )
 
-    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "speaker_1"
+    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "altro"
     assert (
-        clusterer.assign([0.98, 0.2], duration_seconds=1.0).label == "speaker_1"
+        clusterer.assign([0.98, 0.2], duration_seconds=1.0).label == "altro"
     )
-    assert clusterer.assign([0.0, 1.0], duration_seconds=1.0).label == "speaker_2"
+    assert clusterer.assign([0.0, 1.0], duration_seconds=1.0).label == "altro"
 
     stats = clusterer.stats()
     assert stats.total_utterances == 3
     assert stats.clustered_utterances == 3
     assert stats.unknown_utterances == 0
     assert [(c.label, c.updates) for c in stats.clusters] == [
-        ("speaker_1", 2),
-        ("speaker_2", 1),
+        ("altro", 2),
+        ("altro", 1),
     ]
     assert stats.clusters[0].centroid == pytest.approx((0.995, 0.1005), abs=0.001)
+
+
+def test_distinct_non_streamer_voices_share_altro_label_but_differ_by_cluster_id():
+    clusterer = OnlineSpeakerClusterer(
+        SpeakerClusteringConfig(
+            threshold=0.8,
+            warmup_seconds=999.0,
+            min_update_seconds=0.0,
+        )
+    )
+
+    first = clusterer.assign([1.0, 0.0], duration_seconds=1.0)
+    second = clusterer.assign([0.0, 1.0], duration_seconds=1.0)
+
+    assert first.label == "altro"
+    assert second.label == "altro"
+    assert first.cluster_id != second.cluster_id
+
+    stats = clusterer.stats()
+    assert [c.label for c in stats.clusters] == ["altro", "altro"]
+    assert [c.cluster_id for c in stats.clusters] == [
+        first.cluster_id,
+        second.cluster_id,
+    ]
 
 
 def test_clusterer_freezes_dominant_speaker_after_warmup_without_label_churn():
@@ -53,18 +77,18 @@ def test_clusterer_freezes_dominant_speaker_after_warmup_without_label_churn():
         )
     )
 
-    assert clusterer.assign([1.0, 0.0], duration_seconds=2.0).label == "speaker_1"
-    assert clusterer.assign([0.0, 1.0], duration_seconds=1.0).label == "speaker_2"
+    assert clusterer.assign([1.0, 0.0], duration_seconds=2.0).label == "altro"
+    assert clusterer.assign([0.0, 1.0], duration_seconds=1.0).label == "altro"
     assert clusterer.stats().streamer_cluster_id == 1
 
-    assert clusterer.assign([0.0, 1.0], duration_seconds=10.0).label == "speaker_2"
+    assert clusterer.assign([0.0, 1.0], duration_seconds=10.0).label == "altro"
     assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "streamer"
 
     stats = clusterer.stats()
     assert stats.streamer_cluster_id == 1
     assert [(c.label, c.talk_time_seconds) for c in stats.clusters] == [
         ("streamer", 3.0),
-        ("speaker_2", 11.0),
+        ("altro", 11.0),
     ]
 
 
@@ -76,7 +100,7 @@ def test_short_utterance_emits_unknown_and_does_not_update_centroids():
             min_update_seconds=1.0,
         )
     )
-    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "speaker_1"
+    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "altro"
     original_centroid = clusterer.stats().clusters[0].centroid
 
     short = clusterer.assign([0.0, 1.0], duration_seconds=0.25)
@@ -98,7 +122,7 @@ def test_mismatched_embedding_dimension_is_unknown_and_does_not_create_cluster()
             min_update_seconds=0.0,
         )
     )
-    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "speaker_1"
+    assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "altro"
 
     mismatched = clusterer.assign([1.0, 0.0, 0.0], duration_seconds=1.0)
 

@@ -60,7 +60,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 

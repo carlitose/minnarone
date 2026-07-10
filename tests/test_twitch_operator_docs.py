@@ -38,7 +38,7 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.asr.condition_on_previous_text is False
     assert cfg.speaker_embedding.provider == "cpu"
     assert cfg.speaker_embedding.dimension == 192
-    assert cfg.speaker_clustering.threshold == 0.6
+    assert cfg.speaker_clustering.threshold == 0.45
     assert cfg.speaker_clustering.warmup_seconds == 60.0
     assert cfg.speaker_clustering.min_update_seconds == 1.0
     assert cfg.video.sample_every == 1
@@ -259,7 +259,7 @@ def test_twitch_operator_docs_cover_manual_speaker_embedding_smoke():
         "warmup_seconds: 60.0",
         "min_update_seconds: 1.0",
         "streamer",
-        "speaker_N",
+        "altro",
     ]
     for phrase in required:
         assert phrase in text
@@ -272,13 +272,13 @@ def test_twitch_operator_docs_cover_manual_speaker_clustering_smoke():
         "Local Speaker Clustering Smoke",
         "OnlineSpeakerClusterer",
         "SpeakerClusteringConfig",
-        "threshold=0.6",
+        "threshold=0.45",
         "warmup_seconds=2.0",
         "min_update_seconds=1.0",
         "too short -> ?",
         "streamer_cluster_id",
-        "speaker_N",
-        "cluster label becomes `streamer`",
+        "{streamer, altro, ?}",
+        "label becomes `streamer`",
     ]
     for phrase in required:
         assert phrase in text

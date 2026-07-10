@@ -396,7 +396,7 @@ def test_asr_config_defaults_overrides_and_validation(tmp_path):
 def test_speaker_configs_defaults_overrides_and_validation(tmp_path):
     cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
     assert cfg.speaker_embedding == SpeakerEmbeddingConfig()
-    assert cfg.speaker_clustering == SpeakerClusteringConfig()
+    assert cfg.speaker_clustering == SpeakerClusteringConfig(threshold=0.45)
 
     configured = Config.load(
         _write(

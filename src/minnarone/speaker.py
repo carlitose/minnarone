@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .asr import AsrInputError, pcm_s16le_to_float32
-from .audio import STREAMER, UNKNOWN_SPEAKER, SpeechSegment
+from .audio import OTHER, STREAMER, UNKNOWN_SPEAKER, SpeechSegment
 
 
 class SpeakerConfigError(ValueError):
@@ -66,7 +66,10 @@ class SpeakerEmbeddingConfig:
 class SpeakerClusteringConfig:
     """Tuning knobs for online speaker clustering."""
 
-    threshold: float = 0.6
+    # Join floor di similarità coseno: più alto = più splitting. 0.45 è un
+    # punto di partenza ragionevole per CAM++ su parlato non-mandarino con
+    # segmenti brevi (0.6 sovra-segmentava); tarare per modello/lingua (vedi docs).
+    threshold: float = 0.45
     warmup_seconds: float = 60.0
     min_update_seconds: float = 1.0
 
@@ -121,7 +124,6 @@ class SpeakerTaggingStats:
 @dataclass(slots=True)
 class _Cluster:
     cluster_id: int
-    stable_label: str
     centroid: tuple[float, ...]
     talk_time_seconds: float
     updates: int
@@ -134,7 +136,6 @@ class OnlineSpeakerClusterer:
         self._config = config or SpeakerClusteringConfig()
         self._clusters: list[_Cluster] = []
         self._next_cluster_id = 1
-        self._next_label_id = 1
         self._total_utterances = 0
         self._clustered_utterances = 0
         self._unknown_utterances = 0
@@ -206,13 +207,11 @@ class OnlineSpeakerClusterer:
     def _new_cluster(self, vector: tuple[float, ...], duration: float) -> _Cluster:
         cluster = _Cluster(
             cluster_id=self._next_cluster_id,
-            stable_label=f"speaker_{self._next_label_id}",
             centroid=vector,
             talk_time_seconds=duration,
             updates=1,
         )
         self._next_cluster_id += 1
-        self._next_label_id += 1
         self._clusters.append(cluster)
         return cluster
 
@@ -243,7 +242,7 @@ class OnlineSpeakerClusterer:
     def _label_for(self, cluster: _Cluster) -> str:
         if cluster.cluster_id == self._streamer_cluster_id:
             return STREAMER
-        return cluster.stable_label
+        return OTHER
 
     def _unknown(self) -> SpeakerAssignment:
         self._unknown_utterances += 1
@@ -339,7 +338,7 @@ class EmbeddingSpeakerTagger:
         self._clusterer = clusterer or OnlineSpeakerClusterer()
 
     def tag(self, segment: SpeechSegment) -> str:
-        """Return `streamer`, `speaker_N`, or `?` for one VAD utterance."""
+        """Return `streamer`, `altro`, or `?` for one VAD utterance."""
         embedding = self._embedding_backend.embed(segment)
         duration = speech_segment_duration_seconds(segment)
         return self._clusterer.assign(

@@ -1248,6 +1248,29 @@ def test_suggester_situation_with_perception():
     assert "cosa ne pensate del nuovo piano?" in tail
 
 
+def test_suggester_situation_with_altro_speaker_reads_naturally():
+    # Con lo speaker collettivo `altro`, la vecchia frase "qualcosa di altro"
+    # collide con l'idioma "qualcosa d'altro" (= "qualcos'altro"): la situazione
+    # deve restare grammaticale.
+    builder = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.SUGGESTER
+    )
+    perception = _speech(4.0, "cosa ne pensate?", speaker="altro")
+    prompt = builder.build(
+        recent=[_msg(1.0, "ciao")],
+        trigger=Trigger(
+            reason="suggestion_eval",
+            perception=perception,
+            kind="suggestion_eval",
+            interlocutor="altro",
+        ),
+    )
+
+    tail = prompt[prompt.rindex("## SITUAZIONE") :]
+    assert "qualcosa di altro" not in tail
+    assert "altro ha appena detto qualcosa" in tail
+
+
 def test_suggester_situation_without_perception():
     builder = PromptBuilder(
         _blocks(), commentator_style=CommentatorStyle.SUGGESTER

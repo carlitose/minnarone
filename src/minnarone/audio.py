@@ -43,6 +43,10 @@ from .store import PerceptionStore
 # sorgenti audio (video riprodotti, ospiti, ecc.) NON devono mai ricevere questa
 # etichetta: è il discrimine di EC02.
 STREAMER = "streamer"
+# Etichetta collettiva per ogni voce non-streamer. Il clustering interno resta
+# per-cluster (cluster_id/centroidi), ma l'etichetta esposta collassa in
+# un'unica identità "altro": si distingue solo l'operatore dal resto.
+OTHER = "altro"
 UNKNOWN_SPEAKER = "?"
 
 

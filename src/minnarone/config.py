@@ -648,13 +648,8 @@ def _speaker_clustering_config_from_dict(
             + ", ".join(f"speaker_clustering.{key}" for key in unknown)
         )
     try:
-        return SpeakerClusteringConfig(
-            threshold=data.get("threshold", 0.6),  # type: ignore[arg-type]
-            warmup_seconds=data.get("warmup_seconds", 60.0),  # type: ignore[arg-type]
-            min_update_seconds=data.get(
-                "min_update_seconds", 1.0
-            ),  # type: ignore[arg-type]
-        )
+        kwargs = {key: data[key] for key in allowed if key in data}
+        return SpeakerClusteringConfig(**kwargs)  # type: ignore[arg-type]
     except SpeakerConfigError as exc:
         raise ConfigError(f"speaker_clustering.{exc}") from exc
 

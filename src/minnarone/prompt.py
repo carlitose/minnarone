@@ -371,9 +371,11 @@ class PromptBuilder:
         else:
             raw_speaker = trigger.perception.speaker or trigger.interlocutor
             speaker = _sanitize_display_token(raw_speaker)
-            speaker_label = f" di {speaker}" if speaker else ""
+            # Frase soggetto-prima: con label collettivi come `altro` la vecchia
+            # "qualcosa di altro" collideva con l'idioma "qualcosa d'altro".
+            subject = speaker if speaker else "Qualcuno"
             situation_line = (
-                f"Qualcuno ha appena detto qualcosa{speaker_label} "
+                f"{subject} ha appena detto qualcosa "
                 f"({trigger.reason}); valuta se l'operatore dovrebbe "
                 "chiedere o menzionare qualcosa:\n"
                 f"{self._fence(format_perception_line(trigger.perception))}"
