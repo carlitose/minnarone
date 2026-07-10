@@ -8,6 +8,7 @@ only reached when the operator explicitly requests the TUI.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Callable
 from threading import Event, Lock, Thread
 from typing import Protocol
@@ -288,17 +289,33 @@ def _call_build_app(
     build_app: Callable[..., _LiveTuiApp],
     provider: Callable[[], object],
     send_commands: object | None,
+    speaker_commands: object | None,
 ) -> _LiveTuiApp:
-    """Call build_app, passing send_commands if accepted.
+    """Call build_app, passing the command surfaces the factory accepts.
 
-    Existing callers (including tests) may have build_app factories that do
-    not accept the ``send_commands`` keyword. We try the keyword first and
-    fall back to the positional-only signature for backward compatibility.
+    Existing callers (including tests) may have build_app factories that do not
+    accept the ``send_commands`` and/or ``speaker_commands`` keywords. We inspect
+    the factory signature and pass only the keywords it declares, then call it
+    exactly once. Introspection (rather than a TypeError-cascade) means a genuine
+    TypeError raised inside build_app's body surfaces instead of being swallowed
+    and silently retried at lower arity.
     """
     try:
-        return build_app(provider, send_commands=send_commands)
-    except TypeError:
+        params = inspect.signature(build_app).parameters
+    except (TypeError, ValueError):
+        # Builtins / C factories may not be introspectable; call as-is.
         return build_app(provider)
+    accepts_var_keyword = any(
+        param.kind is inspect.Parameter.VAR_KEYWORD for param in params.values()
+    )
+    kwargs: dict[str, object | None] = {}
+    for name, value in (
+        ("send_commands", send_commands),
+        ("speaker_commands", speaker_commands),
+    ):
+        if accepts_var_keyword or name in params:
+            kwargs[name] = value
+    return build_app(provider, **kwargs)
 
 
 def _build_send_commands(agent: _LiveAgent) -> object | None:
@@ -323,6 +340,32 @@ def _build_send_commands(agent: _LiveAgent) -> object | None:
 
             event_recorder = RunEventRecorder(debug_dir)
     return SendCommandSurface(send_policy, event_recorder=event_recorder)
+
+
+def _build_speaker_commands(agent: _LiveAgent) -> object | None:
+    """Build a SpeakerCommandSurface if the agent exposes a marking-capable tagger.
+
+    The surface is the TUI's speaker-side mutation channel: mark current
+    streamer. When no marking-capable speaker tagger is present (console
+    runtime, or an audio-less config), the TUI stays read-only on the speaker
+    side.
+    """
+    tagger = getattr(agent, "speaker_diagnostics", None)
+    if tagger is None:
+        return None
+    if not hasattr(tagger, "mark_current_speaker_as_streamer"):
+        return None
+    from .speaker_commands import SpeakerCommandSurface
+
+    event_recorder = None
+    run_session = getattr(agent, "run_session", None)
+    if run_session is not None:
+        debug_dir = getattr(run_session, "debug_dir", None)
+        if debug_dir is not None:
+            from .run_events import RunEventRecorder
+
+            event_recorder = RunEventRecorder(debug_dir)
+    return SpeakerCommandSurface(tagger, event_recorder=event_recorder)
 
 
 def run_live_tui(
@@ -350,7 +393,10 @@ def run_live_tui(
         )
         snapshots = _ObservabilitySnapshotBridge(agent.observability_snapshot)
         send_commands = _build_send_commands(agent)
-        app = _call_build_app(build_app, snapshots.provider, send_commands)
+        speaker_commands = _build_speaker_commands(agent)
+        app = _call_build_app(
+            build_app, snapshots.provider, send_commands, speaker_commands
+        )
         runtime = _BackgroundAgentRuntime(
             agent,
             snapshots=snapshots,

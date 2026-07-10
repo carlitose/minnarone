@@ -117,6 +117,7 @@ def build_dashboard_app(
     *,
     refresh_interval: float = 0.5,
     send_commands: object | None = None,
+    speaker_commands: object | None = None,
 ):
     """Costruisce l'app Textual che rende lo snapshot, aggiornandolo a intervalli.
 
@@ -146,12 +147,20 @@ def build_dashboard_app(
         BINDINGS = [
             Binding("k", "kill_switch", "Kill-switch", show=send_commands is not None),
             Binding("p", "promote", "Promote", show=send_commands is not None),
+            Binding(
+                "s",
+                "mark_streamer",
+                "Marca streamer",
+                show=speaker_commands is not None,
+            ),
         ]
 
         def __init__(self) -> None:
             super().__init__()
             self._provider = snapshot_provider
             self._send_commands = send_commands
+            self._speaker_commands = speaker_commands
+            self._streamer_feedback: str | None = None
             self._panels: dict[str, Static] = {}
             self._panel_containers: dict[str, VerticalScroll] = {}
             self._status_bar: Static | None = None
@@ -230,6 +239,22 @@ def build_dashboard_app(
                 # First press: enter pending-confirmation state
                 self._promote_pending_at = now
 
+        def action_mark_streamer(self) -> None:
+            """Mark the current speaker as streamer: instant, single press.
+
+            The only speaker-side mutation. Delegates to the speaker command
+            surface (which pins the last utterance's cluster) and surfaces the
+            accepted/rejected outcome in the status bar.
+            """
+            if self._speaker_commands is None:
+                return
+            mark = getattr(self._speaker_commands, "mark_current_streamer", None)
+            if not callable(mark):
+                return
+            self._streamer_feedback = _mark_streamer_feedback(mark())
+            # Re-render immediately so the operator sees the outcome now.
+            self._render_snapshot()
+
         # -- Snapshot rendering -----------------------------------------------
 
         def _render_snapshot(self) -> None:
@@ -246,7 +271,10 @@ def build_dashboard_app(
                     self._prompt_content.update(text)
                 return
             if self._status_bar is not None:
-                self._status_bar.update(state.render_status_bar())
+                status_text = state.render_status_bar()
+                if self._streamer_feedback:
+                    status_text = f"{status_text} | {self._streamer_feedback}"
+                self._status_bar.update(status_text)
             # Update panel content and toggle visibility for conditional panels.
             active_titles = {p.title for p in panels}
             for panel in panels:
@@ -277,6 +305,15 @@ def build_dashboard_app(
 
 def _panel_id(title: str) -> str:
     return f"panel-{title.lower().replace(' ', '-')}"
+
+
+def _mark_streamer_feedback(result: object) -> str:
+    """Format a mark-streamer outcome for the status bar."""
+    if getattr(result, "accepted", False):
+        cluster_id = getattr(result, "cluster_id", None)
+        return f"streamer marcato (cluster {cluster_id})"
+    reason = getattr(result, "reason", "") or "rifiutato"
+    return f"marcatura streamer rifiutata: {reason}"
 
 
 def run_dashboard(

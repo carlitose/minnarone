@@ -93,6 +93,29 @@ class RunEventRecorder:
             }
         )
 
+    def record_streamer_marked(
+        self,
+        *,
+        cluster_id: int,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Record a manual streamer marking (issue 03) for audit replay.
+
+        The operator pins a cluster as streamer from the TUI; ``actor`` is
+        ``operator`` for these manual actions.
+        """
+        self._append(
+            {
+                "kind": "streamer_marked",
+                "streamer_marked": {
+                    "cluster_id": cluster_id,
+                    "actor": _safe_text(actor) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                },
+            }
+        )
+
     def _append(self, payload: dict[str, object]) -> None:
         with self._lock:
             self._sequence += 1
