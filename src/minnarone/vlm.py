@@ -44,6 +44,7 @@ class QwenVlConfig:
     device_map: str | None = "auto"
     torch_dtype: str | None = "auto"
     attn_implementation: str | None = None
+    quantization: str | None = None
     max_new_tokens: int = 48
     timeout_seconds: float = 30.0
     language: str = "en"
@@ -56,7 +57,7 @@ class QwenVlConfig:
         object.__setattr__(
             self,
             "model",
-            _optional_path(self.model, "model"),
+            _coerce_model_id(self.model),
         )
         device = _non_empty_str(self.device, "device")
         object.__setattr__(self, "device", device)
@@ -85,6 +86,12 @@ class QwenVlConfig:
                 "attn_implementation",
             ),
         )
+        quantization = _optional_non_empty_str(self.quantization, "quantization")
+        if quantization is not None and quantization not in {"4bit", "8bit"}:
+            raise QwenVlConfigError(
+                "quantization deve essere '4bit', '8bit' o null"
+            )
+        object.__setattr__(self, "quantization", quantization)
         language = _non_empty_str(self.language, "language")
         object.__setattr__(self, "language", language)
         prompt = _non_empty_str(self.prompt, "prompt")
@@ -189,7 +196,23 @@ class Qwen2VlCaptioner:
             kwargs["torch_dtype"] = self._resolve_torch_dtype(self._config.torch_dtype)
         if self._config.attn_implementation is not None:
             kwargs["attn_implementation"] = self._config.attn_implementation
+        if self._config.quantization is not None:
+            kwargs["quantization_config"] = self._build_quantization_config()
         return kwargs
+
+    def _build_quantization_config(self) -> object:
+        # bitsandbytes via transformers: NF4 4-bit (o 8-bit) per far stare il
+        # modello in poca VRAM. Import lazy: dipendenza GPU opzionale.
+        from transformers import BitsAndBytesConfig  # noqa: PLC0415 - lazy opzionale
+
+        if self._config.quantization == "4bit":
+            return BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=self._torch.float16,
+            )
+        return BitsAndBytesConfig(load_in_8bit=True)
 
     def _resolve_torch_dtype(self, value: str) -> object:
         if value == "auto":
@@ -530,19 +553,23 @@ def _language_name(language: str) -> str:
     return names.get(language.lower(), language)
 
 
-def _optional_path(value: str | Path | None, field_name: str) -> Path | None:
+def _coerce_model_id(value: str | Path | None) -> str | None:
+    """Normalizza `vlm.model`: repo id HF (es. 'Qwen/Qwen2-VL-2B-Instruct') o
+    path locale. NON va trattato come path del filesystem: su Windows
+    `str(Path("a/b"))` diventa `a\\b`, corrompendo i repo id HF. Si preserva la
+    stringa (i Path in ingresso usano le '/' POSIX, accettate da from_pretrained).
+    """
     if value is None:
         return None
     if isinstance(value, Path):
-        if not str(value):
-            raise QwenVlConfigError(f"{field_name} deve essere non vuoto")
-        return value
-    if not isinstance(value, str):
-        raise QwenVlConfigError(f"{field_name} deve essere una stringa o path")
-    stripped = value.strip()
-    if not stripped:
-        raise QwenVlConfigError(f"{field_name} deve essere non vuoto")
-    return Path(stripped)
+        text = value.as_posix()
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        raise QwenVlConfigError("model deve essere una stringa o path")
+    if not text:
+        raise QwenVlConfigError("model deve essere non vuoto")
+    return text
 
 
 def _optional_non_empty_str(value: object, field_name: str) -> str | None:

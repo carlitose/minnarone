@@ -7,6 +7,15 @@ facts_dir: facts           # cartella dei fatti per interlocutore/canale
 adapter: os_capture        # adapter sorgente (MVP: cattura a livello SO)
 llm_provider: grok         # "grok" | "deepseek" (impl. reale in slice 02)
 
+# Sezione richiesta quando adapter == os_capture: descrive cosa catturare
+# dalla macchina locale (es. una call Teams). L'adapter live arriva in v2.
+os_capture:
+  audio: true              # cattura l'audio di sistema
+  video: true              # cattura lo schermo
+  audio_chunk_seconds: 1.0 # dimensione del chunk audio (secondi)
+  video_fps: 1.0           # frame al secondo campionati dallo schermo
+  monitor: 1               # indice del monitor da catturare (>= 1)
+
 senser_interval: 0.5       # cadenza del Senser (secondi)
 idle_interval: 150.0       # commento proattivo in assenza di trigger (secondi)
 recent_chat_window: 15     # quanti messaggi di chat recenti nel prompt

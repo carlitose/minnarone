@@ -7,8 +7,6 @@ Le parti async usano `asyncio.run` per non dipendere da plugin pytest.
 import asyncio
 import struct
 
-import pytest
-
 from minnarone.audio import (
     STREAMER,
     Asr,
@@ -247,11 +245,15 @@ def test_os_capture_adapter_stop_halts_stream(tmp_path):
     assert asyncio.run(run()) == []
 
 
-def test_device_capture_source_is_optional_and_not_loaded_afk():
-    # Il backend di device reale è un percorso opzionale: non disponibile AFK,
-    # ma il modulo si carica senza dipendenze pesanti. Slot per la cattura reale.
-    with pytest.raises(NotImplementedError):
-        make_device_capture_source()
+def test_device_capture_source_is_lazy_and_touches_no_hardware():
+    # Il backend di device reale è un percorso opzionale LAZY: costruirlo
+    # ritorna un async generator senza importare soundcard né aprire alcun
+    # device (l'hardware si apre solo alla prima iterazione). Così build e
+    # --check non toccano hardware e il modulo si carica senza l'extra.
+    source = make_device_capture_source()
+    assert hasattr(source, "__anext__")
+    # Chiude il generatore senza mai iterarlo: nessun device aperto.
+    asyncio.run(source.aclose())
 
 
 def test_integration_adapter_events_through_perceiver_land_in_store(tmp_path):

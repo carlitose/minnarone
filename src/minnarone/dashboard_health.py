@@ -263,6 +263,10 @@ def _video_health(state) -> SourceHealth:
         return SourceHealth("idle", "suspicious: video observed without captions")
     if state.video.frames_seen or (adapter is not None and adapter.produced):
         return SourceHealth("idle", "video observed without captions yet")
+    if stats is not None and (stats.queued or stats.dropped):
+        # Frame di schermo entrati in coda ma non ancora descritti (es. warm-up
+        # del VLM): resta visibile come "busy" invece di sparire come "unknown".
+        return SourceHealth("busy", "video queued, awaiting captions")
     return SourceHealth("unknown")
 
 
@@ -315,6 +319,10 @@ def _vlm_health(state) -> SourceHealth:
         return SourceHealth("idle", "suspicious: sampled video has no captions")
     if state.video.sampled:
         return SourceHealth("idle", "sampled without captions yet")
+    if stats is not None and (stats.queued or stats.dropped):
+        # Frame in coda per il captioner ma nessuna caption ancora (es. il
+        # modello si sta caricando): visibile come "busy", non "unknown".
+        return SourceHealth("busy", "captioning in progress")
     return SourceHealth("unknown")
 
 

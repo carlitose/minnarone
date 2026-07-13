@@ -3,6 +3,8 @@
 import asyncio
 import json
 
+import pytest
+
 from minnarone.audio import AudioChunk, SpeechSegment
 from minnarone.fakes import FakeSourceAdapter
 from minnarone.source import RawEvent
@@ -153,6 +155,35 @@ def test_smoke_artifacts_write_capped_video_frames(tmp_path):
     assert video_files[0].read_bytes() == b"jpeg-one"
     stats = json.loads(artifacts.stats_path.read_text())
     assert stats["video_events"] == 2
+    assert stats["video_frames_saved"] == 1
+
+
+def test_smoke_artifacts_encode_ndarray_video_frame_to_jpeg(tmp_path):
+    # Un frame ndarray RGB (cattura schermo mss / PyAV rgb24), NON bytes JPEG:
+    # il writer deve codificarlo in un JPEG valido, non trattarlo come bytes.
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    artifacts = TwitchSmokeArtifacts(tmp_path / "smoke")
+    frame = np.zeros((4, 6, 3), dtype=np.uint8)
+    frame[:, :, 0] = 255  # rosso pieno
+
+    assert artifacts.record(
+        RawEvent(
+            channel="video",
+            payload=VideoFrame(pixels=frame, source_label="screen", ts=1.0),
+            ts=1.0,
+        )
+    )
+    artifacts.write_stats()
+
+    video_files = sorted((tmp_path / "smoke" / "raw" / "video").glob("*.jpg"))
+    assert [path.name for path in video_files] == ["video-0001.jpg"]
+    with Image.open(video_files[0]) as img:
+        assert img.format == "JPEG"
+        assert img.size == (6, 4)  # PIL espone (width, height) da un ndarray HxW
+    stats = json.loads(artifacts.stats_path.read_text())
     assert stats["video_frames_saved"] == 1
 
 

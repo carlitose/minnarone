@@ -114,9 +114,14 @@ class TwitchSmokeArtifacts:
                 index = self.stats.video_frames_saved + 1
                 frame_path = self._video_dir / f"video-{index:04d}.jpg"
                 pixels = event.payload.pixels
-                if not isinstance(pixels, (bytes, bytearray, memoryview)):
-                    raise TypeError("VideoFrame.pixels deve essere bytes-like")
-                frame_path.write_bytes(bytes(pixels))
+                if isinstance(pixels, (bytes, bytearray, memoryview)):
+                    # Backend che emettono già JPEG (es. reader mjpeg Twitch).
+                    frame_path.write_bytes(bytes(pixels))
+                else:
+                    # ndarray RGB (cattura schermo mss / frame PyAV rgb24) o
+                    # immagine PIL: codifica in JPEG via Pillow (import lazy,
+                    # come gli altri backend di cattura opzionali).
+                    _save_frame_as_jpeg(pixels, frame_path)
                 self.stats.video_frames_saved += 1
             return True
         return False
@@ -148,6 +153,25 @@ class TwitchSmokeArtifacts:
     def _record_vad_segment(self, segment: SpeechSegment) -> None:
         self.stats.vad_utterances += 1
         self.stats.vad_utterance_durations_ms.append(_segment_duration_ms(segment))
+
+
+def _save_frame_as_jpeg(pixels: object, path: Path) -> None:
+    """Codifica un frame non-JPEG (ndarray RGB o immagine PIL) in un `.jpg`.
+
+    I backend che emettono già bytes JPEG (es. il reader mjpeg Twitch) vengono
+    scritti direttamente dal chiamante; qui si gestisce il caso ndarray/PIL (es.
+    cattura schermo `mss`, frame PyAV `rgb24`). Pillow è importato lazy: il
+    salvataggio degli artifact frame è un percorso diagnostico opzionale.
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415 - import lazy opzionale
+    except ImportError as exc:  # pragma: no cover - richiede ambiente senza Pillow
+        raise TypeError(
+            "VideoFrame.pixels non è bytes-like e Pillow non è disponibile: "
+            "impossibile salvare il frame come JPEG (installa l'extra os-capture)"
+        ) from exc
+    image = pixels if hasattr(pixels, "save") else Image.fromarray(pixels)
+    image.convert("RGB").save(path, "JPEG")
 
 
 def _segment_duration_ms(segment: SpeechSegment) -> float:

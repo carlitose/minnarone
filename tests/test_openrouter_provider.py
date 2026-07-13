@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from minnarone.config import Config
+from minnarone.config import Config, OsCaptureConfig
 from minnarone.llm import LLMError, LLMProvider, LLMResult, LLMTimeout
 from minnarone.openrouter import (
     OPENROUTER_URL,
@@ -268,6 +268,7 @@ def _config(provider, params=None):
         adapter="os_capture",
         llm_provider=provider,
         llm_params=params or {},
+        os_capture=OsCaptureConfig(),
     )
 
 

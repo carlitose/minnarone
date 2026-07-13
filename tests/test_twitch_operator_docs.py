@@ -64,6 +64,25 @@ def test_twitch_commentator_example_config_loads_console_only_shape():
     assert cfg.commentator.idle_interval == 30.0
 
 
+def test_teams_commentator_preset_loads_os_capture_private_shape():
+    cfg = Config.load(Path("examples/teams-commentator.yaml"))
+
+    assert cfg.mode is OutputMode.PRIVATE
+    assert cfg.adapter == "os_capture"
+    assert cfg.twitch is None
+    assert cfg.os_capture is not None
+    assert cfg.os_capture.audio is True
+    assert cfg.os_capture.video is True
+    assert cfg.os_capture.video_fps == 1.0
+    assert cfg.os_capture.monitor == 1
+    assert cfg.commentator.enabled is True
+    assert cfg.commentator.style is CommentatorStyle.OPERATOR
+    assert cfg.commentator.language == "it"
+    # Nessun VALORE segreto hardcoded nel preset: non deve dichiarare una chiave
+    # (i commenti possono nominare OPENROUTER_API_KEY, che arriva dall'ambiente).
+    assert not cfg.llm_params.get("api_key")
+
+
 def test_original_chat_example_loads_seed_memory_into_prompt():
     cfg = Config.load(Path("examples/twitch-original-chat.example.yaml"))
 

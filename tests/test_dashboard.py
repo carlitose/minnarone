@@ -460,6 +460,23 @@ def test_asr_and_vlm_health_do_not_claim_unrelated_queue_failures():
     assert state.source_health["vlm"].status == "unknown"
 
 
+def test_video_and_vlm_health_visible_as_busy_during_warmup():
+    # Frame di schermo accodati/droppati ma nessuna caption ancora (es. warm-up
+    # del VLM): video e vlm devono restare VISIBILI come "busy" nell'header,
+    # non sparire come "unknown" (che li ometterebbe dalla status bar).
+    state = DashboardState(
+        queue={
+            "video": QueueChannelDiagnostics(queued=20, processed=0, dropped=18),
+        },
+    )
+
+    assert state.source_health["video"].status == "busy"
+    assert state.source_health["vlm"].status == "busy"
+    status = state.render_status_bar()
+    assert "video=busy" in status
+    assert "vlm=busy" in status
+
+
 def test_status_bar_exposes_loss_counters_and_bounds_dynamic_segments():
     state = DashboardState(
         channel="channel-" + ("x" * 200),

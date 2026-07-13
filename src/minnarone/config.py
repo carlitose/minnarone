@@ -118,6 +118,20 @@ class CommentatorConfig:
             )
 
 
+def _coerce_config_float(value: object, field_name: str) -> float:
+    """Converte un valore numerico in float, rifiutando i booleani.
+
+    Condivisa fra `TwitchConfig` e `OsCaptureConfig`: `True`/`False` sono
+    interi in Python, quindi vanno rifiutati esplicitamente prima di `float()`.
+    """
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} deve essere numerico")
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{field_name} deve essere numerico") from exc
+
+
 @dataclass(frozen=True, slots=True)
 class TwitchConfig:
     """Configurazione dell'adapter Twitch.
@@ -199,12 +213,77 @@ class TwitchConfig:
 
     @staticmethod
     def _coerce_float(value: object, field_name: str) -> float:
-        if isinstance(value, bool):
-            raise ConfigError(f"{field_name} deve essere numerico")
+        return _coerce_config_float(value, field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class OsCaptureConfig:
+    """Configurazione dell'adapter di cattura del sistema operativo.
+
+    Osserva l'output audio/video della macchina locale (es. una call Teams)
+    invece di uno stream remoto. Modella la sezione `os_capture:` del file YAML.
+    """
+
+    audio: bool = True
+    video: bool = True
+    audio_chunk_seconds: float = 1.0
+    video_fps: float = 1.0
+    monitor: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ("audio", "video"):
+            if not isinstance(getattr(self, name), bool):
+                raise ConfigError(f"os_capture.{name} deve essere booleano")
+        if not (self.audio or self.video):
+            raise ConfigError("os_capture deve abilitare almeno audio o video")
+
+        audio_chunk_seconds = _coerce_config_float(
+            self.audio_chunk_seconds,
+            "os_capture.audio_chunk_seconds",
+        )
         try:
-            return float(value)  # type: ignore[arg-type]
+            pcm_chunk_size_bytes(audio_chunk_seconds)
         except (TypeError, ValueError) as exc:
-            raise ConfigError(f"{field_name} deve essere numerico") from exc
+            raise ConfigError(f"os_capture.audio_chunk_seconds: {exc}") from exc
+        object.__setattr__(self, "audio_chunk_seconds", audio_chunk_seconds)
+
+        raw_video_fps = _coerce_config_float(self.video_fps, "os_capture.video_fps")
+        try:
+            video_fps = validate_video_fps(raw_video_fps)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"os_capture.video_fps: {exc}") from exc
+        object.__setattr__(self, "video_fps", video_fps)
+
+        if (
+            isinstance(self.monitor, bool)
+            or not isinstance(self.monitor, int)
+            or self.monitor < 1
+        ):
+            raise ConfigError("os_capture.monitor deve essere un intero >= 1")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "OsCaptureConfig":
+        """Costruisce e valida il blocco `os_capture:`, rifiutando campi ignoti."""
+        allowed = {
+            "audio",
+            "video",
+            "audio_chunk_seconds",
+            "video_fps",
+            "monitor",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "campi os_capture non riconosciuti: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        return cls(
+            audio=data.get("audio", True),  # type: ignore[arg-type]
+            video=data.get("video", True),  # type: ignore[arg-type]
+            audio_chunk_seconds=data.get("audio_chunk_seconds", 1.0),  # type: ignore[arg-type]
+            video_fps=data.get("video_fps", 1.0),  # type: ignore[arg-type]
+            monitor=data.get("monitor", 1),  # type: ignore[arg-type]
+        )
 
 
 def _vad_config_from_dict(data: dict[str, object]) -> VadConfig:
@@ -341,6 +420,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
         "device_map",
         "torch_dtype",
         "attn_implementation",
+        "quantization",
         "max_new_tokens",
         "timeout_seconds",
         "language",
@@ -361,6 +441,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
             device_map=data.get("device_map", "auto"),  # type: ignore[arg-type]
             torch_dtype=data.get("torch_dtype", "auto"),  # type: ignore[arg-type]
             attn_implementation=data.get("attn_implementation"),  # type: ignore[arg-type]
+            quantization=data.get("quantization"),  # type: ignore[arg-type]
             max_new_tokens=data.get("max_new_tokens", 48),  # type: ignore[arg-type]
             timeout_seconds=data.get("timeout_seconds", 30.0),  # type: ignore[arg-type]
             language=data.get("language", "en"),  # type: ignore[arg-type]
@@ -427,6 +508,7 @@ class Config:
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     auto_memory: bool = False
     twitch: TwitchConfig | None = None
+    os_capture: OsCaptureConfig | None = None
     vad: VadConfig = field(default_factory=VadConfig)
     asr: AsrConfig = field(default_factory=AsrConfig)
     speaker_embedding: SpeakerEmbeddingConfig = field(
@@ -448,6 +530,10 @@ class Config:
                 raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
         if self.twitch is not None and not isinstance(self.twitch, TwitchConfig):
             raise ConfigError("twitch deve essere una TwitchConfig")
+        if self.os_capture is not None and not isinstance(
+            self.os_capture, OsCaptureConfig
+        ):
+            raise ConfigError("os_capture deve essere una OsCaptureConfig")
         if not isinstance(self.vad, VadConfig):
             raise ConfigError("vad deve essere una VadConfig")
         if not isinstance(self.asr, AsrConfig):
@@ -467,6 +553,8 @@ class Config:
         self.commentator.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
+        if self.adapter == "os_capture" and self.os_capture is None:
+            raise ConfigError("adapter 'os_capture' richiede la sezione 'os_capture'")
         if self.senser_interval <= 0:
             raise ConfigError("senser_interval deve essere > 0")
         if self.idle_interval <= 0:
@@ -508,6 +596,14 @@ class Config:
         if twitch_raw is not None and not isinstance(twitch_raw, dict):
             raise ConfigError("'twitch' deve essere una tabella")
         twitch = TwitchConfig.from_dict(twitch_raw) if twitch_raw is not None else None
+        os_capture_raw = data.get("os_capture")
+        if os_capture_raw is not None and not isinstance(os_capture_raw, dict):
+            raise ConfigError("'os_capture' deve essere una tabella")
+        os_capture = (
+            OsCaptureConfig.from_dict(os_capture_raw)
+            if os_capture_raw is not None
+            else None
+        )
         vad_raw = data.get("vad", {})
         if not isinstance(vad_raw, dict):
             raise ConfigError("'vad' deve essere una tabella")
@@ -547,6 +643,7 @@ class Config:
                 adapter=data.get("adapter"),  # type: ignore[arg-type]
                 llm_provider=data.get("llm_provider"),  # type: ignore[arg-type]
                 twitch=twitch,
+                os_capture=os_capture,
                 agent_name=str(data.get("agent_name", "minnarone")),
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]
                 senser_interval=float(data.get("senser_interval", 0.5)),

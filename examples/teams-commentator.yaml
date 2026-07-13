@@ -1,0 +1,61 @@
+# Preset pronto all'uso: commentatore locale su meeting Teams via cattura SO.
+#
+# Osserva audio e schermo della macchina locale (una call Teams) e produce
+# commenti PRIVATI per il solo operatore: nessun output pubblico, nessuna chat
+# esterna. Le credenziali/API key restano FUORI da questo file: il provider LLM
+# legge la chiave dall'ambiente (es. OPENROUTER_API_KEY).
+#
+# Validazione a secco (nessun hardware aperto, nessuna rete):
+#   python -m minnarone examples/teams-commentator.yaml --check
+
+mode: private              # obbligatorio con commentator.enabled: true (solo output locale)
+soul_path: original-chat-memory/soul.md  # identità dell'agente (relativo a questo file)
+facts_dir: original-chat-memory/facts    # cartella dei fatti per interlocutore/canale
+adapter: os_capture        # sorgente: cattura audio/video a livello di sistema operativo
+llm_provider: grok         # provider LLM; la API key arriva dall'ambiente
+agent_name: minnarone      # nome che l'agente riconosce come rivolto a sé
+
+# Cosa catturare dalla macchina locale durante la call Teams. Valori
+# conservativi coerenti con la policy di backpressure dell'ADR: fps basso e
+# chunk audio piccoli per non saturare la work queue delle percezioni.
+os_capture:
+  audio: true              # cattura l'audio di sistema (voce dei partecipanti)
+  video: true              # cattura lo schermo (slide, volti, testo condiviso)
+  audio_chunk_seconds: 1.0 # dimensione del chunk audio (secondi)
+  video_fps: 1.0           # frame al secondo campionati dallo schermo (basso di proposito)
+  monitor: 1               # indice del monitor da catturare (>= 1)
+
+# Modalità commentatore: commenti privati destinati all'operatore.
+commentator:
+  enabled: true            # attiva il commentatore locale (richiede mode: private)
+  style: operator          # tono/registro dei commenti
+  language: it             # lingua dei commenti
+  idle_interval: 30.0      # commento proattivo se non arrivano trigger (secondi)
+
+senser_interval: 0.5       # cadenza del Senser (secondi)
+idle_interval: 150.0       # fallback proattivo globale in assenza di trigger (secondi)
+summarizer_interval: 30.0  # cadenza del Summarizer (memoria a breve termine)
+recent_chat_window: 20     # quante percezioni recenti includere nel prompt
+perception_queue_size: 32  # tetto della work queue percezioni (backpressure)
+perception_shutdown_timeout: 5.0
+
+llm_params:
+  thinking: low            # parametri passati al provider
+
+# Vision captioning locale (Qwen2-VL). Il prompt di default del backend è
+# pensato per stream Twitch e porta il modello a inventare contesto Twitch:
+# per una call Teams serve un prompt neutro orientato al contenuto a schermo.
+vlm:
+  language: it
+  prompt: >-
+    Describe the visible screen content in one concise Italian sentence.
+    It may be a video call, shared slides, documents, or applications.
+    Mention only observable people, windows, UI, and readable text.
+    Do not speculate.
+
+# --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
+disclosure:
+  announce_ai: false       # se l'agente dichiara di essere un'AI
+
+retention:
+  perceptions_days: 7      # per quanto conservare le percezioni (null = sempre)

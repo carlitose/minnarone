@@ -3,16 +3,21 @@
 `TwitchStreamAdapter` composes the independent chat/audio/video readers behind
 one lifecycle and one bounded `RawEvent` stream. It remains a Twitch edge
 adapter: the core source port still only sees `RawEvent` values.
+
+Il merge/backpressure NON è reimplementato qui: è delegato interamente a
+`MergingSourceAdapter` (motore neutro e già testato in isolamento). Questo
+modulo conserva solo la parte Twitch-specifica: `_build_readers` (costruzione
+dei reader chat/audio/video con i relativi controlli di credenziali) e i
+default Twitch. `stats()` riavvolge `MergeStats` in `TwitchStreamStats` per non
+alterare la superficie che la TUI/osservabilità già legge.
 """
 
 from __future__ import annotations
 
-import asyncio
-from collections import deque
 from collections.abc import AsyncIterator, Mapping
-from contextlib import suppress
 from dataclasses import dataclass, field
 
+from .merge import MergeRuntimeError, MergingSourceAdapter
 from .source import RawEvent, SourceAdapter
 from .twitch_audio import ProcessRunner, TwitchAudioReader
 from .twitch_chat import ConnectIRC, TwitchChatReader
@@ -63,11 +68,7 @@ class TwitchStreamAdapter(SourceAdapter):
         video_stream_opener: TwitchVideoStreamOpener | None = None,
         video_frame_decoder: VideoFrameDecoder | None = None,
     ) -> None:
-        if queue_size <= 0:
-            raise ValueError("queue_size deve essere > 0")
-        if cleanup_timeout <= 0:
-            raise ValueError("cleanup_timeout deve essere > 0")
-        self._readers = dict(readers) if readers is not None else self._build_readers(
+        built = dict(readers) if readers is not None else self._build_readers(
             channel=channel,
             username=username,
             oauth_token=oauth_token,
@@ -83,90 +84,54 @@ class TwitchStreamAdapter(SourceAdapter):
             video_stream_opener=video_stream_opener,
             video_frame_decoder=video_frame_decoder,
         )
-        if not self._readers:
+        if not built:
             raise ValueError("abilita almeno un canale Twitch")
-        self._validate_reader_channels(self._readers)
-        self._queue_size = queue_size
-        self._cleanup_timeout = cleanup_timeout
-        self._queue: deque[RawEvent] = deque()
-        self._event_available = asyncio.Condition()
-        self._tasks: dict[str, asyncio.Task[None]] = {}
-        self._active_channels: set[str] = set()
-        self._running = False
-        self._started_once = False
-        self._produced = {name: 0 for name in self._readers}
-        self._dropped = {name: 0 for name in self._readers}
-        self._failures: dict[str, str] = {}
+        # Validazione dei canali con il messaggio Twitch-specifico PRIMA di
+        # delegare: il motore neutro validerebbe con un altro testo.
+        self._validate_reader_channels(built)
+        # Tutto il merge/backpressure vive nel motore neutro: chat è il canale
+        # prioritario (invariata la policy di drop media-prima-di-chat).
+        self._merger = MergingSourceAdapter(
+            readers=built,
+            priority_channels=("chat",),
+            queue_size=queue_size,
+            cleanup_timeout=cleanup_timeout,
+        )
 
     def channels(self) -> set[str]:
-        return set(self._readers)
+        return self._merger.channels()
 
     async def start(self) -> None:
-        if self._running:
-            return
-        self._queue.clear()
-        self._failures.clear()
-        self._produced = self._empty_counts()
-        self._dropped = self._empty_counts()
-        self._active_channels = set(self._readers)
-        self._running = True
-        self._started_once = True
-        self._tasks = {
-            channel: asyncio.create_task(self._run_reader(channel, reader))
-            for channel, reader in self._readers.items()
-        }
+        await self._merger.start()
 
     async def stop(self) -> None:
-        self._running = False
-        tasks = dict(self._tasks)
-        for task in tasks.values():
-            if not task.done():
-                task.cancel()
-        if tasks:
-            done, pending = await asyncio.wait(
-                tasks.values(),
-                timeout=self._cleanup_timeout * 2,
-            )
-            for channel, task in tasks.items():
-                if task in pending:
-                    self._record_failure(channel, "cleanup timed out")
-                    task.cancel()
-                elif task in done:
-                    with suppress(asyncio.CancelledError):
-                        exception = task.exception()
-                        if exception is not None:
-                            self._record_failure(channel, str(exception))
-        self._tasks = {}
-        self._active_channels.clear()
-        async with self._event_available:
-            self._event_available.notify_all()
+        await self._merger.stop()
 
     async def events(self) -> AsyncIterator[RawEvent]:
-        if not self._running and not self._started_once:
-            await self.start()
-        while True:
-            async with self._event_available:
-                await self._event_available.wait_for(
-                    lambda: bool(self._queue)
-                    or not self._running
-                    or not self._active_channels
-                )
-                if self._queue:
-                    event = self._queue.popleft()
-                    self._event_available.notify_all()
-                elif not self._running or not self._active_channels:
-                    self._raise_if_unproductive_failure()
-                    return
-                else:  # pragma: no cover - wait_for predicate prevents this.
-                    continue
-            yield event
+        # Traduce il guasto fatale del motore neutro nell'errore Twitch-specifico
+        # atteso dai chiamanti, senza cambiare la semantica di produzione.
+        try:
+            async for event in self._merger.events():
+                yield event
+        except MergeRuntimeError as exc:
+            # Riscrive il prefisso del motore neutro nel wording Twitch storico
+            # atteso dall'operatore (il riepilogo per-canale resta invariato).
+            message = str(exc).replace(
+                "merge failed before producing events:",
+                "Twitch stream failed before producing events:",
+                1,
+            )
+            raise TwitchStreamRuntimeError(message) from exc
 
     def stats(self) -> TwitchStreamStats:
+        # Riavvolge `MergeStats` nella forma `TwitchStreamStats` che la
+        # TUI/osservabilità e i test già leggono (running/produced/dropped/failures).
+        snapshot = self._merger.stats()
         return TwitchStreamStats(
-            running=self._running,
-            produced=dict(self._produced),
-            dropped=dict(self._dropped),
-            failures=dict(self._failures),
+            running=snapshot.running,
+            produced=snapshot.produced,
+            dropped=snapshot.dropped,
+            failures=snapshot.failures,
         )
 
     @staticmethod
@@ -221,76 +186,6 @@ class TwitchStreamAdapter(SourceAdapter):
                 raise ValueError(
                     f"reader {channel!r} deve esporre solo il canale {channel!r}"
                 )
-
-    async def _run_reader(self, channel: str, reader: SourceAdapter) -> None:
-        try:
-            await reader.start()
-            async for event in reader.events():
-                await self._publish(event)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - per-channel isolation.
-            self._record_failure(channel, str(exc))
-        finally:
-            await self._stop_reader(channel, reader)
-            self._active_channels.discard(channel)
-            if not self._active_channels:
-                self._running = False
-            async with self._event_available:
-                self._event_available.notify_all()
-
-    async def _stop_reader(self, channel: str, reader: SourceAdapter) -> None:
-        try:
-            await asyncio.wait_for(reader.stop(), timeout=self._cleanup_timeout)
-        except TimeoutError:
-            self._record_failure(channel, "cleanup timed out")
-        except Exception as exc:  # noqa: BLE001 - exposed in stats.
-            self._record_failure(channel, str(exc))
-
-    async def _publish(self, event: RawEvent) -> None:
-        async with self._event_available:
-            if len(self._queue) < self._queue_size:
-                self._queue.append(event)
-                self._produced[event.channel] = self._produced.get(event.channel, 0) + 1
-                self._event_available.notify_all()
-                return
-
-            if event.channel == "chat" and self._drop_one_media_event():
-                self._queue.append(event)
-                self._produced[event.channel] = self._produced.get(event.channel, 0) + 1
-                self._event_available.notify_all()
-                return
-
-            self._dropped[event.channel] = self._dropped.get(event.channel, 0) + 1
-            self._event_available.notify_all()
-
-    def _drop_one_media_event(self) -> bool:
-        for index, queued in enumerate(self._queue):
-            if queued.channel != "chat":
-                del self._queue[index]
-                self._dropped[queued.channel] = self._dropped.get(queued.channel, 0) + 1
-                return True
-        return False
-
-    def _empty_counts(self) -> dict[str, int]:
-        return {name: 0 for name in self._readers}
-
-    def _record_failure(self, channel: str, message: str) -> None:
-        previous = self._failures.get(channel)
-        if previous is None:
-            self._failures[channel] = message
-        elif message not in previous:
-            self._failures[channel] = f"{previous}; {message}"
-
-    def _raise_if_unproductive_failure(self) -> None:
-        if not self._failures or any(self._produced.values()):
-            return
-        failures = "; ".join(
-            f"{channel}: {message}" for channel, message in sorted(self._failures.items())
-        )
-        raise TwitchStreamRuntimeError(
-            f"Twitch stream failed before producing events: {failures}"
-        )
 
 
 def ordered_twitch_channels(channels: set[str]) -> list[str]:

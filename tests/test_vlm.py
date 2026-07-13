@@ -277,6 +277,26 @@ def test_qwen_config_rejects_custom_device_map_with_explicit_device():
         QwenVlConfig(model="local", device="cpu", device_map="balanced")
 
 
+def test_qwen_config_accepts_quantization_and_rejects_unknown():
+    from minnarone.vlm import QwenVlConfig, QwenVlConfigError
+
+    assert QwenVlConfig(model="local", quantization="4bit").quantization == "4bit"
+    assert QwenVlConfig(model="local", quantization="8bit").quantization == "8bit"
+    assert QwenVlConfig(model="local").quantization is None
+    with pytest.raises(QwenVlConfigError, match="quantization"):
+        QwenVlConfig(model="local", quantization="2bit")
+
+
+def test_qwen_config_preserves_hf_repo_id_slashes():
+    # Un repo id HF non va normalizzato come path: su Windows str(Path("a/b"))
+    # diventa "a\\b" e romperebbe from_pretrained. Deve restare con le "/".
+    from minnarone.vlm import QwenVlConfig
+
+    assert QwenVlConfig(model="Qwen/Qwen2-VL-2B-Instruct").model == (
+        "Qwen/Qwen2-VL-2B-Instruct"
+    )
+
+
 def test_qwen_config_language_changes_default_prompt():
     from minnarone.vlm import QwenVlConfig
 

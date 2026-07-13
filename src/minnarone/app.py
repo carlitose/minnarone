@@ -42,21 +42,27 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 
 from .asr import AsrModelSetupError, FasterWhisperAsr
-from .audio import AudioPerceiver
+from .audio import AudioChunk, AudioPerceiver
+from .capture import (
+    Captured,
+    make_device_capture_source,
+    make_device_screen_capture_source,
+)
 from .chat import ChatPerceiver
-from .config import Config, ConfigError
+from .config import Config, ConfigError, OsCaptureConfig
 from .console import ConsoleOutputRouter
 from .dashboard import DashboardState, snapshot
 from .human import HumanLikeness
 from .llm import LLMProvider
 from .memory import FileMemory, Memory
 from .openrouter import Transport, build_provider
+from .os_capture import OsCaptureAdapter
 from .output import CommentatorStyle, OutputMode, OutputRouter
 from .output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
 from .perception_queue import (
@@ -84,7 +90,7 @@ from .twitch_chat import ConnectIRC
 from .twitch_stream import TwitchStreamAdapter
 from .twitch_video import TwitchVideoStreamOpener, VideoFrameDecoder
 from .vad import StreamingVad, WebRtcVadDetector
-from .video import Captioner, VideoPerceiver
+from .video import Captioner, VideoFrame, VideoPerceiver
 from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
@@ -344,6 +350,55 @@ def _required_twitch_chat_credentials() -> tuple[str, str]:
     return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
 
 
+def _require_media_perceiver(
+    *, enabled: bool, perceiver: object | None, channel_key: str
+) -> None:
+    """Coerenza canale media: abilitato ma senza perceiver → ConfigError chiaro.
+
+    Fattorizza il controllo che sia Twitch sia os_capture applicano ai canali
+    "audio"/"video": se il canale è attivo in config ma il suo perceiver non è
+    stato costruito/iniettato, il wiring non può instradare le percezioni e lo
+    segnala subito (specularmente a come Twitch controlla le credenziali chat).
+    """
+    if enabled and perceiver is None:
+        raise ConfigError(
+            f"{channel_key} richiede un backend locale non cablato nel runtime "
+            f"main: iniettalo o disabilita il canale"
+        )
+
+
+def _lazy_device_audio_source(config: OsCaptureConfig) -> Captured:
+    """Sorgente device audio LAZY: apre soundcard SOLO alla prima iterazione.
+
+    Il backend reale (`make_device_capture_source`) NON è invocato al build né
+    al `--check`: lo si chiama dentro il generatore async, così l'hardware si
+    apre soltanto quando la pompa inizia a iterare dentro `start()`.
+    """
+    async def _source() -> AsyncIterator[AudioChunk]:
+        async for chunk in make_device_capture_source(
+            source_label="system", chunk_seconds=config.audio_chunk_seconds
+        ):
+            yield chunk
+
+    return _source()
+
+
+def _lazy_device_video_source(config: OsCaptureConfig) -> Captured:
+    """Sorgente device schermo LAZY: apre mss/PyAV SOLO alla prima iterazione.
+
+    Come per l'audio, `make_device_screen_capture_source` è invocato dentro il
+    generatore async: nessun device né dipendenza di visione toccati al build.
+    """
+
+    async def _source() -> AsyncIterator[VideoFrame]:
+        async for frame in make_device_screen_capture_source(
+            monitor=config.monitor, source_label="screen", fps=config.video_fps
+        ):
+            yield frame
+
+    return _source()
+
+
 def _configured_adapter(
     config: Config,
     *,
@@ -352,20 +407,30 @@ def _configured_adapter(
     video_perceiver: VideoPerceiver | None = None,
     video_stream_opener: TwitchVideoStreamOpener | None = None,
     video_frame_decoder: VideoFrameDecoder | None = None,
+    os_capture_audio_source: Captured | None = None,
+    os_capture_video_source: Captured | None = None,
 ) -> SourceAdapter | None:
     """Costruisce l'adapter runtime dichiarato in config, se oggi operativo."""
+    if config.adapter == "os_capture" and config.os_capture is not None:
+        return _configured_os_capture_adapter(
+            config.os_capture,
+            audio_perceiver=audio_perceiver,
+            video_perceiver=video_perceiver,
+            os_capture_audio_source=os_capture_audio_source,
+            os_capture_video_source=os_capture_video_source,
+        )
     if config.adapter != "twitch" or config.twitch is None:
         return None
-    if config.twitch.audio and audio_perceiver is None:
-        raise ConfigError(
-            "twitch.audio richiede un backend audio locale non ancora cablato "
-            "nel runtime main: imposta twitch.audio: false per la path chat-only"
-        )
-    if config.twitch.video and video_perceiver is None:
-        raise ConfigError(
-            "twitch.video richiede un backend video locale non ancora cablato "
-            "nel runtime main: imposta twitch.video: false per la path chat-only"
-        )
+    _require_media_perceiver(
+        enabled=config.twitch.audio,
+        perceiver=audio_perceiver,
+        channel_key="twitch.audio",
+    )
+    _require_media_perceiver(
+        enabled=config.twitch.video,
+        perceiver=video_perceiver,
+        channel_key="twitch.video",
+    )
     username: str | None = None
     oauth_token: str | None = None
     if config.twitch.chat:
@@ -386,6 +451,49 @@ def _configured_adapter(
     )
 
 
+def _configured_os_capture_adapter(
+    os_capture: OsCaptureConfig,
+    *,
+    audio_perceiver: AudioPerceiver | None,
+    video_perceiver: VideoPerceiver | None,
+    os_capture_audio_source: Captured | None,
+    os_capture_video_source: Captured | None,
+) -> OsCaptureAdapter:
+    """Compone l'`OsCaptureAdapter` dai canali abilitati, con sorgenti lazy.
+
+    Per ogni canale attivo serve il rispettivo perceiver (già costruito riusando
+    gli helper del path Twitch); se manca è un errore di coerenza. Le sorgenti
+    device sono LAZY quando non iniettate: i test passano liste in-memory, il
+    runtime live differisce l'apertura di soundcard/mss alla prima iterazione,
+    così build e `--check` non toccano hardware.
+    """
+    audio_source: Captured | None = None
+    if os_capture.audio:
+        _require_media_perceiver(
+            enabled=True, perceiver=audio_perceiver, channel_key="os_capture.audio"
+        )
+        audio_source = (
+            os_capture_audio_source
+            if os_capture_audio_source is not None
+            else _lazy_device_audio_source(os_capture)
+        )
+    video_source: Captured | None = None
+    if os_capture.video:
+        _require_media_perceiver(
+            enabled=True, perceiver=video_perceiver, channel_key="os_capture.video"
+        )
+        video_source = (
+            os_capture_video_source
+            if os_capture_video_source is not None
+            else _lazy_device_video_source(os_capture)
+        )
+    return OsCaptureAdapter(
+        os_capture,
+        audio_source=audio_source,
+        video_source=video_source,
+    )
+
+
 def _build_default_audio_perceiver(
     config: Config,
     store: PerceptionStore,
@@ -396,17 +504,22 @@ def _build_default_audio_perceiver(
         [SpeakerEmbeddingConfig], SpeakerEmbeddingBackend
     ]
     | None = None,
+    channel_label: str = "twitch.audio",
 ) -> AudioPerceiver:
-    """Build the local Twitch audio path from VAD + ASR + speaker config."""
+    """Build the local audio path (VAD + ASR + speaker) for the given channel.
+
+    Condiviso da Twitch e os_capture: `channel_label` compare nei messaggi di
+    errore, così l'operatore vede quale canale ha fallito il setup del backend.
+    """
     try:
         detector = vad_detector or WebRtcVadDetector(config.vad)
         vad = StreamingVad(config=config.vad, detector=detector)
     except Exception as exc:  # noqa: BLE001 - wrap backend setup for operators.
-        raise ConfigError(f"twitch.audio VAD setup failed: {exc}") from exc
+        raise ConfigError(f"{channel_label} VAD setup failed: {exc}") from exc
     try:
         asr = FasterWhisperAsr(config.asr, model_factory=asr_model_factory)
     except AsrModelSetupError as exc:
-        raise ConfigError(f"twitch.audio ASR setup failed: {exc}") from exc
+        raise ConfigError(f"{channel_label} ASR setup failed: {exc}") from exc
     try:
         if speaker_embedding_factory is None:
             embedding_backend = SherpaOnnxSpeakerEmbeddingBackend(
@@ -420,11 +533,11 @@ def _build_default_audio_perceiver(
         )
     except SpeakerEmbeddingError as exc:
         raise ConfigError(
-            f"twitch.audio speaker embedding setup failed: {exc}"
+            f"{channel_label} speaker embedding setup failed: {exc}"
         ) from exc
     except Exception as exc:  # noqa: BLE001 - wrap injected/backend setup failures.
         raise ConfigError(
-            f"twitch.audio speaker embedding setup failed: {exc}"
+            f"{channel_label} speaker embedding setup failed: {exc}"
         ) from exc
     return AudioPerceiver(store, vad, asr, speaker_tagger)
 
@@ -470,7 +583,7 @@ def _build_default_video_perceiver(
     *,
     qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
 ) -> VideoPerceiver:
-    """Build the local Twitch video path from Qwen2-VL + video config."""
+    """Build the local video path (Qwen2-VL) shared by Twitch and os_capture."""
     def build_captioner() -> Captioner:
         return (
             qwen_captioner_factory(config.vlm)
@@ -503,6 +616,8 @@ def build_agent(
     qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
     video_stream_opener: TwitchVideoStreamOpener | None = None,
     video_frame_decoder: VideoFrameDecoder | None = None,
+    os_capture_audio_source: Captured | None = None,
+    os_capture_video_source: Captured | None = None,
 ) -> Agent:
     """Compone e cabla TUTTI i moduli da una `Config`, restituendo un `Agent`.
 
@@ -516,9 +631,11 @@ def build_agent(
     `adapter` è una `SourceAdapter` esplicita da cui la pompa di percezione legge
     i `RawEvent`. Se non è passata e `config.adapter == "twitch"`, il runtime
     costruisce il reader Twitch chat-only dalla config e dalle credenziali in
-    ambiente. Per `os_capture`, senza adapter esplicito, `Agent.run()` non pompa
-    percezioni (gira solo il motore di reazione + summarizer): la cattura device
-    resta il passo manuale documentato.
+    ambiente. Per `os_capture` il runtime costruisce un `OsCaptureAdapter` con
+    sorgenti device LAZY: nei test si iniettano `os_capture_audio_source` /
+    `os_capture_video_source` (liste in-memory di `AudioChunk`/`VideoFrame`, zero
+    hardware); live, la sorgente device si apre solo alla prima iterazione dentro
+    `start()`, così build e `--check` non toccano soundcard/mss.
 
     Canali di percezione:
     - "chat" è SEMPRE cablato (nessun modello richiesto): `ChatPerceiver`.
@@ -588,27 +705,20 @@ def build_agent(
     else:
         out_router = _build_router(config.mode, commentator_style=commentator_style)
 
-    if (
-        config.adapter == "twitch"
-        and config.twitch is not None
-        and config.twitch.audio
-        and audio_perceiver is None
-    ):
+    # I perceiver audio/video si costruiscono con GLI STESSI helper per Twitch e
+    # os_capture: il canale è cablato se l'adapter dichiarato lo abilita.
+    if _adapter_enables_audio(config) and audio_perceiver is None:
         audio_perceiver = _build_default_audio_perceiver(
             config,
             store,
             asr_model_factory=asr_model_factory,
             vad_detector=vad_detector,
             speaker_embedding_factory=speaker_embedding_factory,
+            channel_label=f"{config.adapter}.audio",
         )
     speaker_diagnostics = _speaker_diagnostics_from_audio_perceiver(audio_perceiver)
 
-    if (
-        config.adapter == "twitch"
-        and config.twitch is not None
-        and config.twitch.video
-        and video_perceiver is None
-    ):
+    if _adapter_enables_video(config) and video_perceiver is None:
         video_perceiver = _build_default_video_perceiver(
             config,
             store,
@@ -661,6 +771,8 @@ def build_agent(
             video_perceiver=video_perceiver,
             video_stream_opener=video_stream_opener,
             video_frame_decoder=video_frame_decoder,
+            os_capture_audio_source=os_capture_audio_source,
+            os_capture_video_source=os_capture_video_source,
         )
 
     # NB: `config.retention` e `config.auto_memory` sono ACCETTATI ma INERTI:
@@ -691,3 +803,21 @@ def _speaker_diagnostics_from_audio_perceiver(audio_perceiver: object | None) ->
     if audio_perceiver is None:
         return None
     return getattr(audio_perceiver, "speaker_diagnostics", None)
+
+
+def _adapter_enables_audio(config: Config) -> bool:
+    """Whether the configured adapter enables the local audio channel."""
+    if config.adapter == "twitch" and config.twitch is not None:
+        return config.twitch.audio
+    if config.adapter == "os_capture" and config.os_capture is not None:
+        return config.os_capture.audio
+    return False
+
+
+def _adapter_enables_video(config: Config) -> bool:
+    """Whether the configured adapter enables the local video channel."""
+    if config.adapter == "twitch" and config.twitch is not None:
+        return config.twitch.video
+    if config.adapter == "os_capture" and config.os_capture is not None:
+        return config.os_capture.video
+    return False

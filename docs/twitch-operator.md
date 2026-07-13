@@ -483,6 +483,11 @@ vlm:
   max_image_pixels: 500000
 ```
 
+Optional `vlm.quantization: 4bit` or `8bit` shrinks GPU memory use through
+bitsandbytes, which the `vlm` extra installs on Linux/Windows (no macOS wheels
+exist). Quantization requires a CUDA GPU: on CPU-only machines keep
+`quantization: null`, or the caption backend fails at load time.
+
 Caption one captured smoke JPEG through `minnarone.vlm`:
 
 ```bash

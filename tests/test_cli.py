@@ -29,6 +29,9 @@ def _valid_config(tmp_path):
             adapter: os_capture
             llm_provider: grok
             agent_name: minnarone
+            os_capture:
+              audio: false
+              video: true
             """
         ),
         encoding="utf-8",
