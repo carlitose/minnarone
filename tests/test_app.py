@@ -21,7 +21,7 @@ from minnarone.app import (
     build_agent,
 )
 from minnarone.audio import AudioChunk
-from minnarone.config import CommentatorStyle, Config, ConfigError
+from minnarone.config import CommentatorStyle, Config, ConfigError, TwitchSendMode
 from minnarone.console import ConsoleOutputRouter
 from minnarone.os_capture import OsCaptureAdapter
 from minnarone.output import OutputMode
@@ -165,7 +165,9 @@ class _FailingCaptioner:
 
 
 def test_build_agent_wires_all_components(tmp_path):
-    cfg = Config.load(_write_workspace(tmp_path))
+    cfg = Config.load(
+        _write_workspace(tmp_path, extra="commentator:\n  profiles:\n    operator: {}")
+    )
     agent = build_agent(cfg, transport=_fake_transport)
 
     assert isinstance(agent, Agent)
@@ -239,7 +241,13 @@ def test_build_agent_records_prompt_observations_in_run_session(
         }
         return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
 
-    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="commentator:\n  profiles:\n    operator: {}",
+        )
+    )
     session = create_run_session(root=tmp_path / "runs")
     agent = build_agent(
         cfg,
@@ -290,7 +298,13 @@ def test_build_agent_records_replayable_trigger_and_output_events(
     from minnarone.fakes import FakeOutputRouter
     from minnarone.replay import load_replay_state
 
-    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="commentator:\n  profiles:\n    operator: {}",
+        )
+    )
     session = create_run_session(root=tmp_path / "runs")
     agent = build_agent(
         cfg,
@@ -415,6 +429,91 @@ def test_twitch_chat_runtime_requires_clear_credentials(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigError, match="TWITCH_BOT_USERNAME.*TWITCH_OAUTH_TOKEN"):
         build_agent(cfg, transport=_fake_transport)
+
+
+def test_twitch_chat_runtime_rejects_empty_token_after_oauth_prefix(
+    tmp_path, monkeypatch
+):
+    # Footgun: TWITCH_OAUTH_TOKEN=oauth: (prefisso senza valore). Deve fallire
+    # al build, non solo alla connessione IRC a runtime.
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+        )
+    )
+
+    with pytest.raises(ConfigError, match="TWITCH_OAUTH_TOKEN"):
+        build_agent(cfg, transport=_fake_transport)
+
+
+def _live_send_twitch_config(tmp_path):
+    return Config.load(
+        _write_workspace(
+            tmp_path,
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                  send:
+                    mode: live
+                    allowed_channels: ["minnarone"]
+                """
+            ),
+        )
+    )
+
+
+def test_twitch_send_live_build_requires_write_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _live_send_twitch_config(tmp_path)
+
+    with pytest.raises(ConfigError, match="TWITCH_SEND_OAUTH_TOKEN") as excinfo:
+        build_agent(cfg, transport=_fake_transport)
+    # Il messaggio nomina la variabile, mai un valore di token.
+    assert "oauth:" not in str(excinfo.value)
+
+
+def test_twitch_send_live_build_rejects_whitespace_only_write_token(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    # Un token di soli spazi equivale a un token assente.
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "   ")
+    cfg = _live_send_twitch_config(tmp_path)
+
+    with pytest.raises(ConfigError, match="TWITCH_SEND_OAUTH_TOKEN"):
+        build_agent(cfg, transport=_fake_transport)
+
+
+def test_twitch_send_live_build_succeeds_with_write_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:finto-token-scrittura")
+    cfg = _live_send_twitch_config(tmp_path)
+
+    agent = build_agent(cfg, transport=_fake_transport)
+
+    assert agent.config.twitch.send.mode is TwitchSendMode.LIVE
 
 
 def test_twitch_chat_runtime_reacts_to_console_without_sending_chat(
@@ -1094,9 +1193,10 @@ def test_commentator_mode_routes_private_output_to_console_and_changes_prompt(
                 """
                 idle_interval: 999
                 commentator:
-                  enabled: true
                   language: it
-                  idle_interval: 0.01
+                  profiles:
+                    operator:
+                      idle_interval: 0.01
                 """
             ),
         )
@@ -1161,8 +1261,8 @@ def test_original_chat_style_reaches_prompt_boundary_without_public_output(
             extra=textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
-                  style: original_chat
+                  profiles:
+                    original_chat: {}
                 """
             ),
         )
@@ -1217,9 +1317,10 @@ def test_tui_commentator_output_goes_to_dashboard_not_console(
                 """
                 idle_interval: 999
                 commentator:
-                  enabled: true
                   language: it
-                  idle_interval: 0.01
+                  profiles:
+                    operator:
+                      idle_interval: 0.01
                 """
             ),
         )
@@ -1287,8 +1388,8 @@ def test_tui_original_chat_output_goes_to_dashboard_as_re_msg(
             extra=textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
-                  style: original_chat
+                  profiles:
+                    original_chat: {}
                 """
             ),
         )
@@ -1319,6 +1420,93 @@ def test_tui_original_chat_output_goes_to_dashboard_as_re_msg(
     panel_text = {panel.title: panel.text for panel in state.render_panels()}
     assert "RE: boss fight" in panel_text["MINNARONE"]
     assert "MSG: bella giocata" in panel_text["MINNARONE"]
+
+
+def test_tui_public_shadow_output_marked_in_panel_not_stdout(
+    tmp_path, monkeypatch, capsys
+):
+    """Public+TUI: l'output shadow finisce nel pannello MINNARONE con marcatore
+    [SHADOW], NON su stdout; send_policy è esposto.
+
+    Regressione (run di accettazione issue 10): il percorso public+TUI non era
+    cablato — l'output usciva su stdout (dietro la TUI) e il pannello mostrava
+    testo non marcato. Questo test blocca il ritorno del difetto.
+    """
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    def transport(*, url, headers, body, timeout):
+        del url, headers, body, timeout
+        from minnarone.openrouter import HttpResponse
+
+        payload = {
+            "choices": [
+                {"message": {"content": "re : boss fight\nmsg : bella giocata"}}
+            ]
+        }
+        return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: minnarone
+                  chat: true
+                  audio: false
+                  video: false
+                  send:
+                    mode: shadow
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    original_chat: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+        minnarone_output=MinnaroneOutputStream(),
+    )
+    assert agent.send_policy is not None
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="minnarone guarda qui",
+            speaker="alice",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    captured = capsys.readouterr()
+    # Niente eco su stdout: sotto la TUI sfonderebbe lo schermo alternativo.
+    assert "[SHADOW]" not in captured.out
+    assert "bella giocata" not in captured.out
+
+    state = agent.observability_snapshot()
+    panel_text = {panel.title: panel.text for panel in state.render_panels()}
+    assert "[SHADOW]" in panel_text["MINNARONE"]
+    assert "bella giocata" in panel_text["MINNARONE"]
+    assert state.send is not None
+    assert state.send.mode == TwitchSendMode.SHADOW.value
+    assert state.send.last_action == "shadow"
 
 
 def test_tui_original_chat_end_conv_output_goes_to_dashboard_as_skipped_re_msg(
@@ -1359,8 +1547,8 @@ def test_tui_original_chat_end_conv_output_goes_to_dashboard_as_skipped_re_msg(
             extra=textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
-                  style: original_chat
+                  profiles:
+                    original_chat: {}
                 """
             ),
         )
@@ -1433,8 +1621,8 @@ def test_console_original_chat_output_prints_re_msg_locally(
             extra=textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
-                  style: original_chat
+                  profiles:
+                    original_chat: {}
                 """
             ),
         )
@@ -1499,8 +1687,8 @@ def test_console_original_chat_end_conv_output_prints_skipped_re_msg_locally(
             extra=textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
-                  style: original_chat
+                  profiles:
+                    original_chat: {}
                 """
             ),
         )
@@ -1529,13 +1717,1022 @@ def test_console_original_chat_end_conv_output_prints_skipped_re_msg_locally(
     assert "(skip: not sent)" in captured.out
 
 
+# --- meeting_synthesizer profile: Reactor con Senser periodico (issue 09) ---
+
+
+def test_meeting_synthesizer_config_is_valid(tmp_path):
+    """A config with a single meeting_synthesizer profile loads without error."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    meeting_synthesizer:
+                      interval_s: 5
+                """
+            ),
+        )
+    )
+    assert CommentatorStyle.MEETING_SYNTHESIZER in cfg.commentator.profiles
+    assert cfg.commentator.profiles[CommentatorStyle.MEETING_SYNTHESIZER].interval_s == 5.0
+
+
+def test_meeting_synthesizer_build_agent_wires_periodic_senser(tmp_path):
+    """build_agent with MEETING_SYNTHESIZER profile creates a periodic Senser."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    meeting_synthesizer:
+                      interval_s: 42
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    assert isinstance(agent, Agent)
+    assert agent.senser.trigger_mode == "periodic"
+    assert agent.senser._interval_s == 42.0
+    assert agent.prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
+    assert isinstance(agent.router, ConsoleOutputRouter)
+    assert agent.mode is OutputMode.PRIVATE
+
+
+def test_meeting_synthesizer_reactor_produces_private_output_at_interval(
+    tmp_path, monkeypatch
+):
+    """End-to-end: the MEETING_SYNTHESIZER Reactor emits [PRIVATE] after interval_s.
+
+    Uses a FakeLLMProvider so no network is needed. The Senser is periodic: it
+    emits a synthesis_tick after interval_s seconds. The test advances a fake
+    clock to exercise the timer.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter
+
+    prompts: list[str] = []
+
+    def capture_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        from minnarone.openrouter import HttpResponse
+
+        prompt = _prompt_from_body(body)
+        # Summarizer calls have "## EVENTI", reactor calls don't
+        if "## EVENTI" not in prompt:
+            prompts.append(prompt)
+        content = "Riepilogo della riunione: argomenti discussi e decisioni prese."
+        payload = json.dumps({"choices": [{"message": {"content": content}}]})
+        return HttpResponse(status=200, body=payload.encode("utf-8"))
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    meeting_synthesizer:
+                      interval_s: 5
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=capture_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+    )
+
+    # Add some perceptions so the prompt has context
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="Discutiamo il budget del Q3",
+            speaker="speaker_A",
+        )
+    )
+
+    # Before the interval elapses: no trigger, no output
+    asyncio.run(agent.reactor.run_once())
+    assert router.sent == []
+
+    # Advance the clock past the interval by manipulating _last_trigger_at
+    agent.senser._last_trigger_at -= 6.0  # 6 > 5 = interval_s
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert len(router.sent) == 1
+    message, mode = router.sent[0]
+    assert mode is OutputMode.PRIVATE
+    assert "Riepilogo" in message
+
+    # The prompt should contain MEETING_SYNTHESIZER-specific content
+    assert prompts
+    assert "sintesi riunione" in prompts[0]
+    assert "synthesis_tick" in prompts[0]
+
+
+def test_meeting_synthesizer_summary_reaches_prompt(tmp_path, monkeypatch):
+    """The Summarizer's current_summary flows into the MEETING_SYNTHESIZER prompt."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    prompts: list[str] = []
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    meeting_synthesizer:
+                      interval_s: 5
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_recording_transport(prompts, summary="SUMMARY-FROM-SUMMARIZER"),
+        store_path=tmp_path / "p.jsonl",
+    )
+
+    # Pre-seed a perception and a summary
+    agent.store.append(
+        Perception(
+            ts=0.5,
+            source=Source.CHAT,
+            type="msg",
+            text="contesto della sessione",
+        )
+    )
+    asyncio.run(agent.summarizer.summarize())
+    assert agent.summarizer.current_summary == "SUMMARY-FROM-SUMMARIZER"
+
+    # Force the periodic senser to fire
+    agent.senser._last_trigger_at -= 6.0
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert prompts, "the Reactor never reacted to the synthesis_tick"
+    assert any("SUMMARY-FROM-SUMMARIZER" in p for p in prompts)
+
+
+def test_meeting_synthesizer_check_mode_passes(tmp_path):
+    """A config with only meeting_synthesizer profile passes --check (build only)."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    meeting_synthesizer:
+                      interval_s: 180
+                """
+            ),
+        )
+    )
+    # --check just builds the agent; no crash = pass
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+    assert isinstance(agent, Agent)
+    assert agent.senser.trigger_mode == "periodic"
+
+
+# --- suggester profile: Reactor con Senser on_perception (issue 10) ---------
+
+
+def test_suggester_config_is_valid(tmp_path):
+    """A config with a single suggester profile loads without error."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    assert CommentatorStyle.SUGGESTER in cfg.commentator.profiles
+
+
+def test_suggester_build_agent_wires_on_perception_senser(tmp_path):
+    """build_agent with SUGGESTER profile creates an on_perception Senser."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    assert isinstance(agent, Agent)
+    assert agent.senser.trigger_mode == "on_perception"
+    assert agent.prompt_builder.commentator_style is CommentatorStyle.SUGGESTER
+    assert isinstance(agent.router, ConsoleOutputRouter)
+    assert agent.mode is OutputMode.PRIVATE
+
+
+def test_suggester_speech_perception_produces_private_output(
+    tmp_path, monkeypatch
+):
+    """End-to-end: a speech perception triggers a suggestion as [PRIVATE] output.
+
+    Uses a FakeOutputRouter so no network is needed. The Senser is on_perception:
+    it emits a suggestion_eval for each speech perception added to the store.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter
+
+    prompts: list[str] = []
+
+    def capture_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        from minnarone.openrouter import HttpResponse
+
+        prompt = _prompt_from_body(body)
+        if "## EVENTI" not in prompt:
+            prompts.append(prompt)
+        content = "Dovresti chiedere qual e' il budget previsto per il Q3."
+        payload = json.dumps({"choices": [{"message": {"content": content}}]})
+        return HttpResponse(status=200, body=payload.encode("utf-8"))
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=capture_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+    )
+
+    # Add a speech perception
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="Discutiamo il budget del Q3",
+            speaker="speaker_A",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert len(router.sent) == 1
+    message, mode = router.sent[0]
+    assert mode is OutputMode.PRIVATE
+    assert "budget" in message
+
+    # The prompt should contain SUGGESTER-specific content
+    assert prompts
+    assert "suggestion_eval" in prompts[0]
+
+
+def test_suggester_nothing_response_produces_no_output(tmp_path, monkeypatch):
+    """End-to-end: #nothing response from LLM produces NO output."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter
+
+    def nothing_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        from minnarone.openrouter import HttpResponse
+
+        prompt = _prompt_from_body(body)
+        if "## EVENTI" in prompt:
+            content = "summary"
+        else:
+            content = "#nothing"
+        payload = json.dumps({"choices": [{"message": {"content": content}}]})
+        return HttpResponse(status=200, body=payload.encode("utf-8"))
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=nothing_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+    )
+
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="Parliamo del meteo",
+            speaker="speaker_B",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert router.sent == []
+
+
+def test_suggester_non_speech_perceptions_do_not_trigger(tmp_path, monkeypatch):
+    """Non-speech perceptions (CHAT, VIDEO) do not trigger suggestion evaluation."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter
+
+    llm_calls: list[str] = []
+
+    def tracking_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        from minnarone.openrouter import HttpResponse
+
+        prompt = _prompt_from_body(body)
+        if "## EVENTI" not in prompt:
+            llm_calls.append(prompt)
+        payload = json.dumps(
+            {"choices": [{"message": {"content": "suggestion"}}]}
+        )
+        return HttpResponse(status=200, body=payload.encode("utf-8"))
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=tracking_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+    )
+
+    # Add CHAT and VIDEO perceptions (not AUDIO/speech)
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="Ciao a tutti!",
+            speaker="user_chat",
+        )
+    )
+    agent.store.append(
+        Perception(
+            ts=2.0,
+            source=Source.VIDEO,
+            type="caption",
+            text="A slide showing Q3 results",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    # No LLM calls should have been made (no speech = no trigger)
+    assert llm_calls == []
+    assert router.sent == []
+
+
+def test_suggester_facts_injected_in_prompt(tmp_path, monkeypatch):
+    """Interlocutor facts from facts_dir are injected in the SUGGESTER prompt."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    # Create a facts file for "alice"
+    facts_dir = tmp_path / "facts"
+    facts_dir.mkdir(exist_ok=True)
+    (facts_dir / "alice.md").write_text(
+        "Alice lavora nel reparto marketing. Budget annuale: 500k.",
+        encoding="utf-8",
+    )
+
+    prompts: list[str] = []
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_recording_transport(prompts),
+        store_path=tmp_path / "p.jsonl",
+    )
+
+    # Add a speech perception from "alice"
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="Dobbiamo rivedere il budget di marketing",
+            speaker="alice",
+        )
+    )
+
+    asyncio.run(agent.reactor.run_once())
+
+    assert prompts, "the Reactor never reacted to the suggestion_eval"
+    # The facts for alice should appear in the prompt
+    assert any("alice" in p.lower() for p in prompts)
+    assert any("marketing" in p.lower() for p in prompts)
+
+
+def test_suggester_check_mode_passes(tmp_path):
+    """A config with only suggester profile passes --check (build only)."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    # --check just builds the agent; no crash = pass
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+    assert isinstance(agent, Agent)
+    assert agent.senser.trigger_mode == "on_perception"
+
+
+# --- multi-reactor parallel wiring (issue 11) --------------------------------
+
+
+def test_multi_profile_build_agent_creates_three_reactors(tmp_path):
+    """Config with operator + meeting_synthesizer + suggester produces 3 Reactors."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    assert len(agent.reactors) == 3
+    # Backward compat: agent.reactor is the first reactor
+    assert agent.reactor is agent.reactors[0]
+
+
+def test_multi_profile_each_reactor_has_correct_trigger_mode_and_style(tmp_path):
+    """Each Reactor in a multi-profile config has the correct trigger_mode and style."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    # Collect trigger_modes and styles by reactor index
+    trigger_modes = [r._senser.trigger_mode for r in agent.reactors]
+    styles = [r._prompt_builder.commentator_style for r in agent.reactors]
+
+    assert "reactive" in trigger_modes
+    assert "periodic" in trigger_modes
+    assert "on_perception" in trigger_modes
+
+    assert CommentatorStyle.OPERATOR in styles
+    assert CommentatorStyle.MEETING_SYNTHESIZER in styles
+    assert CommentatorStyle.SUGGESTER in styles
+
+
+def test_multi_profile_all_reactors_share_store_summarizer_llm(tmp_path):
+    """All Reactors share the same store, summarizer (via summary_provider), and LLM."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    stores = {id(r._store) for r in agent.reactors}
+    llms = {id(r._llm) for r in agent.reactors}
+
+    # All share the same store instance
+    assert len(stores) == 1
+    # All share the same LLM instance
+    assert len(llms) == 1
+    # Store is the agent's store
+    assert id(agent.store) in stores
+
+
+def test_multi_profile_each_reactor_has_own_senser_prompt_router(tmp_path):
+    """Each Reactor has its own Senser, PromptBuilder, and Router."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    sensers = [id(r._senser) for r in agent.reactors]
+    builders = [id(r._prompt_builder) for r in agent.reactors]
+
+    # Each has its own Senser and PromptBuilder
+    assert len(set(sensers)) == 3
+    assert len(set(builders)) == 3
+
+
+def test_multi_profile_concurrent_run_produces_output_from_all(
+    tmp_path, monkeypatch
+):
+    """All 3 Reactors produce output when their respective triggers fire."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeOutputRouter
+
+    outputs: list[str] = []
+
+    def multi_transport(*, url, headers, body, timeout):
+        del url, headers, timeout
+        from minnarone.openrouter import HttpResponse
+
+        prompt = _prompt_from_body(body)
+        if "## EVENTI" in prompt:
+            content = "summary"
+        elif "commentatore locale" in prompt:
+            content = "Commento dall'operatore."
+        elif "sintesi riunione" in prompt:
+            content = "Sintesi della riunione."
+        elif "suggestion_eval" in prompt:
+            content = "Suggerimento per l'utente."
+        else:
+            content = "risposta generica"
+        payload = json.dumps({"choices": [{"message": {"content": content}}]})
+        return HttpResponse(status=200, body=payload.encode("utf-8"))
+
+    router = FakeOutputRouter()
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 999
+                    meeting_synthesizer:
+                      interval_s: 5
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=multi_transport,
+        store_path=tmp_path / "p.jsonl",
+        router=router,
+    )
+
+    # Add perceptions that trigger operator (mention) and suggester (speech)
+    agent.store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone come va?",
+            speaker="utente1",
+        )
+    )
+    agent.store.append(
+        Perception(
+            ts=2.0,
+            source=Source.AUDIO,
+            type="speech",
+            text="Parliamo del budget Q3",
+            speaker="speaker_A",
+        )
+    )
+
+    # Run each reactor once: operator triggers on mention, suggester on speech
+    for reactor in agent.reactors:
+        if reactor._senser.trigger_mode == "reactive":
+            asyncio.run(reactor.run_once())
+        elif reactor._senser.trigger_mode == "on_perception":
+            asyncio.run(reactor.run_once())
+
+    # Force meeting_synthesizer to fire by advancing its clock
+    for reactor in agent.reactors:
+        if reactor._senser.trigger_mode == "periodic":
+            reactor._senser._last_trigger_at -= 6.0  # past interval_s=5
+            asyncio.run(reactor.run_once())
+
+    messages = [msg for msg, _mode in router.sent]
+    assert "Commento dall'operatore." in messages
+    assert "Sintesi della riunione." in messages
+    assert "Suggerimento per l'utente." in messages
+
+
+# --- per-profile TUI output routing (issue 12) --------------------------------
+
+
+def test_multi_profile_tui_creates_per_profile_output_streams(tmp_path):
+    """TUI path creates one MinnaroneOutputStream per active profile."""
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        minnarone_output=MinnaroneOutputStream(),
+    )
+
+    assert len(agent.output_streams) == 3
+    assert CommentatorStyle.OPERATOR in agent.output_streams
+    assert CommentatorStyle.MEETING_SYNTHESIZER in agent.output_streams
+    assert CommentatorStyle.SUGGESTER in agent.output_streams
+    for stream in agent.output_streams.values():
+        assert isinstance(stream, MinnaroneOutputStream)
+
+
+def test_multi_profile_tui_reactors_have_distinct_routers(tmp_path):
+    """Each Reactor in a TUI multi-profile config has its own router."""
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        minnarone_output=MinnaroneOutputStream(),
+    )
+
+    assert len(agent.reactors) == 2
+    router_a = agent.reactors[0]._router
+    router_b = agent.reactors[1]._router
+    assert isinstance(router_a, TuiPrivateOutputRouter)
+    assert isinstance(router_b, TuiPrivateOutputRouter)
+    assert router_a is not router_b
+    assert router_a.stream is not router_b.stream
+
+
+def test_multi_profile_tui_messages_do_not_mix(tmp_path, monkeypatch):
+    """Messages routed by one profile appear only in its own stream."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 30
+                    meeting_synthesizer:
+                      interval_s: 60
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        minnarone_output=MinnaroneOutputStream(),
+    )
+
+    op_reactor = next(
+        r for r in agent.reactors
+        if r._prompt_builder.commentator_style is CommentatorStyle.OPERATOR
+    )
+    ms_reactor = next(
+        r for r in agent.reactors
+        if r._prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
+    )
+
+    agent.store.append(
+        Perception(ts=1.0, source=Source.CHAT, type="msg",
+                   text="ehi minnarone ci sei?", speaker="u1")
+    )
+
+    asyncio.run(op_reactor.run_once())
+
+    op_stream = agent.output_streams[CommentatorStyle.OPERATOR]
+    ms_stream = agent.output_streams[CommentatorStyle.MEETING_SYNTHESIZER]
+
+    op_msgs = [m.text for m in op_stream.recent_messages()]
+    ms_msgs = [m.text for m in ms_stream.recent_messages()]
+
+    assert len(op_msgs) > 0
+    assert len(ms_msgs) == 0
+
+
+def test_no_tui_output_streams_empty(tmp_path):
+    """Without TUI (no minnarone_output), output_streams is empty."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="commentator:\n  profiles:\n    operator: {}",
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    assert agent.output_streams == {}
+
+
+def test_minnarone_output_points_to_first_stream(tmp_path):
+    """agent.minnarone_output is the first profile's stream (backward compat)."""
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  language: it
+                  profiles:
+                    operator: {}
+                    meeting_synthesizer:
+                      interval_s: 60
+                """
+            ),
+        )
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        minnarone_output=MinnaroneOutputStream(),
+    )
+
+    assert agent.minnarone_output is not None
+    first_stream = next(iter(agent.output_streams.values()))
+    assert agent.minnarone_output is first_stream
+
+
+def test_zero_profile_config_no_reactors(tmp_path):
+    """Zero-profile config works: no Reactors, only pump + summarizer."""
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+        )
+    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
+
+    assert agent.reactors == []
+
+
+def test_zero_profile_run_completes_without_error(tmp_path, monkeypatch):
+    """Agent.run() with zero Reactors completes without errors (pump + summarizer only)."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="summarizer_interval: 0.01",
+        )
+    )
+    adapter = FakeSourceAdapter(
+        [
+            RawEvent(
+                channel="chat",
+                payload={"text": "ciao mondo", "speaker": "u1"},
+                ts=1.0,
+            )
+        ]
+    )
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+    )
+
+    # run() should complete without error even with no reactors
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+    # Perception was pumped into the store
+    tail = agent.store.tail(10)
+    assert any(p.text == "ciao mondo" for p in tail)
+
+
+def test_multi_profile_graceful_shutdown_cancels_all(tmp_path, monkeypatch):
+    """If one Reactor task fails, all others should be cancelled."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            extra=textwrap.dedent(
+                """
+                senser_interval: 0.01
+                summarizer_interval: 0.01
+                commentator:
+                  language: it
+                  profiles:
+                    operator:
+                      idle_interval: 999
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    adapter = FakeSourceAdapter([], channels=set())
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=adapter,
+    )
+
+    # run() should complete cleanly (adapter finishes immediately)
+    asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
+
+
 def test_router_override_keeps_minnarone_output_stream_inactive(tmp_path):
     from minnarone.fakes import FakeOutputRouter
     from minnarone.output_sink import MinnaroneOutputStream
 
     stream = MinnaroneOutputStream()
     router = FakeOutputRouter()
-    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="commentator:\n  profiles:\n    operator: {}",
+        )
+    )
     agent = build_agent(
         cfg,
         transport=_fake_transport,
@@ -1613,7 +2810,13 @@ def test_streamer_scenario_smoke_end_to_end(tmp_path, monkeypatch):
 
     capture = FakeOutputRouter()
     store_path = tmp_path / "perceptions.jsonl"
-    cfg = Config.load(_write_workspace(tmp_path, mode="public"))
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="public",
+            extra="commentator:\n  profiles:\n    operator: {}",
+        )
+    )
     agent = build_agent(
         cfg, transport=_fake_transport, store_path=store_path, router=capture
     )
@@ -1862,7 +3065,7 @@ def test_run_starts_summarizer_loop(tmp_path, monkeypatch):
             if calls["n"] >= 1:
                 break
             await asyncio.sleep(0.01)
-        agent.reactor.stop()
+        agent.summarizer.stop()
         await asyncio.wait_for(task, timeout=5.0)
 
     asyncio.run(drive())
@@ -1884,8 +3087,11 @@ def test_run_summary_reaches_reaction_prompt(tmp_path, monkeypatch):
     cfg = Config.load(
         _write_workspace(
             tmp_path,
-            mode="public",
-            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+            mode="private",
+            extra=(
+                "summarizer_interval: 0.01\nsenser_interval: 0.01\n"
+                "commentator:\n  profiles:\n    operator: {}"
+            ),
         )
     )
 
@@ -1907,8 +3113,6 @@ def test_run_summary_reaches_reaction_prompt(tmp_path, monkeypatch):
         adapter=adapter,
     )
 
-    # Genera il riassunto PRIMA di avviare run(), così è già disponibile quando
-    # il Reactor reagisce nel tick finale (deterministico, niente race sul loop).
     agent.store.append(
         Perception(ts=0.5, source=Source.CHAT, type="msg", text="contesto sessione")
     )
@@ -1972,7 +3176,10 @@ def test_run_pumps_chat_perception_end_to_end(tmp_path, monkeypatch):
         _write_workspace(
             tmp_path,
             mode="public",
-            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+            extra=(
+                "summarizer_interval: 0.01\nsenser_interval: 0.01\n"
+                "commentator:\n  profiles:\n    operator: {}"
+            ),
         )
     )
     adapter = FakeSourceAdapter(
@@ -1984,9 +3191,6 @@ def test_run_pumps_chat_perception_end_to_end(tmp_path, monkeypatch):
             )
         ]
     )
-    # Adapter iniettato chat-only: il canale video (cablato di default) non è
-    # esercitato qui, quindi si annulla la sua queue bounded per mantenere il
-    # test focalizzato sul percorso chat → senser → reactor → output.
     agent = replace(
         build_agent(
             cfg,
@@ -2000,10 +3204,8 @@ def test_run_pumps_chat_perception_end_to_end(tmp_path, monkeypatch):
 
     asyncio.run(asyncio.wait_for(agent.run(), timeout=5.0))
 
-    # La percezione è atterrata nello store (pompa adapter→perceiver→store).
     tail = agent.store.tail(10)
     assert any(p.text == "ehi minnarone come va?" for p in tail)
-    # E il Reactor ha reagito instradando la risposta del (fake) LLM in PUBLIC.
     assert ("ciao", OutputMode.PUBLIC) in capture.sent
 
 
@@ -2113,12 +3315,12 @@ def test_run_without_adapter_stops_cleanly_on_reactor_stop(tmp_path, monkeypatch
         _write_workspace(
             tmp_path,
             mode="public",
-            extra="summarizer_interval: 0.01\nsenser_interval: 0.01",
+            extra=(
+                "summarizer_interval: 0.01\nsenser_interval: 0.01\n"
+                "commentator:\n  profiles:\n    operator: {}"
+            ),
         )
     )
-    # Percorso "reactor drives": si annulla l'adapter/queue device cablati di
-    # default per esercitare il ramo senza sorgente live di run() (la cattura
-    # device resta il passo manuale, come prima del capstone).
     agent = replace(
         build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"),
         adapter=None,
@@ -2128,8 +3330,8 @@ def test_run_without_adapter_stops_cleanly_on_reactor_stop(tmp_path, monkeypatch
 
     async def drive():
         task = asyncio.create_task(agent.run())
-        await asyncio.sleep(0.05)  # lascia girare qualche tick
-        assert not task.done()  # senza stop, il loop NON termina da solo
+        await asyncio.sleep(0.05)
+        assert not task.done()
         agent.reactor.stop()
         await asyncio.wait_for(task, timeout=5.0)
 

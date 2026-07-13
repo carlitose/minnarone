@@ -320,8 +320,15 @@ def _read_run_events(path: Path) -> _ReplayEvents:
                     triggers.append(_trigger_from_event_payload(payload))
                 elif kind == "minnarone_output":
                     messages.append(_message_from_event_payload(payload))
+                elif kind == "send_decision":
+                    msg = _message_from_send_decision(payload)
+                    if msg is not None:
+                        messages.append(msg)
+                elif kind is not None:
+                    # Unknown event kinds from future/older runs: skip silently.
+                    pass
                 else:
-                    raise ValueError("unknown event kind")
+                    raise ValueError("missing event kind")
             except (ValueError, TypeError, KeyError):
                 failures.append(_malformed_event_row(line_number))
                 continue
@@ -357,6 +364,25 @@ def _message_from_event_payload(payload: dict[str, object]) -> str:
     if not isinstance(output, dict):
         raise ValueError("output payload is not an object")
     return _safe_required_str(output.get("message"))
+
+
+def _message_from_send_decision(payload: dict[str, object]) -> str | None:
+    """Extract a marked message from a send_decision event.
+
+    Returns ``[SENT] msg`` for send, ``[SHADOW] msg`` for shadow, and
+    ``None`` for drop (dropped messages are not shown in the MINNARONE panel).
+    """
+    decision = payload.get("send_decision")
+    if not isinstance(decision, dict):
+        raise ValueError("send_decision payload is not an object")
+    action = _required_str(decision.get("action"))
+    message = _safe_required_str(decision.get("message"))
+    if action == "send":
+        return f"[SENT] {message}"
+    if action == "drop":
+        return None
+    # shadow and any other action: show as shadow.
+    return f"[SHADOW] {message}"
 
 
 def _optional_perception(value: object) -> Perception | None:

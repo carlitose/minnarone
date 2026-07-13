@@ -112,13 +112,25 @@ class Senser:
         store: PerceptionStore,
         *,
         agent_name: str,
+        bot_identity: str | None = None,
         clock=time.time,
         idle_interval: float = _DEFAULT_IDLE_INTERVAL,
         window_ttl: float = _DEFAULT_WINDOW_TTL,
         continuation_window: float = _DEFAULT_CONTINUATION_WINDOW,
+        trigger_mode: str = "reactive",
+        interval_s: float | None = None,
     ) -> None:
+        if trigger_mode not in ("reactive", "periodic", "on_perception"):
+            raise ValueError(
+                f"trigger_mode deve essere 'reactive', 'periodic' o 'on_perception', ricevuto {trigger_mode!r}"
+            )
+        if trigger_mode == "periodic" and interval_s is None:
+            raise ValueError("periodic mode richiede interval_s")
+        self.trigger_mode = trigger_mode
+        self._interval_s = interval_s
         self._store = store
         self._agent_name = agent_name.lower()
+        self._bot_identity = bot_identity.lower() if bot_identity else None
         # Match esatto a confine di parola (veloce); il fuzzy interviene solo se
         # questo fallisce, per tollerare i nomi storpiati senza falsi positivi.
         self._mention = re.compile(rf"\b{re.escape(agent_name)}\b", re.IGNORECASE)
@@ -226,6 +238,56 @@ class Senser:
 
     def tick(self) -> list[Trigger]:
         """Esamina le nuove percezioni + il tempo e restituisce i trigger."""
+        if self.trigger_mode == "periodic":
+            return self._tick_periodic()
+        if self.trigger_mode == "on_perception":
+            return self._tick_on_perception()
+        return self._tick_reactive()
+
+    def _tick_periodic(self) -> list[Trigger]:
+        """Tick periodico: emette un synthesis_tick se l'intervallo e' trascorso."""
+        now = self._clock()
+        assert self._interval_s is not None  # guaranteed by __init__ validation
+        if (now - self._last_trigger_at) >= self._interval_s:
+            self._last_trigger_at = now
+            trigger = Trigger(
+                reason="synthesis_tick",
+                perception=None,
+                kind="synthesis_tick",
+                interlocutor=None,
+            )
+            self._recent_triggers.append(trigger)
+            return [trigger]
+        return []
+
+    def _tick_on_perception(self) -> list[Trigger]:
+        """Tick on_perception: emette suggestion_eval per ogni percezione speech.
+
+        Legge le nuove percezioni dallo store usando il cursore. Per ciascuna
+        con source=AUDIO e type=speech, emette un trigger suggestion_eval con
+        l'interlocutore pari allo speaker della percezione. Ignora percezioni
+        CHAT, VIDEO, EVENT. Applica il filtro self-echo (bot_identity).
+        Nessuna finestra di conversazione, idle o menzione.
+        """
+        new, self._position = self._store.read_from(self._position)
+        triggers: list[Trigger] = []
+        for p in new:
+            if self._is_self_perception_audio(p):
+                continue
+            if p.source == Source.AUDIO and p.type == "speech":
+                trigger = Trigger(
+                    reason="suggestion_eval",
+                    perception=p,
+                    kind="suggestion_eval",
+                    interlocutor=p.speaker,
+                )
+                triggers.append(trigger)
+        if triggers:
+            self._recent_triggers.extend(triggers)
+        return triggers
+
+    def _tick_reactive(self) -> list[Trigger]:
+        """Tick reattivo: logica originale (menzioni, continuazione, idle)."""
         now = self._clock()
         self._expire_windows(now)
         new, self._position = self._store.read_from(self._position)
@@ -269,6 +331,12 @@ class Senser:
 
     def _classify(self, p: Perception, now: float) -> Trigger | None:
         """Classifica una percezione in un eventuale trigger e aggiorna lo stato."""
+        # Self-echo filter: le percezioni chat del bot stesso (eco IRC) non
+        # producono trigger. Restano nello store (log fidelity) ma il Senser le
+        # ignora — impedisce il loop in cui il bot reagisce ai propri messaggi.
+        if self._is_self_perception(p):
+            return None
+
         # Consideriamo solo le percezioni con un interlocutore identificabile.
         # Per la CHAT l'interlocutore è lo speaker. Per l'AUDIO è interlocutore
         # SOLO lo STREAMER (EC02): un ospite o l'audio di un video riprodotto —
@@ -303,6 +371,20 @@ class Senser:
                 interlocutor=interlocutor,
             )
         return None
+
+    def _is_self_perception(self, p: Perception) -> bool:
+        """True se la percezione è un echo del bot stesso (solo chat)."""
+        if self._bot_identity is None:
+            return False
+        if p.source != Source.CHAT:
+            return False
+        return p.speaker is not None and p.speaker.lower() == self._bot_identity
+
+    def _is_self_perception_audio(self, p: Perception) -> bool:
+        """True se la percezione audio è del bot stesso (self-echo su AUDIO)."""
+        if self._bot_identity is None:
+            return False
+        return p.speaker is not None and p.speaker.lower() == self._bot_identity
 
     def _is_mention(self, text: str) -> bool:
         """Menzione del nome: match esatto a confine di parola o fuzzy (EC09)."""

@@ -6,10 +6,11 @@ chiaro con exit code != 0.
 """
 
 import builtins
+import os
 import textwrap
 
 import minnarone.cli as cli
-from minnarone.cli import main
+from minnarone.cli import load_dotenv_file, main
 from minnarone.config import ConfigError
 from minnarone.twitch_stream import TwitchStreamRuntimeError
 
@@ -289,3 +290,172 @@ def test_cli_replay_launches_without_config_or_live_agent(tmp_path, monkeypatch)
 
     assert code == 0
     assert launched == [str(log)]
+
+
+def _twitch_send_config(tmp_path, send_block: str):
+    soul = tmp_path / "soul.md"
+    soul.write_text("io", encoding="utf-8")
+    facts_dir = tmp_path / "facts"
+    facts_dir.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        textwrap.dedent(
+            f"""
+            mode: public
+            soul_path: {soul}
+            facts_dir: {facts_dir}
+            adapter: twitch
+            llm_provider: grok
+            agent_name: minnarone
+            twitch:
+              channel: minnarone
+              chat: false
+              audio: false
+              video: true
+              send:
+            """
+        )
+        + textwrap.indent(textwrap.dedent(send_block), "    "),
+        encoding="utf-8",
+    )
+    return cfg
+
+
+def test_cli_check_fails_for_live_send_without_write_token(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _twitch_send_config(
+        tmp_path,
+        """
+        mode: live
+        allowed_channels: ["minnarone"]
+        """,
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "errore di config" in err
+    assert "TWITCH_SEND_OAUTH_TOKEN" in err
+
+
+def test_cli_check_passes_for_shadow_send_without_write_token(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    cfg = _twitch_send_config(
+        tmp_path,
+        """
+        mode: shadow
+        """,
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 0
+    assert "ok" in capsys.readouterr().out.lower()
+
+
+# --- .env loader (comodità operatore) --------------------------------------
+
+
+def test_load_dotenv_file_sets_keys(tmp_path, monkeypatch):
+    for key in ("DOTENV_A", "DOTENV_B", "DOTENV_C", "DOTENV_D"):
+        monkeypatch.delenv(key, raising=False)
+    env = tmp_path / ".env"
+    env.write_text(
+        "# commento\n"
+        "\n"
+        "DOTENV_A=uno\n"
+        "export DOTENV_B=due\n"
+        'DOTENV_C="tre con spazi"\n'
+        "DOTENV_D='oauth:xyz'\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_dotenv_file(env)
+
+    assert set(loaded) == {"DOTENV_A", "DOTENV_B", "DOTENV_C", "DOTENV_D"}
+    assert os.environ["DOTENV_A"] == "uno"
+    assert os.environ["DOTENV_B"] == "due"
+    assert os.environ["DOTENV_C"] == "tre con spazi"
+    assert os.environ["DOTENV_D"] == "oauth:xyz"
+
+
+def test_load_dotenv_file_does_not_override_existing(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOTENV_EXISTING", "dal-terminale")
+    env = tmp_path / ".env"
+    env.write_text("DOTENV_EXISTING=dal-file\n", encoding="utf-8")
+
+    loaded = load_dotenv_file(env)
+
+    assert "DOTENV_EXISTING" not in loaded
+    assert os.environ["DOTENV_EXISTING"] == "dal-terminale"
+
+
+def test_load_dotenv_file_missing_is_noop(tmp_path):
+    assert load_dotenv_file(tmp_path / "assente.env") == []
+
+
+def test_load_dotenv_file_ignores_malformed(tmp_path, monkeypatch):
+    monkeypatch.delenv("DOTENV_OK", raising=False)
+    env = tmp_path / ".env"
+    env.write_text(
+        "senza uguale\n"
+        "=valore-senza-chiave\n"
+        "CHIAVE CON SPAZI=x\n"
+        "DOTENV_OK=bene\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_dotenv_file(env)
+
+    assert loaded == ["DOTENV_OK"]
+    assert os.environ["DOTENV_OK"] == "bene"
+
+
+def _twitch_chat_config(tmp_path):
+    soul = tmp_path / "soul.md"
+    soul.write_text("io", encoding="utf-8")
+    facts_dir = tmp_path / "facts"
+    facts_dir.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        textwrap.dedent(
+            f"""
+            mode: private
+            soul_path: {soul}
+            facts_dir: {facts_dir}
+            adapter: twitch
+            llm_provider: grok
+            agent_name: minnarone
+            twitch:
+              channel: minnarone
+              chat: true
+              audio: false
+              video: false
+            """
+        ),
+        encoding="utf-8",
+    )
+    return cfg
+
+
+def test_cli_check_reads_twitch_credentials_from_dotenv(
+    tmp_path, capsys, monkeypatch
+):
+    # Ambiente pulito: le credenziali arrivano SOLO dal .env accanto al config.
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    cfg = _twitch_chat_config(tmp_path)
+    (tmp_path / ".env").write_text(
+        "TWITCH_BOT_USERNAME=bot_user\nTWITCH_OAUTH_TOKEN=oauth:token\n",
+        encoding="utf-8",
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 0
+    assert "ok" in capsys.readouterr().out.lower()

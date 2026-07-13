@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .asr import AsrInputError, pcm_s16le_to_float32
-from .audio import STREAMER, UNKNOWN_SPEAKER, SpeechSegment
+from .audio import OTHER, STREAMER, UNKNOWN_SPEAKER, SpeechSegment
 
 
 class SpeakerConfigError(ValueError):
@@ -66,7 +66,10 @@ class SpeakerEmbeddingConfig:
 class SpeakerClusteringConfig:
     """Tuning knobs for online speaker clustering."""
 
-    threshold: float = 0.6
+    # Join floor di similarità coseno: più alto = più splitting. 0.45 è un
+    # punto di partenza ragionevole per CAM++ su parlato non-mandarino con
+    # segmenti brevi (0.6 sovra-segmentava); tarare per modello/lingua (vedi docs).
+    threshold: float = 0.45
     warmup_seconds: float = 60.0
     min_update_seconds: float = 1.0
 
@@ -121,7 +124,6 @@ class SpeakerTaggingStats:
 @dataclass(slots=True)
 class _Cluster:
     cluster_id: int
-    stable_label: str
     centroid: tuple[float, ...]
     talk_time_seconds: float
     updates: int
@@ -134,12 +136,18 @@ class OnlineSpeakerClusterer:
         self._config = config or SpeakerClusteringConfig()
         self._clusters: list[_Cluster] = []
         self._next_cluster_id = 1
-        self._next_label_id = 1
         self._total_utterances = 0
         self._clustered_utterances = 0
         self._unknown_utterances = 0
         self._total_clustered_seconds = 0.0
         self._streamer_cluster_id: int | None = None
+        # Clusters pinned as streamer by the operator (issue 03). Multiple pins
+        # are allowed (multi-streamer). Once non-empty, the auto-dominant freeze
+        # is disabled so it can never steal a manually marked cluster.
+        self._manual_streamer_ids: set[int] = set()
+        # cluster_id of the most-recent *assigned* (clustered) utterance; the
+        # anchor for "mark current speaker". None until the first assignment.
+        self._last_cluster_id: int | None = None
 
     def assign(
         self, embedding: Sequence[float], *, duration_seconds: float
@@ -165,12 +173,35 @@ class OnlineSpeakerClusterer:
 
         self._clustered_utterances += 1
         self._total_clustered_seconds += duration
+        self._last_cluster_id = cluster.cluster_id
         self._freeze_streamer_if_ready()
         return SpeakerAssignment(
             label=self._label_for(cluster),
             cluster_id=cluster.cluster_id,
             similarity=similarity,
         )
+
+    def mark_current_speaker_as_streamer(self) -> int | None:
+        """Pin the most-recent assigned utterance's cluster as a manual streamer.
+
+        "Current speaker" is the cluster of the last *assigned* utterance, not an
+        audio snapshot: short ``?`` utterances (no cluster) never update it. From
+        here on ``_label_for`` returns ``STREAMER`` for the pinned cluster, and
+        the auto-dominant freeze is disabled so it cannot steal the manual pin.
+        Multiple pins accumulate (multi-streamer). Returns the pinned cluster id,
+        or ``None`` when no utterance has been assigned yet.
+
+        Recording a pin also revokes any stale auto-dominant pick: if the freeze
+        already crowned a *different* cluster before the operator marked one, that
+        cluster must no longer label ``STREAMER`` (manual takes precedence).
+        """
+        if self._last_cluster_id is None:
+            return None
+        self._manual_streamer_ids.add(self._last_cluster_id)
+        # Manual marking supersedes the auto-dominant pick: revoke it so only
+        # manual pins can label STREAMER from now on (issue 03).
+        self._streamer_cluster_id = None
+        return self._last_cluster_id
 
     def stats(self) -> SpeakerTaggingStats:
         """Return a deterministic diagnostics snapshot."""
@@ -206,13 +237,11 @@ class OnlineSpeakerClusterer:
     def _new_cluster(self, vector: tuple[float, ...], duration: float) -> _Cluster:
         cluster = _Cluster(
             cluster_id=self._next_cluster_id,
-            stable_label=f"speaker_{self._next_label_id}",
             centroid=vector,
             talk_time_seconds=duration,
             updates=1,
         )
         self._next_cluster_id += 1
-        self._next_label_id += 1
         self._clusters.append(cluster)
         return cluster
 
@@ -231,6 +260,10 @@ class OnlineSpeakerClusterer:
         cluster.updates += 1
 
     def _freeze_streamer_if_ready(self) -> None:
+        # A manual pin disables the auto-dominant fallback entirely so the freeze
+        # can never steal an operator-marked cluster (issue 03).
+        if self._manual_streamer_ids:
+            return
         if self._streamer_cluster_id is not None:
             return
         if self._total_clustered_seconds < self._config.warmup_seconds:
@@ -241,9 +274,11 @@ class OnlineSpeakerClusterer:
         self._streamer_cluster_id = dominant.cluster_id
 
     def _label_for(self, cluster: _Cluster) -> str:
+        if cluster.cluster_id in self._manual_streamer_ids:
+            return STREAMER
         if cluster.cluster_id == self._streamer_cluster_id:
             return STREAMER
-        return cluster.stable_label
+        return OTHER
 
     def _unknown(self) -> SpeakerAssignment:
         self._unknown_utterances += 1
@@ -339,13 +374,17 @@ class EmbeddingSpeakerTagger:
         self._clusterer = clusterer or OnlineSpeakerClusterer()
 
     def tag(self, segment: SpeechSegment) -> str:
-        """Return `streamer`, `speaker_N`, or `?` for one VAD utterance."""
+        """Return `streamer`, `altro`, or `?` for one VAD utterance."""
         embedding = self._embedding_backend.embed(segment)
         duration = speech_segment_duration_seconds(segment)
         return self._clusterer.assign(
             embedding,
             duration_seconds=duration,
         ).label
+
+    def mark_current_speaker_as_streamer(self) -> int | None:
+        """Pin the current speaker's cluster as a manual streamer (issue 03)."""
+        return self._clusterer.mark_current_speaker_as_streamer()
 
     def stats(self) -> SpeakerTaggingStats:
         """Expose clustering diagnostics for operators and tests."""

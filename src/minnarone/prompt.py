@@ -95,6 +95,30 @@ _COMMENTATOR_RULES_TEMPLATE = (
     "in chat e non fingere che l'output sia visibile al pubblico.\n"
 )
 
+_MEETING_SYNTHESIZER_RULES_TEMPLATE = (
+    "- Modalità sintesi riunione: sei un note-taker che prende appunti "
+    "strutturati in {language} sulla conversazione in corso.\n"
+    "- Concentrati su: argomenti discussi, chi ha detto cosa, decisioni "
+    "prese, azioni da fare (action item).\n"
+    "- Produci un riepilogo aggiornato e leggibile, non un messaggio di "
+    "chat: usa elenchi puntati, intestazioni brevi e linguaggio chiaro.\n"
+    "- NON interagire con la chat, non rispondere a nessuno e non "
+    "generare messaggi pubblici: il tuo output è un documento interno "
+    "per l'operatore.\n"
+)
+
+_SUGGESTER_RULES_TEMPLATE = (
+    "- Modalità suggeritore: sei un assistente privato che aiuta "
+    "l'operatore durante una riunione in {language}.\n"
+    "- Il tuo compito è suggerire domande da porre o cose da "
+    "ricordare/menzionare, basandoti su ciò che è stato appena detto "
+    "e sui fatti che conosci sugli interlocutori.\n"
+    "- Se in questo momento non c'è nulla di utile da suggerire, "
+    "rispondi SOLO con `#nothing` e nient'altro.\n"
+    "- NON interagire con nessuno direttamente: il tuo output è "
+    "visibile solo all'operatore.\n"
+)
+
 _ORIGINAL_CHAT_RULES = (
     "- Sei Minnarone: un utente della chat Twitch chiamato minnarone / "
     "@minnarone nel canale di enkk.\n"
@@ -153,6 +177,14 @@ class PromptBuilder:
         commentator = ""
         if self._commentator_style is CommentatorStyle.OPERATOR:
             commentator = _COMMENTATOR_RULES_TEMPLATE.format(
+                language=_language_name(self._commentator_language)
+            )
+        elif self._commentator_style is CommentatorStyle.MEETING_SYNTHESIZER:
+            commentator = _MEETING_SYNTHESIZER_RULES_TEMPLATE.format(
+                language=_language_name(self._commentator_language)
+            )
+        elif self._commentator_style is CommentatorStyle.SUGGESTER:
+            commentator = _SUGGESTER_RULES_TEMPLATE.format(
                 language=_language_name(self._commentator_language)
             )
         return (
@@ -238,6 +270,20 @@ class PromptBuilder:
                 self_messages=self_messages,
             )
 
+        if self._commentator_style is CommentatorStyle.MEETING_SYNTHESIZER:
+            return self._build_meeting_synthesizer(
+                recent=recent,
+                trigger=trigger,
+                summary=summary,
+            )
+
+        if self._commentator_style is CommentatorStyle.SUGGESTER:
+            return self._build_suggester(
+                recent=recent,
+                trigger=trigger,
+                summary=summary,
+            )
+
         situation_perception = trigger.perception
         addressee_name = _sanitize_display_token(trigger.interlocutor)
         addressee = (
@@ -272,6 +318,77 @@ class PromptBuilder:
                     f"Reagisci a questo messaggio ({trigger.reason}){addressee}:\n"
                     f"{self._fence(format_perception_line(situation_perception))}"
                 )
+        return self._dynamic_prompt(
+            recent=recent,
+            trigger=trigger,
+            summary=summary,
+            summary_header="## RIASSUNTO",
+            recent_header="## CONVERSAZIONE RECENTE",
+            situation_header="## SITUAZIONE",
+            situation_line=situation_line,
+        )
+
+    def _build_meeting_synthesizer(
+        self,
+        *,
+        recent: Sequence[Perception],
+        trigger: Trigger,
+        summary: str | None,
+    ) -> str:
+        if trigger.perception is None:
+            situation_line = (
+                "Produci un riepilogo aggiornato della riunione finora "
+                f"({trigger.reason})."
+            )
+        else:
+            situation_line = (
+                f"Produci un riepilogo aggiornato della riunione finora "
+                f"({trigger.reason}), integrando questa nuova percezione:\n"
+                f"{self._fence(format_perception_line(trigger.perception))}"
+            )
+        return self._dynamic_prompt(
+            recent=recent,
+            trigger=trigger,
+            summary=summary,
+            summary_header="## RIASSUNTO",
+            recent_header="## CONVERSAZIONE RECENTE",
+            situation_header="## SITUAZIONE",
+            situation_line=situation_line,
+        )
+
+    def _build_suggester(
+        self,
+        *,
+        recent: Sequence[Perception],
+        trigger: Trigger,
+        summary: str | None,
+    ) -> str:
+        if trigger.perception is None:
+            situation_line = (
+                "Valuta se c'è qualcosa di utile da suggerire all'operatore "
+                f"in base al contesto corrente ({trigger.reason})."
+            )
+        else:
+            raw_speaker = trigger.perception.speaker or trigger.interlocutor
+            speaker = _sanitize_display_token(raw_speaker)
+            # Frase soggetto-prima: con label collettivi come `altro` la vecchia
+            # "qualcosa di altro" collideva con l'idioma "qualcosa d'altro".
+            subject = speaker if speaker else "Qualcuno"
+            situation_line = (
+                f"{subject} ha appena detto qualcosa "
+                f"({trigger.reason}); valuta se l'operatore dovrebbe "
+                "chiedere o menzionare qualcosa:\n"
+                f"{self._fence(format_perception_line(trigger.perception))}"
+            )
+            # Highlight interlocutor-specific facts if available
+            if speaker:
+                speaker_facts = _extract_speaker_facts(
+                    self._blocks.facts, speaker
+                )
+                if speaker_facts:
+                    situation_line += (
+                        f"\nEcco cosa sai su {speaker}:\n{speaker_facts}"
+                    )
         return self._dynamic_prompt(
             recent=recent,
             trigger=trigger,
@@ -467,6 +584,33 @@ def _sanitize_display_token(token: str | None) -> str | None:
     if not _SAFE_DISPLAY_TOKEN_RE.fullmatch(sanitized):
         return None
     return sanitized
+
+
+def _extract_speaker_facts(facts_block: str, speaker: str) -> str | None:
+    """Estrae i fatti relativi a uno specifico speaker dal blocco fatti concatenato.
+
+    Il blocco fatti è prodotto da ``FileMemory._load_facts()`` nel formato::
+
+        ### entity_a
+        testo fatti entity_a
+
+        ### entity_b
+        testo fatti entity_b
+
+    Restituisce il testo dei fatti per lo speaker dato (case-insensitive),
+    oppure ``None`` se non trovato o vuoto.
+    """
+    if not facts_block or not speaker:
+        return None
+    pattern = re.compile(
+        r"(?:^|\n)### " + re.escape(speaker) + r"\n(.*?)(?=\n### |\Z)",
+        re.DOTALL | re.IGNORECASE,
+    )
+    match = pattern.search(facts_block)
+    if match:
+        text = match.group(1).strip()
+        return text if text else None
+    return None
 
 
 def _language_name(language: str) -> str:

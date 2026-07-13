@@ -49,6 +49,73 @@ class RunEventRecorder:
             }
         )
 
+    def record_send_decision(
+        self,
+        *,
+        message: str,
+        action: str,
+        reason: str,
+        channel: str,
+    ) -> None:
+        """Record a public-send policy decision (shadow/drop) for audit replay."""
+        self._append(
+            {
+                "kind": "send_decision",
+                "send_decision": {
+                    "message": _safe_text(message) or "",
+                    "action": _safe_text(action) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                    "channel": _safe_text(channel) or "",
+                },
+            }
+        )
+
+    def record_send_transition(
+        self,
+        *,
+        transition: str,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Record a send-state transition (promote/kill-switch/auto-degrade).
+
+        Each transition carries an actor (``operator`` for manual actions,
+        ``auto`` for auto-degrade) and a reason string for audit replay.
+        """
+        self._append(
+            {
+                "kind": "send_transition",
+                "send_transition": {
+                    "transition": _safe_text(transition) or "unknown",
+                    "actor": _safe_text(actor) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                },
+            }
+        )
+
+    def record_streamer_marked(
+        self,
+        *,
+        cluster_id: int,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Record a manual streamer marking (issue 03) for audit replay.
+
+        The operator pins a cluster as streamer from the TUI; ``actor`` is
+        ``operator`` for these manual actions.
+        """
+        self._append(
+            {
+                "kind": "streamer_marked",
+                "streamer_marked": {
+                    "cluster_id": cluster_id,
+                    "actor": _safe_text(actor) or "unknown",
+                    "reason": _safe_text(reason) or "unknown",
+                },
+            }
+        )
+
     def _append(self, payload: dict[str, object]) -> None:
         with self._lock:
             self._sequence += 1

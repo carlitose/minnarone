@@ -1,8 +1,10 @@
 # Chat-only Twitch runtime example.
-# Output stays on the console public router; this slice non invia messaggi Twitch.
+# Output stays on the console public router. The send block below defaults to
+# off (no PRIVMSG sent). See the operator guide for shadow/live enablement.
 # Secrets stay in environment variables:
-#   TWITCH_BOT_USERNAME
-#   TWITCH_OAUTH_TOKEN
+#   TWITCH_BOT_USERNAME    (read-only IRC ingestion)
+#   TWITCH_OAUTH_TOKEN     (read-only IRC ingestion)
+#   TWITCH_SEND_OAUTH_TOKEN (write-scope token, only needed for shadow/live)
 
 mode: public
 soul_path: soul.md
@@ -25,6 +27,14 @@ twitch:
   video: false
   audio_chunk_seconds: 1.0
   video_fps: 1.0
+  # Public send is off by default. Uncomment and set mode to shadow for
+  # rehearsal; see the operator guide before enabling live.
+  # send:
+  #   mode: off
+  #   allowed_channels: []
+  #   max_per_minute: 1
+  #   max_per_hour: 20
+  #   failure_threshold: 3
 
 senser_interval: 0.5
 idle_interval: 150.0
@@ -57,7 +67,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -86,10 +98,9 @@ vlm:
   max_image_pixels: 500000
 
 commentator:
-  # Default public-chat persona remains available when this is false.
-  enabled: false
   language: it
-  idle_interval: null
+  # No profiles: commentator is disabled. The default public-chat persona
+  # remains available.
 
 llm_params:
   thinking: low

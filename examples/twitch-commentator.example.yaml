@@ -1,6 +1,7 @@
 # Local Twitch commentator example.
-# Output is private/local console only: Minnarone does not send PRIVMSG lines to
-# Twitch and does not need a chat write/send scope.
+# Output is private/local console only (mode: private). In private mode, no
+# public Twitch messages are sent regardless of twitch.send configuration.
+# No chat write/send scope is required.
 # Chat capture still needs read-only IRC credentials in environment if
 # `twitch.chat: true`:
 #   TWITCH_BOT_USERNAME
@@ -25,11 +26,11 @@ twitch:
   video_fps: 1.0
 
 commentator:
-  enabled: true
-  style: operator
   language: it
-  # More proactive than the public-chat default, but still bounded.
-  idle_interval: 30.0
+  profiles:
+    operator:
+      # More proactive than the public-chat default, but still bounded.
+      idle_interval: 30.0
 
 senser_interval: 0.5
 idle_interval: 150.0
@@ -59,7 +60,9 @@ speaker_embedding:
   dimension: 192
 
 speaker_clustering:
-  threshold: 0.6
+  # threshold is the cosine-similarity join floor (higher = more splitting).
+  # 0.45 is a reasonable starting point, not universal: tune per model/language.
+  threshold: 0.45
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 

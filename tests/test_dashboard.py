@@ -525,6 +525,34 @@ def test_dashboard_failure_redaction_handles_base64_like_tokens():
     assert "\\[redacted\\]" in combined
 
 
+def test_dashboard_failure_redaction_covers_twitch_send_write_token():
+    """Il token di SCRITTURA (`TWITCH_SEND_OAUTH_TOKEN`) è nominato a parte
+    nel pattern di redazione, come il token di lettura."""
+
+    class FakeQueue:
+        def stats(self):
+            return _queue_stats(
+                audio=PerceptionQueueChannelStats(
+                    failed=1,
+                    last_error=(
+                        "irc send failed "
+                        "TWITCH_SEND_OAUTH_TOKEN=segretissimo-send "
+                        "TWITCH_OAUTH_TOKEN=segreto-lettura"
+                    ),
+                )
+            )
+
+    state = snapshot(perception_queue=FakeQueue())
+
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    status = state.render_status_bar()
+
+    combined = f"{event_text}\n{status}"
+    assert "segretissimo-send" not in combined
+    assert "segreto-lettura" not in combined
+    assert "\\[redacted\\]" in combined
+
+
 def test_snapshot_perceptions_limited_to_recent_n(tmp_path):
     store = _store(tmp_path)
     for i in range(10):
@@ -1041,3 +1069,458 @@ def test_snapshot_windows_are_defensive_copies(tmp_path):
     # mutare lo snapshot NON tocca lo stato di conversazione vivo
     state.windows[who].last_seen = 999999.0
     assert senser.open_windows()[who].last_seen == live_before
+
+
+# --- Send diagnostics (issue 04) ------------------------------------------
+
+
+def test_snapshot_exposes_send_diagnostics_from_policy():
+    """The snapshot wires a policy snapshot into a plain SendDiagnostics."""
+    from minnarone.dashboard import SendDiagnostics
+
+    class FakePolicy:
+        def snapshot(self):
+            from minnarone.config import TwitchSendMode
+            from minnarone.public_send import PolicySnapshot, SendDecision
+
+            return PolicySnapshot(
+                mode=TwitchSendMode.SHADOW,
+                promoted=False,
+                kill_switch=False,
+                consecutive_failures=0,
+                minute_remaining=5,
+                hour_remaining=20,
+                last_decision=SendDecision(action="shadow", reason="ok"),
+            )
+
+    state = snapshot(send_policy=FakePolicy())
+
+    assert state.send is not None
+    assert isinstance(state.send, SendDiagnostics)
+    assert state.send.mode == "shadow"
+    assert state.send.promoted is False
+    assert state.send.kill_switch is False
+    assert state.send.consecutive_failures == 0
+    assert state.send.minute_remaining == 5
+    assert state.send.hour_remaining == 20
+    assert state.send.last_action == "shadow"
+    assert state.send.last_reason == "ok"
+
+
+def test_snapshot_send_diagnostics_none_when_no_policy():
+    """Without a send policy, send diagnostics are None."""
+    state = snapshot()
+    assert state.send is None
+
+
+def test_send_health_idle_before_any_decision():
+    """Before any decision, send health is idle."""
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(mode="shadow", minute_remaining=5, hour_remaining=20),
+    )
+
+    assert state.source_health["send"].status == "idle"
+
+
+def test_send_health_ok_after_successful_shadow_decision():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            minute_remaining=4,
+            hour_remaining=19,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    assert state.source_health["send"].status == "ok"
+
+
+def test_send_health_ok_after_successful_send_decision():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="live",
+            promoted=True,
+            minute_remaining=4,
+            hour_remaining=19,
+            last_action="send",
+            last_reason="ok",
+        ),
+    )
+
+    assert state.source_health["send"].status == "ok"
+
+
+def test_send_health_failed_with_kill_switch():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="live",
+            kill_switch=True,
+            consecutive_failures=3,
+            minute_remaining=5,
+            hour_remaining=20,
+            last_action="shadow",
+            last_reason="kill_switch",
+        ),
+    )
+
+    assert state.source_health["send"].status == "failed"
+    assert "kill_switch" in state.source_health["send"].detail
+
+
+def test_status_bar_includes_send_budget():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            minute_remaining=3,
+            hour_remaining=18,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    status = state.render_status_bar()
+    assert "send=ok" in status
+    assert "budget=3/18" in status
+
+
+def test_tui_router_captures_shadow_messages_in_minnarone_panel():
+    """PUBLIC messages routed through the shadow router appear in the
+    MinnaroneOutputStream with [SHADOW] markers for the MINNARONE panel."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.SHADOW,
+        allowed_channels=["#test"],
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    stdout_sink = io.StringIO()
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink,
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    asyncio.run(router.route("Ciao chat!", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SHADOW] Ciao chat!"]
+
+
+def test_tui_router_captures_sent_messages_in_minnarone_panel():
+    """PUBLIC messages that are SENT (not shadow) appear with [SENT] marker."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.LIVE,
+        allowed_channels=["#test"],
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    policy.promote()
+    stdout_sink = io.StringIO()
+
+    class FakeSender:
+        async def send(self, message: str) -> None:
+            pass  # successful send
+
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink, sender=FakeSender(),
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    asyncio.run(router.route("Ciao chat!", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SENT] Ciao chat!"]
+
+
+def test_render_text_includes_send_section():
+    from minnarone.dashboard import SendDiagnostics
+
+    state = DashboardState(
+        send=SendDiagnostics(
+            mode="shadow",
+            promoted=False,
+            kill_switch=False,
+            consecutive_failures=0,
+            minute_remaining=5,
+            hour_remaining=20,
+            last_action="shadow",
+            last_reason="ok",
+        ),
+    )
+
+    rendered = state.render_text()
+    assert "== Send ==" in rendered
+    assert "mode=shadow" in rendered
+    assert "promoted=False" in rendered
+    assert "kill_switch=False" in rendered
+    assert "failures=0" in rendered
+    assert "budget=5/20" in rendered
+    assert "last=shadow/ok" in rendered
+
+
+def test_render_text_omits_send_section_when_no_policy():
+    state = DashboardState()
+    rendered = state.render_text()
+    assert "== Send ==" not in rendered
+
+
+def test_tui_router_does_not_capture_dropped_messages():
+    """Dropped PUBLIC messages do NOT appear in MinnaroneOutputStream."""
+    from minnarone.config import TwitchSendConfig, TwitchSendMode
+    from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
+    from minnarone.shadow_router import TwitchPublicOutputRouter
+
+    import io
+
+    config = TwitchSendConfig(
+        mode=TwitchSendMode.SHADOW,
+        allowed_channels=["#test"],
+        max_per_minute=1,
+    )
+    clock = FakeClock(start=0.0)
+    from minnarone.public_send import PublicSendPolicy
+
+    policy = PublicSendPolicy(config, clock=clock)
+    stdout_sink = io.StringIO()
+    public_router = TwitchPublicOutputRouter(
+        policy=policy, channel="#test", stream=stdout_sink,
+    )
+    stream = MinnaroneOutputStream(clock=clock)
+    router = TuiPrivateOutputRouter(stream, public_router=public_router)
+
+    # First message consumes the minute budget
+    asyncio.run(router.route("First", OutputMode.PUBLIC))
+    # Second message is dropped (budget exhausted)
+    asyncio.run(router.route("Dropped", OutputMode.PUBLIC))
+
+    messages = [m.text for m in stream.recent_messages()]
+    assert messages == ["[SHADOW] First"]
+    assert "Dropped" not in " ".join(messages)
+
+
+# --- Per-profile output panels (issue 13) -----------------------------------
+
+
+def test_dashboard_state_has_per_profile_message_fields():
+    """DashboardState has synthesizer_messages and suggester_messages."""
+    state = DashboardState(
+        synthesizer_messages=["Riassunto della riunione."],
+        suggester_messages=["Suggerimento: prova questa strategia."],
+    )
+
+    assert state.synthesizer_messages == ["Riassunto della riunione."]
+    assert state.suggester_messages == ["Suggerimento: prova questa strategia."]
+
+
+def test_dashboard_state_per_profile_defaults_empty():
+    """Without explicit data, per-profile lists default to empty."""
+    state = DashboardState()
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_render_panels_includes_sintetizzatore_when_active():
+    """SINTETIZZATORE panel appears when synthesizer has messages."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi del discorso."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" in titles
+    panel_text = {p.title: p.text for p in panels}
+    assert "Sintesi del discorso." in panel_text["SINTETIZZATORE"]
+
+
+def test_render_panels_includes_suggerimenti_when_active():
+    """SUGGERIMENTI panel appears when suggester has messages."""
+    state = DashboardState(
+        suggester_messages=["Suggerimento strategico."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SUGGERIMENTI" in titles
+    panel_text = {p.title: p.text for p in panels}
+    assert "Suggerimento strategico." in panel_text["SUGGERIMENTI"]
+
+
+def test_render_panels_excludes_sintetizzatore_when_inactive():
+    """SINTETIZZATORE panel does NOT appear when no synthesizer messages."""
+    state = DashboardState()
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" not in titles
+
+
+def test_render_panels_excludes_suggerimenti_when_inactive():
+    """SUGGERIMENTI panel does NOT appear when no suggester messages."""
+    state = DashboardState()
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SUGGERIMENTI" not in titles
+
+
+def test_render_panels_includes_both_new_panels_when_both_active():
+    """Both SINTETIZZATORE and SUGGERIMENTI appear when both have messages."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    assert "SINTETIZZATORE" in titles
+    assert "SUGGERIMENTI" in titles
+    # The base 9 panels are still present.
+    assert "MINNARONE" in titles
+    assert "MEMORIA" in titles
+
+
+def test_render_panels_preserves_base_panels_order_with_new_panels():
+    """New panels appear after MEMORIA; base panel order unchanged."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    panels = state.render_panels()
+    titles = [p.title for p in panels]
+
+    # The original 9 titles should appear in their original order.
+    base_titles = [
+        "IDLE", "FINESTRA CHAT", "STREAMER", "CHAT", "EVENTI",
+        "MINNARONE", "TRASCRIZIONE", "VIDEO", "MEMORIA",
+    ]
+    base_in_result = [t for t in titles if t in base_titles]
+    assert base_in_result == base_titles
+    # New panels come after the base ones.
+    assert titles.index("SINTETIZZATORE") > titles.index("MEMORIA")
+    assert titles.index("SUGGERIMENTI") > titles.index("SINTETIZZATORE")
+
+
+def test_snapshot_populates_per_profile_messages_from_output_streams():
+    """snapshot() reads per-profile streams into per-profile message fields."""
+    from minnarone.output import CommentatorStyle
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    syn_stream = MinnaroneOutputStream(clock=lambda: 10.0)
+    syn_stream.append("Sintesi riunione.", OutputMode.PRIVATE)
+
+    sug_stream = MinnaroneOutputStream(clock=lambda: 11.0)
+    sug_stream.append("Suggerimento tattico.", OutputMode.PRIVATE)
+
+    output_streams = {
+        CommentatorStyle.MEETING_SYNTHESIZER: syn_stream,
+        CommentatorStyle.SUGGESTER: sug_stream,
+    }
+
+    state = snapshot(output_streams=output_streams)
+
+    assert state.synthesizer_messages == ["Sintesi riunione."]
+    assert state.suggester_messages == ["Suggerimento tattico."]
+
+
+def test_snapshot_per_profile_empty_when_no_streams():
+    """Without output_streams, per-profile messages are empty."""
+    state = snapshot()
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_snapshot_per_profile_empty_when_stream_has_no_messages():
+    """A present but empty stream yields an empty list."""
+    from minnarone.output import CommentatorStyle
+    from minnarone.output_sink import MinnaroneOutputStream
+
+    syn_stream = MinnaroneOutputStream(clock=lambda: 10.0)
+    output_streams = {CommentatorStyle.MEETING_SYNTHESIZER: syn_stream}
+
+    state = snapshot(output_streams=output_streams)
+
+    assert state.synthesizer_messages == []
+    assert state.suggester_messages == []
+
+
+def test_status_bar_includes_active_profile_segments():
+    """Status bar shows per-profile health segments when profiles are active."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    status = state.render_status_bar()
+
+    assert "syn=ok" in status
+    assert "sug=ok" in status
+
+
+def test_status_bar_omits_profile_segments_when_inactive():
+    """Status bar does NOT show profile segments when no messages."""
+    state = DashboardState()
+
+    status = state.render_status_bar()
+
+    assert "syn=" not in status
+    assert "sug=" not in status
+
+
+def test_render_text_includes_per_profile_sections():
+    """render_text() includes per-profile sections when messages exist."""
+    state = DashboardState(
+        synthesizer_messages=["Sintesi."],
+        suggester_messages=["Suggerimento."],
+    )
+
+    rendered = state.render_text()
+
+    assert "== SINTETIZZATORE ==" in rendered
+    assert "Sintesi." in rendered
+    assert "== SUGGERIMENTI ==" in rendered
+    assert "Suggerimento." in rendered
+
+
+def test_render_text_omits_per_profile_sections_when_empty():
+    """render_text() does NOT include per-profile sections when empty."""
+    state = DashboardState()
+
+    rendered = state.render_text()
+
+    assert "== SINTETIZZATORE ==" not in rendered
+    assert "== SUGGERIMENTI ==" not in rendered

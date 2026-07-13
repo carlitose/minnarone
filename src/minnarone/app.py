@@ -55,7 +55,14 @@ from .capture import (
     make_device_screen_capture_source,
 )
 from .chat import ChatPerceiver
-from .config import Config, ConfigError, OsCaptureConfig
+from .config import (
+    TWITCH_SEND_TOKEN_ENV_VAR,
+    Config,
+    ConfigError,
+    OsCaptureConfig,
+    TwitchSendConfig,
+    TwitchSendMode,
+)
 from .console import ConsoleOutputRouter
 from .dashboard import DashboardState, snapshot
 from .human import HumanLikeness
@@ -71,10 +78,12 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
+from .public_send import PublicSendPolicy
 from .reactor import Reactor
 from .run_artifacts import RunSession
 from .run_events import RunEventRecorder
 from .senser import Senser
+from .shadow_router import TwitchPublicOutputRouter
 from .source import RawEvent, SourceAdapter
 from .speaker import (
     EmbeddingSpeakerTagger,
@@ -86,7 +95,8 @@ from .speaker import (
 )
 from .store import PerceptionStore
 from .summarizer import Summarizer
-from .twitch_chat import ConnectIRC
+from .twitch_chat import ConnectIRC, _connect_twitch_irc
+from .twitch_chat_sender import TwitchChatSender
 from .twitch_stream import TwitchStreamAdapter
 from .twitch_video import TwitchVideoStreamOpener, VideoFrameDecoder
 from .vad import StreamingVad, WebRtcVadDetector
@@ -138,9 +148,17 @@ class Agent:
     """Handle eseguibile dell'agente assemblato.
 
     Espone i componenti cablati (per ispezione/osservabilità e test di wiring) e
-    un `run` che avvia, CONCORRENTEMENTE: il loop di reazione, il loop del
-    Summarizer e — se è stata iniettata una `SourceAdapter` — la pompa di
-    percezione che instrada ogni `RawEvent` al perceiver del suo canale.
+    un `run` che avvia, CONCORRENTEMENTE: N loop di reazione (uno per profilo
+    commentatore attivo), il loop del Summarizer e — se è stata iniettata una
+    `SourceAdapter` — la pompa di percezione che instrada ogni `RawEvent` al
+    perceiver del suo canale.
+
+    **Multi-Reactor (issue 11):** ogni profilo attivo in
+    ``config.commentator.profiles`` genera il proprio Reactor con Senser,
+    PromptBuilder e OutputRouter dedicati; store, Summarizer e LLMProvider
+    restano condivisi. ``reactors`` è la lista completa; ``reactor``,
+    ``senser`` e ``prompt_builder`` puntano al *primo* Reactor per
+    compatibilità con il codice e i test precedenti.
     """
 
     config: Config
@@ -153,6 +171,10 @@ class Agent:
     human: HumanLikeness
     router: OutputRouter
     reactor: Reactor
+    # Multi-Reactor: lista di TUTTI i Reactor assemblati (uno per profilo
+    # commentatore attivo). Può essere vuota (zero profili → solo pump +
+    # summarizer). ``reactor`` sopra è il PRIMO elemento, per backward compat.
+    reactors: list[Reactor] = field(default_factory=list)
     # Pipeline di percezione iniettabili: l'adapter (sorgente di `RawEvent`) e il
     # dispatcher per-canale. AFK solo il canale "chat" è cablabile senza modelli;
     # "audio"/"video" compaiono solo se i loro backend sono iniettati.
@@ -166,8 +188,13 @@ class Agent:
         default_factory=PromptObservationRecorder
     )
     minnarone_output: MinnaroneOutputStream | None = None
+    output_streams: dict[CommentatorStyle, MinnaroneOutputStream] = field(
+        default_factory=dict
+    )
     speaker_diagnostics: object | None = None
     video_diagnostics: object | None = None
+    send_policy: object | None = None
+    sender: object | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -205,12 +232,14 @@ class Agent:
             senser=self.senser,
             reactor=self.reactor,
             minnarone_output=self.minnarone_output,
+            output_streams=self.output_streams or None,
             perception_queue=self.perception_queue,
             speaker_tagger=self.speaker_diagnostics,
             video_perceiver=self.video_diagnostics,
             adapter=self.adapter,
             prompt_recorder=self.prompt_recorder,
             summarizer=self.summarizer,
+            send_policy=self.send_policy,
             channel=channel,
             started_at=started_at,
         )
@@ -243,10 +272,10 @@ class Agent:
                 await queue.stop()
 
     async def run(self) -> None:
-        """Avvia, CONCORRENTEMENTE, reazione + summarizer + pompa di percezione.
+        """Avvia, CONCORRENTEMENTE, N reazioni + summarizer + pompa di percezione.
 
-        Tre coroutine sullo stesso store, con arresto pulito:
-        - il loop del Reactor (`interval=senser_interval`);
+        N+2 coroutine sullo stesso store, con arresto pulito:
+        - N loop di Reactor (uno per profilo attivo, `interval=senser_interval`);
         - il loop del Summarizer (`interval=summarizer_interval`);
         - la pompa di percezione (`adapter.events()` → dispatcher per canale).
 
@@ -254,19 +283,28 @@ class Agent:
 
         - **Con adapter** (es. test, o una sorgente che termina): la pompa GUIDA.
           Quando lo stream è esaurito l'agente ha percepito tutto ciò che c'era;
-          si lascia al Reactor un ultimo tick per reagire alle percezioni appena
-          arrivate, poi si fermano i loop di Reactor e Summarizer.
+          si lascia a ciascun Reactor un ultimo tick per reagire alle percezioni
+          appena arrivate, poi si fermano tutti i loop.
         - **Senza adapter** (percorso live documentato: la cattura device è il
-          passo manuale): la pompa è un no-op immediato, quindi GUIDA il loop del
-          Reactor, che gira finché `reactor.stop()` — comportamento identico a
-          prima del capstone, col Summarizer ora attivo in concorrenza.
+          passo manuale): la pompa è un no-op immediato, quindi GUIDANO i loop
+          dei Reactor, che girano finché `reactor.stop()` — il primo che termina
+          avvia lo shutdown di tutti gli altri.
+        - **Zero Reactor** (zero profili): solo pump + summarizer.
 
-        In entrambi i casi l'arresto è pulito: nessun task orfano, e una
+        In tutti i casi l'arresto è pulito: nessun task orfano, e una
         `CancelledError` (run() cancellato) ferma tutto e si propaga.
+
+        Il sender (se presente) viene avviato prima dei task e fermato nel
+        finally; i fallimenti di stop vengono riportati come gli altri errori
+        di shutdown dell'adapter, mai inghiottiti.
         """
-        reactor_task = asyncio.create_task(
-            self.reactor.run(interval=self.config.senser_interval)
-        )
+        if self.sender is not None:
+            await self.sender.start()
+
+        reactor_tasks = [
+            asyncio.create_task(r.run(interval=self.config.senser_interval))
+            for r in self.reactors
+        ]
         summarizer_task = asyncio.create_task(
             self.summarizer.run(interval=self.config.summarizer_interval)
         )
@@ -275,25 +313,48 @@ class Agent:
         try:
             if self.adapter is not None:
                 # La pompa guida la durata: attendi l'esaurimento dello stream,
-                # poi un ultimo tick di reazione deterministico.
+                # poi un ultimo tick di reazione deterministico per ogni Reactor.
                 await pump_task
-                await self.reactor.run_once()
+                for r in self.reactors:
+                    await r.run_once()
             else:
-                # Nessuna sorgente: il loop di reazione guida (gira finché
+                # Nessuna sorgente: i loop di reazione guidano (girano finché
                 # `reactor.stop()`), col Summarizer attivo in concorrenza.
-                await reactor_task
+                # Con N Reactor, il primo che termina avvia lo shutdown di tutti.
+                # Con zero Reactor, niente da attendere (pump + summarizer only).
+                if reactor_tasks:
+                    _done, _pending = await asyncio.wait(
+                        reactor_tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
+                else:
+                    await summarizer_task
         finally:
             # Arresto pulito di tutti i loop, in ogni caso (anche su
             # cancellazione): nessun task orfano.
-            self.reactor.stop()
+            for r in self.reactors:
+                r.stop()
             self.summarizer.stop()
-            reactor_task.cancel()
+            for task in reactor_tasks:
+                task.cancel()
             summarizer_task.cancel()
             pump_task.cancel()
+            # Stop sender before gathering child results; capture its error
+            # so it can be reported alongside other shutdown failures.
+            sender_error: BaseException | None = None
+            if self.sender is not None:
+                try:
+                    await self.sender.stop()
+                except BaseException as exc:
+                    if isinstance(exc, asyncio.CancelledError):
+                        sender_error = None
+                    else:
+                        sender_error = exc
             results = await asyncio.gather(
-                reactor_task, summarizer_task, pump_task, return_exceptions=True
+                *reactor_tasks, summarizer_task, pump_task, return_exceptions=True
             )
             errors = _unexpected_shutdown_errors(results)
+            if sender_error is not None:
+                errors.append(sender_error)
             if errors:
                 _raise_shutdown_errors(errors)
 
@@ -316,15 +377,47 @@ def _raise_shutdown_errors(errors: list[BaseException]) -> None:
 
 
 def _build_router(
-    mode: OutputMode, *, commentator_style: CommentatorStyle | None = None
-) -> OutputRouter:
-    """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice)."""
+    mode: OutputMode,
+    *,
+    commentator_style: CommentatorStyle | None = None,
+    send_config: TwitchSendConfig | None = None,
+    channel: str | None = None,
+    event_recorder: object | None = None,
+    clock: Callable[[], float] | None = None,
+    sender: object | None = None,
+    echo: bool = True,
+) -> tuple[OutputRouter, PublicSendPolicy | None]:
+    """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice).
+
+    Returns (router, send_policy) where send_policy is non-None only when
+    the send path is active. `echo=False` spegne la stampa dei marcatori su
+    stdout del router pubblico: lo si usa quando il router è avvolto dal
+    TuiPrivateOutputRouter (il display è del pannello TUI, non di stdout).
+    """
     if mode is OutputMode.PUBLIC:
-        return ConsoleOutputRouter()
+        if (
+            send_config is not None
+            and send_config.mode is not TwitchSendMode.OFF
+        ):
+            import time
+
+            policy = PublicSendPolicy(
+                send_config,
+                clock=clock if clock is not None else time.monotonic,
+            )
+            router = TwitchPublicOutputRouter(
+                policy=policy,
+                channel=channel or "",
+                event_recorder=event_recorder,
+                sender=sender,
+                echo=echo,
+            )
+            return router, policy
+        return ConsoleOutputRouter(), None
     if commentator_style is not None:
-        return ConsoleOutputRouter()
+        return ConsoleOutputRouter(), None
     # private: accettata, ma il percorso di output segnala not-implemented.
-    return PrivateNotImplementedRouter()
+    return PrivateNotImplementedRouter(), None
 
 
 def _default_store_path(config: Config) -> Path:
@@ -337,17 +430,52 @@ def _default_store_path(config: Config) -> Path:
     return Path(config.facts_dir).resolve().parent / "perceptions.jsonl"
 
 
+def _twitch_token_is_effectively_empty(value: str | None) -> bool:
+    """True se il token è assente o è solo il prefisso `oauth:` senza contenuto.
+
+    Controllo offline: non valida che Twitch accetti il token, solo che ci sia
+    davvero qualcosa dopo l'eventuale prefisso `oauth:` (il footgun classico è
+    lasciare `TWITCH_OAUTH_TOKEN=oauth:` vuoto). Il valore non viene mai
+    propagato in errori/log.
+    """
+    text = (value or "").strip()
+    if text.lower().startswith("oauth:"):
+        text = text[len("oauth:") :].strip()
+    return not text
+
+
 def _required_twitch_chat_credentials() -> tuple[str, str]:
-    missing = [
-        name
-        for name in ("TWITCH_BOT_USERNAME", "TWITCH_OAUTH_TOKEN")
-        if not os.environ.get(name)
-    ]
+    missing: list[str] = []
+    if not (os.environ.get("TWITCH_BOT_USERNAME") or "").strip():
+        missing.append("TWITCH_BOT_USERNAME")
+    if _twitch_token_is_effectively_empty(os.environ.get("TWITCH_OAUTH_TOKEN")):
+        missing.append("TWITCH_OAUTH_TOKEN")
     if missing:
         raise ConfigError(
-            "credenziali Twitch chat mancanti: esporta " + ", ".join(missing)
+            "credenziali Twitch chat mancanti o vuote: imposta "
+            + ", ".join(missing)
+            + " (il token deve contenere un valore, non solo il prefisso)"
         )
     return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
+
+
+def _required_twitch_send_credentials() -> None:
+    """Gate fail-fast di `twitch.send.mode: live`: token di scrittura presente.
+
+    Della variabile d'ambiente si verifica solo la PRESENZA: il valore non deve
+    mai finire in messaggi d'errore, log o artefatti. Il controllo vive nel
+    build (non nello schema di config) così `Config.load` resta puro rispetto
+    all'ambiente, mentre `--check` — che costruisce l'agente — fallisce subito.
+    """
+    # Un token di soli spazi o solo prefisso `oauth:` è assente a tutti gli
+    # effetti; il valore serve solo al controllo e non viene mai propagato.
+    if _twitch_token_is_effectively_empty(os.environ.get(TWITCH_SEND_TOKEN_ENV_VAR)):
+        raise ConfigError(
+            "credenziali Twitch send mancanti o vuote: esporta "
+            f"{TWITCH_SEND_TOKEN_ENV_VAR} (token Twitch con scope di "
+            "scrittura, distinto dal token di lettura, con un valore reale "
+            "e non solo il prefisso)"
+        )
 
 
 def _require_media_perceiver(
@@ -604,6 +732,7 @@ def build_agent(
     minnarone_output: MinnaroneOutputStream | None = None,
     adapter: SourceAdapter | None = None,
     twitch_chat_connect: ConnectIRC | None = None,
+    twitch_send_connect: ConnectIRC | None = None,
     audio_perceiver: AudioPerceiver | None = None,
     video_perceiver: VideoPerceiver | None = None,
     perception_queue: BoundedLocalPerceptionQueue | None = None,
@@ -652,6 +781,11 @@ def build_agent(
     - `OutputRouter` selezionato dalla modalità (`public`/`private`).
     - `Reactor(...)` che lega tutto insieme.
     """
+    # Gate fail-fast dell'invio pubblico: `twitch.send.mode: live` richiede il
+    # token di scrittura in ambiente, qualunque sia l'adapter iniettato.
+    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
+        _required_twitch_send_credentials()
+
     path = (
         Path(store_path)
         if store_path is not None
@@ -663,14 +797,6 @@ def build_agent(
 
     memory = FileMemory(soul_path=config.soul_path, facts_dir=config.facts_dir)
     blocks = memory.load()
-    # announce_ai è l'UNICO punto v2 cablato (coerente): fluisce nello stance.
-    commentator_style = config.commentator.prompt_style
-    prompt_builder = PromptBuilder(
-        blocks,
-        announce_ai=config.disclosure.announce_ai,
-        commentator_language=config.commentator.language,
-        commentator_style=commentator_style,
-    )
 
     prompt_recorder = PromptObservationRecorder(
         debug_dir=run_session.debug_dir if run_session is not None else None
@@ -680,30 +806,207 @@ def build_agent(
         recorder=prompt_recorder,
     )
 
-    senser = Senser(
-        store,
-        agent_name=config.agent_name,
-        idle_interval=config.commentator.idle_interval_or(config.idle_interval),
-    )
+    # Self-echo filter: se l'invio pubblico è attivo, il bot_identity è lo
+    # username del send-account (TWITCH_BOT_USERNAME). Le percezioni chat di
+    # questo speaker vengono escluse dai trigger e dalla finestra recente del
+    # prompt. Assente (send: off o non-Twitch) → nessun filtro.
+    bot_identity: str | None = None
+    if (
+        config.twitch is not None
+        and config.twitch.send.mode is not TwitchSendMode.OFF
+    ):
+        bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
 
     summarizer = Summarizer(llm=llm, store=store)
     human = HumanLikeness()
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None
     )
+    # Costruzione del sender: SOLO quando il config dichiara mode: live.
+    # off/shadow non costruiscono il sender né leggono il token di scrittura.
+    sender: TwitchChatSender | None = None
+    if (
+        config.twitch is not None
+        and config.twitch.send.mode is TwitchSendMode.LIVE
+    ):
+        sender = TwitchChatSender(
+            channel=config.twitch.channel,
+            username=os.environ["TWITCH_BOT_USERNAME"],
+            oauth_token=os.environ[TWITCH_SEND_TOKEN_ENV_VAR],
+            connect=twitch_send_connect or _connect_twitch_irc,
+        )
+
+    # -- Determine styles to build Reactors for --------------------------------
+    # Multi-Reactor wiring (issue 11): iterate over active commentator profiles
+    # and build one Reactor per style. If no profiles, apply the twitch+public
+    # fallback (ORIGINAL_CHAT) or build zero Reactors.
+    active_styles = config.commentator.active_styles()
+    styles_to_build: list[CommentatorStyle | None] = list(active_styles)
+    if not styles_to_build:
+        # Twitch + public: la persona pubblica È l'original_chat,
+        # indipendentemente dal commentator. Il prompt usa il contratto
+        # RE:/MSG:/#end_conv perché è il formato che il Reactor sa normalizzare
+        # per l'output su chat pubblica.
+        if config.adapter == "twitch" and config.mode is OutputMode.PUBLIC:
+            styles_to_build = [CommentatorStyle.ORIGINAL_CHAT]
+        # Otherwise: zero profiles → zero Reactors (only pump + summarizer).
+
+    # -- Router selection ----------------------------------------------------------
+    # Per-profile routing (issue 12): when the TUI path is active, each profile
+    # gets its own MinnaroneOutputStream + TuiPrivateOutputRouter.  The underlying
+    # public_router (ConsoleOutputRouter or TwitchPublicOutputRouter) is shared.
+    _first_style: CommentatorStyle | None = (
+        styles_to_build[0] if styles_to_build else None
+    )
     active_minnarone_output: MinnaroneOutputStream | None = None
+    output_streams: dict[CommentatorStyle, MinnaroneOutputStream] = {}
+    send_policy: PublicSendPolicy | None = None
+    _per_profile_routers: dict[CommentatorStyle | None, OutputRouter] = {}
     if router is not None:
         out_router = router
         if isinstance(router, TuiPrivateOutputRouter):
             active_minnarone_output = router.stream
-    elif (
-        minnarone_output is not None
-        and config.commentator.uses_local_output(config.mode)
-    ):
-        out_router = TuiPrivateOutputRouter(minnarone_output)
-        active_minnarone_output = minnarone_output
+    elif minnarone_output is not None and styles_to_build:
+        # Percorso TUI: c'è uno stream locale e almeno uno stile da instradare.
+        # Vale sia per private (profili commentator) sia per public+twitch (la
+        # persona original_chat, forzata da validazione). L'output pubblico passa
+        # per il TuiPrivateOutputRouter che avvolge il public_router e cattura i
+        # marcatori [SHADOW]/[SENT] nel pannello MINNARONE; per questo il
+        # public_router è costruito con echo=False (niente stdout sotto la TUI).
+        send_config = config.twitch.send if config.twitch is not None else None
+        twitch_channel = config.twitch.channel if config.twitch is not None else None
+        public_router, send_policy = _build_router(
+            config.mode,
+            commentator_style=_first_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            event_recorder=event_recorder,
+            sender=sender,
+            echo=False,
+        )
+        for style in styles_to_build:
+            style_stream = MinnaroneOutputStream()
+            output_streams[style] = style_stream
+            _per_profile_routers[style] = TuiPrivateOutputRouter(
+                style_stream, public_router=public_router,
+            )
+        if output_streams:
+            active_minnarone_output = next(iter(output_streams.values()))
+        else:
+            active_minnarone_output = minnarone_output
+        out_router = _per_profile_routers.get(_first_style) or TuiPrivateOutputRouter(
+            minnarone_output, public_router=public_router,
+        )
     else:
-        out_router = _build_router(config.mode, commentator_style=commentator_style)
+        send_config = config.twitch.send if config.twitch is not None else None
+        twitch_channel = config.twitch.channel if config.twitch is not None else None
+        out_router, send_policy = _build_router(
+            config.mode,
+            commentator_style=_first_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            event_recorder=event_recorder,
+            sender=sender,
+        )
+
+    # -- Build N Reactors (one per active style) --------------------------------
+    reactors: list[Reactor] = []
+    first_senser: Senser | None = None
+    first_prompt_builder: PromptBuilder | None = None
+
+    for style in styles_to_build:
+        # Per-profile idle interval: override global config when the profile has
+        # its own idle_interval setting.
+        style_idle = config.idle_interval
+        if style is not None and style in config.commentator.profiles:
+            _profile_idle = getattr(
+                config.commentator.profiles[style], "idle_interval", None
+            )
+            if _profile_idle is not None:
+                style_idle = _profile_idle
+
+        # Per-profile trigger mode and periodic interval.
+        style_trigger_mode = "reactive"
+        style_periodic_interval_s: float | None = None
+        if style is CommentatorStyle.MEETING_SYNTHESIZER:
+            _ms_profile = config.commentator.profiles[
+                CommentatorStyle.MEETING_SYNTHESIZER
+            ]
+            style_trigger_mode = "periodic"
+            style_periodic_interval_s = _ms_profile.interval_s
+        elif style is CommentatorStyle.SUGGESTER:
+            style_trigger_mode = "on_perception"
+
+        style_senser = Senser(
+            store,
+            agent_name=config.agent_name,
+            bot_identity=bot_identity,
+            idle_interval=style_idle,
+            trigger_mode=style_trigger_mode,
+            interval_s=style_periodic_interval_s,
+        )
+
+        style_prompt_builder = PromptBuilder(
+            blocks,
+            announce_ai=config.disclosure.announce_ai,
+            commentator_language=config.commentator.language,
+            commentator_style=style,
+        )
+
+        style_router = _per_profile_routers.get(style, out_router)
+        style_reactor = Reactor(
+            senser=style_senser,
+            prompt_builder=style_prompt_builder,
+            llm=llm,
+            router=style_router,
+            store=store,
+            mode=config.mode,
+            recent_window=config.recent_chat_window,
+            human=human,
+            summary_provider=lambda: summarizer.current_summary,
+            event_recorder=event_recorder,
+            bot_identity=bot_identity,
+        )
+
+        reactors.append(style_reactor)
+        if first_senser is None:
+            first_senser = style_senser
+            first_prompt_builder = style_prompt_builder
+
+    # Backward compat: when no styles are built, create a default Senser and
+    # PromptBuilder so the Agent's `senser` and `prompt_builder` fields are
+    # always populated (existing tests and observability depend on them).
+    if first_senser is None:
+        first_senser = Senser(
+            store,
+            agent_name=config.agent_name,
+            bot_identity=bot_identity,
+            idle_interval=config.idle_interval,
+        )
+    if first_prompt_builder is None:
+        first_prompt_builder = PromptBuilder(
+            blocks,
+            announce_ai=config.disclosure.announce_ai,
+            commentator_language=config.commentator.language,
+            commentator_style=None,
+        )
+    first_reactor: Reactor
+    if reactors:
+        first_reactor = reactors[0]
+    else:
+        first_reactor = Reactor(
+            senser=first_senser,
+            prompt_builder=first_prompt_builder,
+            llm=llm,
+            router=out_router,
+            store=store,
+            mode=config.mode,
+            recent_window=config.recent_chat_window,
+            human=human,
+            summary_provider=lambda: summarizer.current_summary,
+            event_recorder=event_recorder,
+            bot_identity=bot_identity,
+        )
 
     # I perceiver audio/video si costruiscono con GLI STESSI helper per Twitch e
     # os_capture: il canale è cablato se l'adapter dichiarato lo abilita.
@@ -724,21 +1027,6 @@ def build_agent(
             store,
             qwen_captioner_factory=qwen_captioner_factory,
         )
-
-    reactor = Reactor(
-        senser=senser,
-        prompt_builder=prompt_builder,
-        llm=llm,
-        router=out_router,
-        store=store,
-        mode=config.mode,
-        recent_window=config.recent_chat_window,
-        human=human,
-        # Il Reactor LEGGE il riassunto corrente (non possiede il loop del
-        # Summarizer): la callable zero-arg punta a `current_summary`.
-        summary_provider=lambda: summarizer.current_summary,
-        event_recorder=event_recorder,
-    )
 
     # Dispatcher di percezione per-canale. "chat" è sempre disponibile (nessun
     # modello). "audio"/"video" solo se il backend è iniettato.
@@ -782,20 +1070,24 @@ def build_agent(
         store=store,
         run_session=run_session,
         memory=memory,
-        prompt_builder=prompt_builder,
+        prompt_builder=first_prompt_builder,
         llm=llm,
-        senser=senser,
+        senser=first_senser,
         summarizer=summarizer,
         human=human,
         router=out_router,
-        reactor=reactor,
+        reactor=first_reactor,
+        reactors=reactors,
         adapter=adapter,
         perceivers=perceivers,
         perception_queue=perception_queue,
         prompt_recorder=prompt_recorder,
         minnarone_output=active_minnarone_output,
+        output_streams=output_streams,
         speaker_diagnostics=speaker_diagnostics,
         video_diagnostics=video_perceiver,
+        send_policy=send_policy,
+        sender=sender,
     )
 
 

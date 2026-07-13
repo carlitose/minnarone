@@ -11,7 +11,13 @@ from minnarone.config import (
     CommentatorStyle,
     Config,
     ConfigError,
+    MeetingSynthesizerProfileConfig,
+    OperatorProfileConfig,
+    OriginalChatProfileConfig,
     OsCaptureConfig,
+    ProfileConfig,
+    SuggesterProfileConfig,
+    TwitchSendMode,
 )
 from minnarone.output import OutputMode
 from minnarone.speaker import SpeakerClusteringConfig, SpeakerEmbeddingConfig
@@ -390,7 +396,7 @@ def test_asr_config_defaults_overrides_and_validation(tmp_path):
 def test_speaker_configs_defaults_overrides_and_validation(tmp_path):
     cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
     assert cfg.speaker_embedding == SpeakerEmbeddingConfig()
-    assert cfg.speaker_clustering == SpeakerClusteringConfig()
+    assert cfg.speaker_clustering == SpeakerClusteringConfig(threshold=0.45)
 
     configured = Config.load(
         _write(
@@ -558,74 +564,114 @@ def test_commentator_config_defaults_overrides_and_validation(tmp_path):
             + textwrap.dedent(
                 """
                 commentator:
-                  enabled: true
                   language: it
-                  idle_interval: 12.5
+                  profiles:
+                    operator:
+                      idle_interval: 12.5
                 """
             ),
         )
     )
 
-    assert configured.commentator == CommentatorConfig(
-        enabled=True,
-        language="it",
-        idle_interval=12.5,
+    assert configured.commentator.language == "it"
+    assert CommentatorStyle.OPERATOR in configured.commentator.profiles
+    assert configured.commentator.profiles[CommentatorStyle.OPERATOR] == (
+        OperatorProfileConfig(idle_interval=12.5)
     )
-    assert configured.commentator.style is CommentatorStyle.OPERATOR
 
-    with pytest.raises(ConfigError, match="commentator.enabled"):
-        Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  enabled: 1\n"))
     with pytest.raises(ConfigError, match="commentator.language"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  language: ''\n"))
-    with pytest.raises(ConfigError, match="commentator.idle_interval"):
-        Config.load(
-            _write(tmp_path, MINIMAL_YAML + "commentator:\n  idle_interval: 0\n")
-        )
-    with pytest.raises(ConfigError, match="commentator.unexpected"):
+    with pytest.raises(ConfigError, match="commentator non riconosciuti"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  unexpected: 1\n"))
 
 
-def test_original_chat_style_loads_for_private_commentator(tmp_path):
-    cfg = Config.load(
-        _write(
-            tmp_path,
-            MINIMAL_YAML.replace("mode: public", "mode: private")
-            + textwrap.dedent(
-                """
-                commentator:
-                  enabled: true
-                  style: original_chat
-                """
-            ),
-        )
+def test_commentator_empty_profiles_means_disabled():
+    cfg = CommentatorConfig()
+    assert cfg.profiles == {}
+    assert cfg.active_styles() == []
+    assert cfg.uses_local_output(OutputMode.PRIVATE) is False
+
+
+def test_commentator_single_profile_active():
+    cfg = CommentatorConfig(
+        profiles={CommentatorStyle.OPERATOR: OperatorProfileConfig(idle_interval=30.0)}
     )
+    assert cfg.active_styles() == [CommentatorStyle.OPERATOR]
+    assert cfg.uses_local_output(OutputMode.PRIVATE) is True
+    assert cfg.uses_local_output(OutputMode.PUBLIC) is False
 
-    assert cfg.commentator.style is CommentatorStyle.ORIGINAL_CHAT
+
+def test_public_twitch_rejects_non_original_chat_profile(tmp_path):
+    # Su Twitch in public la persona È l'original_chat: un profilo operator
+    # (telecronista) parlerebbe all'operatore invece di scrivere in chat.
+    bad = TWITCH_YAML + textwrap.dedent(
+        """
+        commentator:
+          language: it
+          profiles:
+            operator:
+              idle_interval: 30.0
+        """
+    )
+    with pytest.raises(ConfigError, match="original_chat"):
+        Config.load(_write(tmp_path, bad))
 
 
-def test_original_chat_style_requires_enabled_private_commentator(tmp_path):
-    with pytest.raises(
-        ConfigError,
-        match="commentator.style.*original_chat.*commentator.enabled.*mode: private",
-    ):
+def test_public_twitch_allows_original_chat_profile(tmp_path):
+    good = TWITCH_YAML + textwrap.dedent(
+        """
+        commentator:
+          language: it
+          profiles:
+            original_chat:
+              idle_interval: 30.0
+        """
+    )
+    cfg = Config.load(_write(tmp_path, good))
+    assert cfg.commentator.active_styles() == [CommentatorStyle.ORIGINAL_CHAT]
+
+
+def test_public_twitch_without_profile_allowed(tmp_path):
+    # Nessun profilo è ammesso: il default per twitch+public è original_chat.
+    cfg = Config.load(_write(tmp_path, TWITCH_YAML))
+    assert cfg.commentator.active_styles() == []
+
+
+def test_commentator_multiple_profiles_active():
+    cfg = CommentatorConfig(
+        profiles={
+            CommentatorStyle.OPERATOR: OperatorProfileConfig(),
+            CommentatorStyle.MEETING_SYNTHESIZER: MeetingSynthesizerProfileConfig(),
+            CommentatorStyle.SUGGESTER: SuggesterProfileConfig(),
+        }
+    )
+    styles = cfg.active_styles()
+    assert CommentatorStyle.OPERATOR in styles
+    assert CommentatorStyle.MEETING_SYNTHESIZER in styles
+    assert CommentatorStyle.SUGGESTER in styles
+    assert len(styles) == 3
+
+
+def test_commentator_unknown_profile_key_raises(tmp_path):
+    with pytest.raises(ConfigError, match="commentator.profiles.*glitch"):
         Config.load(
             _write(
                 tmp_path,
-                MINIMAL_YAML
+                MINIMAL_YAML.replace("mode: public", "mode: private")
                 + textwrap.dedent(
                     """
                     commentator:
-                      style: original_chat
-                    """
+                      profiles:
+                        glitch: {}
+                    """,
                 ),
             )
         )
 
 
-def test_invalid_commentator_style_fails_clearly(tmp_path):
+def test_commentator_unknown_field_within_profile_raises(tmp_path):
     with pytest.raises(
-        ConfigError,
-        match="commentator.style.*glitch.*operator.*original_chat",
+        ConfigError, match="commentator.profiles.operator non riconosciuti"
     ):
         Config.load(
             _write(
@@ -634,15 +680,36 @@ def test_invalid_commentator_style_fails_clearly(tmp_path):
                 + textwrap.dedent(
                     """
                     commentator:
-                      enabled: true
-                      style: glitch
-                    """
+                      profiles:
+                        operator:
+                          bogus_field: 42
+                    """,
                 ),
             )
         )
 
 
-def test_commentator_requires_private_mode(tmp_path):
+def test_commentator_profile_validation_negative_interval_raises(tmp_path):
+    with pytest.raises(
+        ConfigError, match="MeetingSynthesizerProfileConfig.interval_s"
+    ):
+        Config.load(
+            _write(
+                tmp_path,
+                MINIMAL_YAML.replace("mode: public", "mode: private")
+                + textwrap.dedent(
+                    """
+                    commentator:
+                      profiles:
+                        meeting_synthesizer:
+                          interval_s: -1
+                    """,
+                ),
+            )
+        )
+
+
+def test_commentator_private_only_profiles_require_private_mode(tmp_path):
     with pytest.raises(ConfigError, match="mode: private"):
         Config.load(
             _write(
@@ -651,11 +718,150 @@ def test_commentator_requires_private_mode(tmp_path):
                 + textwrap.dedent(
                     """
                     commentator:
-                      enabled: true
+                      profiles:
+                        meeting_synthesizer:
+                          interval_s: 180
                     """
                 ),
             )
         )
+
+
+def test_commentator_operator_profile_allowed_in_public_mode(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML
+            + textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    operator: {}
+                """
+            ),
+        )
+    )
+    assert len(cfg.commentator.active_styles()) == 1
+
+
+def test_commentator_original_chat_profile_loads_in_private_mode(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace("mode: public", "mode: private")
+            + textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    original_chat: {}
+                """
+            ),
+        )
+    )
+    assert CommentatorStyle.ORIGINAL_CHAT in cfg.commentator.profiles
+    assert isinstance(
+        cfg.commentator.profiles[CommentatorStyle.ORIGINAL_CHAT],
+        OriginalChatProfileConfig,
+    )
+
+
+def test_commentator_empty_dict_profile_produces_valid_config(tmp_path):
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace("mode: public", "mode: private")
+            + textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    suggester: {}
+                """
+            ),
+        )
+    )
+    assert isinstance(
+        cfg.commentator.profiles[CommentatorStyle.SUGGESTER],
+        SuggesterProfileConfig,
+    )
+
+
+def test_commentator_null_profile_value_produces_valid_config(tmp_path):
+    """YAML `suggester:` without a value parses as None; must produce valid config."""
+    cfg = Config.load(
+        _write(
+            tmp_path,
+            MINIMAL_YAML.replace("mode: public", "mode: private")
+            + textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    suggester:
+                """
+            ),
+        )
+    )
+    assert isinstance(
+        cfg.commentator.profiles[CommentatorStyle.SUGGESTER],
+        SuggesterProfileConfig,
+    )
+
+
+def test_commentator_round_trip_from_dict():
+    """Construct from dict and verify all fields survive the round-trip."""
+    from minnarone.config import _commentator_config_from_dict
+
+    data = {
+        "language": "en",
+        "profiles": {
+            "operator": {"idle_interval": 30.0},
+            "meeting_synthesizer": {"interval_s": 60},
+            "suggester": {},
+        },
+    }
+    cfg = _commentator_config_from_dict(data)
+    assert cfg.language == "en"
+    assert len(cfg.profiles) == 3
+    assert cfg.profiles[CommentatorStyle.OPERATOR] == OperatorProfileConfig(
+        idle_interval=30.0,
+    )
+    assert cfg.profiles[CommentatorStyle.MEETING_SYNTHESIZER] == (
+        MeetingSynthesizerProfileConfig(interval_s=60.0)
+    )
+    assert cfg.profiles[CommentatorStyle.SUGGESTER] == SuggesterProfileConfig()
+
+
+def test_commentator_unknown_top_level_key_raises():
+    from minnarone.config import _commentator_config_from_dict
+
+    with pytest.raises(ConfigError, match="commentator non riconosciuti.*enabled"):
+        _commentator_config_from_dict({"enabled": True})
+
+
+def test_commentator_validate_for_mode_public_with_private_only_profile_raises():
+    cfg = CommentatorConfig(
+        profiles={CommentatorStyle.MEETING_SYNTHESIZER: MeetingSynthesizerProfileConfig()},
+    )
+    with pytest.raises(ConfigError, match="mode: private"):
+        cfg.validate_for_mode(OutputMode.PUBLIC)
+
+
+def test_commentator_validate_for_mode_public_with_operator_ok():
+    cfg = CommentatorConfig(
+        profiles={CommentatorStyle.OPERATOR: OperatorProfileConfig()},
+    )
+    cfg.validate_for_mode(OutputMode.PUBLIC)
+
+
+def test_commentator_validate_for_mode_private_with_profiles_ok():
+    cfg = CommentatorConfig(
+        profiles={CommentatorStyle.OPERATOR: OperatorProfileConfig()},
+    )
+    cfg.validate_for_mode(OutputMode.PRIVATE)  # no exception
+
+
+def test_commentator_validate_for_mode_public_without_profiles_ok():
+    cfg = CommentatorConfig()
+    cfg.validate_for_mode(OutputMode.PUBLIC)  # no exception
 
 
 def test_invalid_mode_raises_clear_error(tmp_path):
@@ -691,3 +897,296 @@ def test_non_positive_interval_raises(tmp_path):
     bad = MINIMAL_YAML + "senser_interval: 0\n"
     with pytest.raises(ConfigError, match="senser_interval"):
         Config.load(_write(tmp_path, bad))
+
+
+# ---------------------------------------------------------------------------
+# twitch.send: configurazione dell'invio pubblico (shadow-first)
+# ---------------------------------------------------------------------------
+
+
+def test_twitch_send_defaults_when_absent(tmp_path):
+    cfg = Config.load(_write(tmp_path, TWITCH_YAML))
+
+    assert cfg.twitch is not None
+    assert cfg.twitch.send.mode is TwitchSendMode.OFF
+    assert cfg.twitch.send.allowed_channels == ()
+    assert cfg.twitch.send.max_per_minute == 1
+    assert cfg.twitch.send.max_per_hour == 20
+    assert cfg.twitch.send.failure_threshold == 3
+
+
+def _twitch_yaml_with_send(send_block: str) -> str:
+    return TWITCH_YAML + textwrap.indent(textwrap.dedent(send_block), "  ")
+
+
+def test_twitch_send_parses_full_block_and_normalizes_channels(tmp_path):
+    yaml_text = _twitch_yaml_with_send(
+        """
+        send:
+          mode: shadow
+          allowed_channels: ["#Minnarone", "AltroCanale"]
+          max_per_minute: 2
+          max_per_hour: 10
+          failure_threshold: 5
+        """
+    )
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    send = cfg.twitch.send
+    assert send.mode is TwitchSendMode.SHADOW
+    assert send.allowed_channels == ("minnarone", "altrocanale")
+    assert send.max_per_minute == 2
+    assert send.max_per_hour == 10
+    assert send.failure_threshold == 5
+
+
+@pytest.mark.parametrize(
+    "send_block, message",
+    [
+        ("\nsend:\n  mode: loud\n", "twitch.send.mode"),
+        ("\nsend:\n  max_per_minute: 0\n", "twitch.send.max_per_minute"),
+        ("\nsend:\n  max_per_minute: true\n", "twitch.send.max_per_minute"),
+        ("\nsend:\n  max_per_hour: -5\n", "twitch.send.max_per_hour"),
+        ("\nsend:\n  failure_threshold: 0\n", "twitch.send.failure_threshold"),
+        ("\nsend:\n  allowed_channels: ['']\n", "twitch.send.allowed_channels"),
+        ("\nsend:\n  allowed_channels: canale\n", "twitch.send.allowed_channels"),
+        ("\nsend:\n  budget: 3\n", "twitch.send non riconosciuti"),
+        ("\nsend: not-a-table\n", "tabella"),
+    ],
+)
+def test_invalid_twitch_send_config_fails_clearly(tmp_path, send_block, message):
+    bad = _twitch_yaml_with_send(send_block)
+    with pytest.raises(ConfigError, match=message):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_twitch_send_mode_unquoted_truthy_boolean_suggests_quoting(tmp_path):
+    # YAML 1.1 parsa `on`/`yes`/`true` non quotati come booleano True: il
+    # messaggio deve spiegare l'ambiguità e suggerire di quotare il valore.
+    bad = _twitch_yaml_with_send("\nsend:\n  mode: on\n")
+    with pytest.raises(ConfigError) as excinfo:
+        Config.load(_write(tmp_path, bad))
+    message = str(excinfo.value)
+    assert "twitch.send.mode: usa 'off', 'shadow' o 'live'" in message
+    assert "quota il valore: YAML interpreta on/yes/true come booleano" in message
+
+
+def test_twitch_send_shadow_requires_public_mode(tmp_path):
+    bad = _twitch_yaml_with_send("\nsend:\n  mode: shadow\n").replace(
+        "mode: public", "mode: private"
+    )
+    with pytest.raises(ConfigError, match="'shadow' richiede mode: public"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_twitch_send_shadow_allowed_in_public_mode(tmp_path):
+    yaml_text = _twitch_yaml_with_send("\nsend:\n  mode: shadow\n")
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    assert cfg.mode is OutputMode.PUBLIC
+    assert cfg.twitch.send.mode is TwitchSendMode.SHADOW
+
+
+def test_twitch_send_off_allowed_in_private_mode(tmp_path):
+    yaml_text = _twitch_yaml_with_send("\nsend:\n  mode: 'off'\n").replace(
+        "mode: public", "mode: private"
+    )
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    assert cfg.mode is OutputMode.PRIVATE
+    assert cfg.twitch.send.mode is TwitchSendMode.OFF
+
+
+def test_twitch_send_live_requires_channel_in_allowed_channels(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:finto-token-di-test")
+    bad = _twitch_yaml_with_send(
+        """
+        send:
+          mode: live
+          allowed_channels: ["altrocanale"]
+        """
+    )
+    with pytest.raises(ConfigError, match="allowed_channels"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_twitch_send_live_config_loads_without_write_token(tmp_path, monkeypatch):
+    """Lo schema è puro rispetto all'ambiente: la PRESENZA del token di
+    scrittura è verificata al build dell'agente (vedi test_app/test_cli),
+    non a `Config.load`."""
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    yaml_text = _twitch_yaml_with_send(
+        """
+        send:
+          mode: live
+          allowed_channels: ["minnarone"]
+        """
+    )
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    assert cfg.twitch.send.mode is TwitchSendMode.LIVE
+
+
+def test_twitch_send_live_error_never_contains_token_value(tmp_path, monkeypatch):
+    secret = "oauth:segretissimo-non-deve-apparire"
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", secret)
+    bad = _twitch_yaml_with_send(
+        """
+        send:
+          mode: live
+          allowed_channels: ["altrocanale"]
+        """
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        Config.load(_write(tmp_path, bad))
+    assert secret not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("mode", ["off", "shadow"])
+def test_twitch_send_off_and_shadow_never_require_write_token(
+    tmp_path, monkeypatch, mode
+):
+    monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
+    yaml_text = _twitch_yaml_with_send(
+        f"""
+        send:
+          mode: {mode}
+        """
+    )
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    assert cfg.twitch.send.mode is TwitchSendMode(mode)
+
+
+def test_twitch_send_live_valid_when_armed_and_token_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:finto-token-di-test")
+    yaml_text = _twitch_yaml_with_send(
+        """
+        send:
+          mode: live
+          allowed_channels: ["#Minnarone"]
+        """
+    )
+
+    cfg = Config.load(_write(tmp_path, yaml_text))
+
+    assert cfg.twitch.send.mode is TwitchSendMode.LIVE
+    assert cfg.twitch.channel in cfg.twitch.send.allowed_channels
+
+
+# ---------------------------------------------------------------------------
+# Issue 01: new CommentatorStyle enum values
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("meeting_synthesizer", CommentatorStyle.MEETING_SYNTHESIZER),
+        ("suggester", CommentatorStyle.SUGGESTER),
+    ],
+)
+def test_new_commentator_style_enum_values_coerce_from_string(raw, expected):
+    assert CommentatorStyle(raw) is expected
+
+
+# ---------------------------------------------------------------------------
+# Issue 01: ProfileConfig dataclasses — defaults
+# ---------------------------------------------------------------------------
+
+
+def test_operator_profile_config_defaults():
+    cfg = OperatorProfileConfig()
+    assert cfg.idle_interval is None
+
+
+def test_original_chat_profile_config_defaults():
+    cfg = OriginalChatProfileConfig()
+    assert cfg.idle_interval is None
+
+
+def test_meeting_synthesizer_profile_config_defaults():
+    cfg = MeetingSynthesizerProfileConfig()
+    assert cfg.interval_s == 180.0
+
+
+def test_suggester_profile_config_instantiates():
+    cfg = SuggesterProfileConfig()
+    assert isinstance(cfg, SuggesterProfileConfig)
+
+
+# ---------------------------------------------------------------------------
+# Issue 01: ProfileConfig dataclasses — validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -0.5])
+def test_operator_profile_config_rejects_non_positive_idle_interval(bad_value):
+    with pytest.raises(ConfigError, match="OperatorProfileConfig.idle_interval"):
+        OperatorProfileConfig(idle_interval=bad_value)
+
+
+def test_operator_profile_config_rejects_boolean_idle_interval():
+    with pytest.raises(ConfigError, match="OperatorProfileConfig.idle_interval"):
+        OperatorProfileConfig(idle_interval=True)  # type: ignore[arg-type]
+
+
+def test_operator_profile_config_accepts_valid_idle_interval():
+    cfg = OperatorProfileConfig(idle_interval=10.0)
+    assert cfg.idle_interval == 10.0
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -0.5])
+def test_original_chat_profile_config_rejects_non_positive_idle_interval(bad_value):
+    with pytest.raises(ConfigError, match="OriginalChatProfileConfig.idle_interval"):
+        OriginalChatProfileConfig(idle_interval=bad_value)
+
+
+def test_original_chat_profile_config_rejects_boolean_idle_interval():
+    with pytest.raises(ConfigError, match="OriginalChatProfileConfig.idle_interval"):
+        OriginalChatProfileConfig(idle_interval=True)  # type: ignore[arg-type]
+
+
+def test_original_chat_profile_config_accepts_valid_idle_interval():
+    cfg = OriginalChatProfileConfig(idle_interval=5.5)
+    assert cfg.idle_interval == 5.5
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -180.0])
+def test_meeting_synthesizer_profile_config_rejects_non_positive_interval_s(bad_value):
+    with pytest.raises(ConfigError, match="MeetingSynthesizerProfileConfig.interval_s"):
+        MeetingSynthesizerProfileConfig(interval_s=bad_value)
+
+
+def test_meeting_synthesizer_profile_config_rejects_boolean_interval_s():
+    with pytest.raises(ConfigError, match="MeetingSynthesizerProfileConfig.interval_s"):
+        MeetingSynthesizerProfileConfig(interval_s=True)  # type: ignore[arg-type]
+
+
+def test_meeting_synthesizer_profile_config_accepts_valid_interval_s():
+    cfg = MeetingSynthesizerProfileConfig(interval_s=60.0)
+    assert cfg.interval_s == 60.0
+
+
+# ---------------------------------------------------------------------------
+# Issue 01: ProfileConfig dataclasses — frozen
+# ---------------------------------------------------------------------------
+
+
+def test_profile_configs_are_frozen():
+    with pytest.raises(AttributeError):
+        OperatorProfileConfig().__setattr__("idle_interval", 1.0)
+    with pytest.raises(AttributeError):
+        OriginalChatProfileConfig().__setattr__("idle_interval", 1.0)
+    with pytest.raises(AttributeError):
+        MeetingSynthesizerProfileConfig().__setattr__("interval_s", 1.0)
+    # SuggesterProfileConfig has no fields; empty frozen slotted dataclasses
+    # raise TypeError on __setattr__ in CPython 3.12 — both error types confirm
+    # immutability.
+    with pytest.raises((AttributeError, TypeError)):
+        SuggesterProfileConfig().__setattr__("x", 1)

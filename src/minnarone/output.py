@@ -25,6 +25,8 @@ class CommentatorStyle(str, Enum):
 
     OPERATOR = "operator"
     ORIGINAL_CHAT = "original_chat"
+    MEETING_SYNTHESIZER = "meeting_synthesizer"
+    SUGGESTER = "suggester"
 
 
 class OutputRouter(ABC):

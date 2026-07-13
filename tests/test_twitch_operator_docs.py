@@ -38,7 +38,7 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.asr.condition_on_previous_text is False
     assert cfg.speaker_embedding.provider == "cpu"
     assert cfg.speaker_embedding.dimension == 192
-    assert cfg.speaker_clustering.threshold == 0.6
+    assert cfg.speaker_clustering.threshold == 0.45
     assert cfg.speaker_clustering.warmup_seconds == 60.0
     assert cfg.speaker_clustering.min_update_seconds == 1.0
     assert cfg.video.sample_every == 1
@@ -47,7 +47,7 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.vlm.device == "auto"
     assert cfg.vlm.max_new_tokens == 48
     assert cfg.vlm.language == "en"
-    assert cfg.commentator.enabled is False
+    assert len(cfg.commentator.profiles) == 0
 
 
 def test_twitch_commentator_example_config_loads_console_only_shape():
@@ -59,9 +59,10 @@ def test_twitch_commentator_example_config_loads_console_only_shape():
     assert cfg.twitch.chat is True
     assert cfg.twitch.audio is False
     assert cfg.twitch.video is False
-    assert cfg.commentator.enabled is True
+    assert len(cfg.commentator.profiles) > 0
     assert cfg.commentator.language == "it"
-    assert cfg.commentator.idle_interval == 30.0
+    assert CommentatorStyle.OPERATOR in cfg.commentator.profiles
+    assert cfg.commentator.profiles[CommentatorStyle.OPERATOR].idle_interval == 30.0
 
 
 def test_teams_commentator_preset_loads_os_capture_private_shape():
@@ -75,8 +76,8 @@ def test_teams_commentator_preset_loads_os_capture_private_shape():
     assert cfg.os_capture.video is True
     assert cfg.os_capture.video_fps == 1.0
     assert cfg.os_capture.monitor == 1
-    assert cfg.commentator.enabled is True
-    assert cfg.commentator.style is CommentatorStyle.OPERATOR
+    assert len(cfg.commentator.profiles) > 0
+    assert CommentatorStyle.OPERATOR in cfg.commentator.profiles
     assert cfg.commentator.language == "it"
     # Nessun VALORE segreto hardcoded nel preset: non deve dichiarare una chiave
     # (i commenti possono nominare OPENROUTER_API_KEY, che arriva dall'ambiente).
@@ -87,17 +88,19 @@ def test_original_chat_example_loads_seed_memory_into_prompt():
     cfg = Config.load(Path("examples/twitch-original-chat.example.yaml"))
 
     assert cfg.mode is OutputMode.PRIVATE
-    assert cfg.commentator.style is CommentatorStyle.ORIGINAL_CHAT
+    assert CommentatorStyle.ORIGINAL_CHAT in cfg.commentator.profiles
 
     blocks = FileMemory(soul_path=cfg.soul_path, facts_dir=cfg.facts_dir).load()
     assert blocks.soul.strip()
     assert blocks.facts.strip()
 
+    active = cfg.commentator.active_styles()
+    style = active[0] if active else None
     prefix = PromptBuilder(
         blocks,
         announce_ai=cfg.disclosure.announce_ai,
         commentator_language=cfg.commentator.language,
-        commentator_style=cfg.commentator.prompt_style,
+        commentator_style=style,
     ).stable_prefix()
 
     assert "[MEMORIA PERMANENTE]" in prefix
@@ -131,7 +134,7 @@ def test_twitch_example_documents_console_only_runtime():
     text = Path("examples/twitch.example.yaml").read_text(encoding="utf-8")
 
     assert "console" in text.lower()
-    assert "non invia messaggi" in text.lower()
+    assert "no privmsg sent" in text.lower()
 
 
 def test_twitch_operator_docs_cover_setup_smoke_artifacts_and_troubleshooting():
@@ -221,7 +224,7 @@ def test_twitch_operator_docs_describe_console_runtime_with_optional_audio():
     assert "chat-only" in text
     assert "twitch.audio: true" in text
     assert "console" in text
-    assert "does not send chat messages" in text
+    assert "twitch.send.mode: off" in text
     assert "does not yet wire" not in text
 
 
@@ -256,7 +259,7 @@ def test_twitch_operator_docs_cover_manual_speaker_embedding_smoke():
         "warmup_seconds: 60.0",
         "min_update_seconds: 1.0",
         "streamer",
-        "speaker_N",
+        "altro",
     ]
     for phrase in required:
         assert phrase in text
@@ -269,13 +272,13 @@ def test_twitch_operator_docs_cover_manual_speaker_clustering_smoke():
         "Local Speaker Clustering Smoke",
         "OnlineSpeakerClusterer",
         "SpeakerClusteringConfig",
-        "threshold=0.6",
+        "threshold=0.45",
         "warmup_seconds=2.0",
         "min_update_seconds=1.0",
         "too short -> ?",
         "streamer_cluster_id",
-        "speaker_N",
-        "cluster label becomes `streamer`",
+        "{streamer, altro, ?}",
+        "label becomes `streamer`",
     ]
     for phrase in required:
         assert phrase in text
@@ -328,16 +331,16 @@ def test_twitch_operator_docs_cover_local_commentator_mode():
 
     required = [
         "Local Commentator Mode",
-        "commentator.enabled: true",
+        "commentator.profiles",
         "mode: private",
         "[PRIVATE]",
         "TUI/dashboard",
-        "no `PRIVMSG` write",
-        "no public chat write/send scope",
+        "no PRIVMSG is",
+        "no public chat write/send",
         "Italian comments",
-        "commentator.idle_interval",
+        "idle_interval",
         "examples/twitch-commentator.example.yaml",
-        "commentator.enabled: false",
+        "no commentator profiles",
     ]
     for phrase in required:
         assert phrase in text
@@ -439,7 +442,7 @@ def test_twitch_operator_docs_cover_live_tui_replay_and_acceptance_workflow():
         "gitignored",
         "disk safety",
         "read-only",
-        "does not send public Twitch messages",
+        "twitch.send.mode: shadow",
         "Manual Live Acceptance Checklist",
     ]
     for phrase in required:
@@ -492,7 +495,7 @@ def test_twitch_operator_docs_cover_full_commentator_run_workflow():
         "--check",
         "[PRIVATE]",
         "No public Twitch messages are sent",
-        "public Twitch output remains out of scope",
+        "PRIVMSG output is",
         "Live Observability TUI",
         "--tui",
         "Replay TUI",
@@ -512,11 +515,13 @@ def test_twitch_operator_docs_do_not_show_direct_secret_exports():
         "export OPENROUTER_API_KEY=",
         "export TWITCH_OAUTH_TOKEN=",
         "export TWITCH_BOT_USERNAME=",
+        "export TWITCH_SEND_OAUTH_TOKEN=",
     ]
     for phrase in forbidden:
         assert phrase not in text
     assert 'read -r -s -p "OPENROUTER_API_KEY: "' in text
     assert 'read -r -s -p "TWITCH_OAUTH_TOKEN: "' in text
+    assert 'read -r -s -p "TWITCH_SEND_OAUTH_TOKEN: "' in text
 
 
 def test_readme_private_commentator_wording_is_not_contradictory():
@@ -525,6 +530,68 @@ def test_readme_private_commentator_wording_is_not_contradictory():
     assert "private+commentator = console locale" in text
     assert "private solo = whisper v2" in text
     assert "commentatore locale su console" in text
+    # The README accurately states that private mode never sends PRIVMSG.
+    assert "nessun messaggio PRIVMSG" in text
+
+
+def test_twitch_operator_docs_cover_public_chat_send_section():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    required = [
+        "Public Chat Send",
+        "Single-Writer Invariant",
+        "TwitchChatSender",
+        "Dedicated Bot Account",
+        "chat:edit",
+        "Write Token",
+        "TWITCH_SEND_OAUTH_TOKEN",
+        "Allow-List Workflow",
+        "allowed_channels",
+        "Shadow Rehearsal Workflow",
+        "twitch.send.mode: shadow",
+        "Live Enablement Checklist",
+        "kill-switch",
+        "attended-only",
+        "Budget and Rate Guidance",
+        "max_per_minute",
+        "max_per_hour",
+        "failure_threshold",
+        "Send Safety Summary",
+        "mode: shadow",
+        "mode: live",
+    ]
+    for phrase in required:
+        assert phrase in text
+
+
+def test_twitch_operator_docs_single_writer_invariant_searchable():
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    assert "Only `TwitchChatSender` may write `PRIVMSG`" in text
+
+
+def test_twitch_operator_docs_no_live_mode_in_example_yaml():
+    """Example configs must show shadow at most; live appears only in docs."""
+    for name in [
+        "examples/twitch.example.yaml",
+        "examples/twitch-commentator.example.yaml",
+        "examples/twitch-original-chat.example.yaml",
+    ]:
+        text = Path(name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.lstrip("# ").strip()
+            # Skip doc prose/comments that mention live as a concept
+            if stripped.startswith("mode:") and "live" in stripped:
+                assert False, f"{name} contains 'mode: live' as a config value"
+
+
+def test_twitch_operator_docs_no_real_tokens():
+    import re
+
+    text = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+
+    # No string that looks like a real oauth token (30+ hex chars after prefix)
+    assert not re.search(r"oauth:[a-z0-9]{30,}", text)
 
 
 def test_twitch_operator_docs_troubleshoot_model_capture_diarization_video_vlm():

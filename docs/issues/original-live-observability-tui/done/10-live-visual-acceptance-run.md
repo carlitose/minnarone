@@ -102,16 +102,49 @@ original workflow.
 
 ## Acceptance criteria
 
-- [ ] A bounded live `--tui` run starts and stops cleanly.
-- [ ] The main dashboard shows chat, audio transcription, video captions, Minnarone comments, memory, events, and conversation windows.
-- [ ] The status bar shows truthful source health and counts for chat/audio/video/LLM/VLM where available.
-- [ ] Partial failures are visible rather than hidden.
-- [ ] The `PROMPT` tab shows the latest exact redacted prompt and metadata.
-- [ ] The run writes bounded local artifacts and does not expose generated artifacts to git.
-- [ ] Replay opens the completed run without live services.
-- [ ] No public Twitch messages are sent.
-- [ ] Human visual inspection confirms the result is faithful enough to the original screenshots.
-- [ ] Any remaining quality or visual gaps are recorded as follow-up work.
+- [x] A bounded live `--tui` run starts and stops cleanly.
+- [x] The main dashboard shows chat, audio transcription, video captions, Minnarone comments, memory, events, and conversation windows.
+- [x] The status bar shows truthful source health and counts for chat/audio/video/LLM/VLM where available.
+- [x] Partial failures are visible rather than hidden.
+- [x] The `PROMPT` tab shows the latest exact redacted prompt and metadata.
+- [x] The run writes bounded local artifacts and does not expose generated artifacts to git.
+- [x] Replay opens the completed run without live services.
+- [x] No public Twitch messages are sent.
+- [x] Human visual inspection confirms the result is faithful enough to the original screenshots.
+- [x] Any remaining quality or visual gaps are recorded as follow-up work.
+
+## Live acceptance results (2026-07-07)
+
+Accepted by the operator after bounded live `--tui` runs on real channels
+(`schiaccisempretv`, then `andrew_live_channel`, reference run
+`run-20260707T121032Z-3238b986`). Same live session as the acceptance run of
+`local-twitch-perception-runtime` issue 12; see that issue for perception
+counts and model environment.
+
+- Panels: operator confirmed all dashboard panels were present and populated
+  or showing truthful empty states (`IDLE`, `FINESTRA CHAT`, `STREAMER`,
+  `CHAT`, `EVENTI`, `MINNARONE`, `TRASCRIZIONE`, `VIDEO`, `MEMORIA`).
+- Status bar: source health tracked reality during the runs — including an
+  earlier same-day run where it truthfully surfaced `video=failed`,
+  `vlm=failed` and the exact VLM init failure (missing bitsandbytes on a
+  CPU-only torch build) in the failure line and `EVENTI`, with bounded
+  `video/queue: dropped` counters. Partial failure was visible, the rest of
+  the run kept working.
+- `PROMPT` tab: showed trigger reason, model, token/cache/cost metadata and
+  the exact prompt body with perceived data fenced as untrusted; no secrets
+  visible.
+- Artifacts: run directory bounded (0.2 MB, 37 capped prompt captures) under
+  the gitignored `.local/` run root (`git check-ignore` confirms; `git
+  status` clean of generated files).
+- Replay: `--replay <run-dir>` reopened the completed run offline with the
+  same dashboard, without starting Twitch IRC, local models, or OpenRouter.
+- Safety: no public Twitch messages sent (read-only `chat:read` token, no
+  send path, all outputs `mode: private`).
+
+Follow-up gaps recorded (shared with perception issue 12): speaker
+over-segmentation tuning, repetitive VLM captions, optional check-time
+validation for GPU-only quantization settings. No TUI-specific visual gaps
+reported.
 
 ## Blocked by
 

@@ -82,14 +82,58 @@ without sending public Twitch messages.
 
 ## Acceptance criteria
 
-- [ ] A bounded live run captures Twitch chat, audio, and video.
-- [ ] `perceptions.jsonl` contains chat `msg`, audio `speech`, and video `caption` records.
-- [ ] Audio records include `streamer`, `speaker_N`, or `?` speaker labels.
-- [ ] Video captions are concise English internal context.
-- [ ] Console/TUI output produces Italian commentary for the operator.
-- [ ] No public Twitch messages are sent.
-- [ ] Queue/failure stats are inspectable after or during the run.
-- [ ] Any quality or latency problems are recorded as follow-up tuning work.
+- [x] A bounded live run captures Twitch chat, audio, and video.
+- [x] `perceptions.jsonl` contains chat `msg`, audio `speech`, and video `caption` records.
+- [x] Audio records include `streamer`, `speaker_N`, or `?` speaker labels.
+- [x] Video captions are concise English internal context.
+- [x] Console/TUI output produces Italian commentary for the operator.
+- [x] No public Twitch messages are sent.
+- [x] Queue/failure stats are inspectable after or during the run.
+- [x] Any quality or latency problems are recorded as follow-up tuning work.
+
+## Live acceptance results (2026-07-07)
+
+Accepted by the operator after live TUI runs on real channels
+(`schiaccisempretv`, then `andrew_live_channel`). Reference sample: first ~6
+minutes of `run-20260707T121032Z-3238b986` on `andrew_live_channel` (full TUI
+path, `mode: private`, chat+audio+video enabled).
+
+- Perceptions: 4 chat `msg`, 27 audio `speech`, 43 video `caption` records in
+  `perceptions.jsonl`, all matching the `source`/`type`/`speaker`/`text`
+  contract.
+- Speaker labels: `streamer` (8), `speaker_1` (8), `speaker_2..9` (1 each),
+  `?` (3). The frozen streamer cluster tracked the real streamer.
+- Video captions: concise English scene descriptions of the live RPG session
+  (character select, map, battle scenes).
+- Commentary: 13 triggers produced 13 `minnarone_output` events, all Italian,
+  all `mode: private`, clearly referencing live audio/video context (e.g.
+  "Sembra che stiano pedinando la sentinella prima di entrare nella sala
+  dello scontro.").
+- Safety: no `PRIVMSG` send path exists in the runtime; the run used a
+  read-only `chat:read` token; every output event is `mode: private`. No
+  secrets recorded in artifacts.
+- Failures: zero failure events in the reference run; earlier runs the same
+  day surfaced a VLM init failure (bitsandbytes missing on CPU-only torch),
+  fixed by declaring bitsandbytes in the `vlm` extra and resolving CUDA torch
+  on Windows (commit 73a30c0).
+
+Environment: Windows 11, RTX 500 Ada 4 GB. ASR faster-whisper
+`large-v3-turbo` on CPU (`int8`, `language: it`); VLM Qwen2-VL-2B-Instruct on
+GPU with NF4 4-bit quantization (~1.5 GB VRAM, ~3.5 s/caption warm, ~60 s
+cold load); speaker CAM++ 192-dim on CPU.
+
+Follow-up tuning recorded:
+
+- Speaker over-segmentation: eight singleton `speaker_N` clusters in ~6
+  minutes; try raising `speaker_clustering.threshold` from 0.6 toward
+  0.65-0.7 on noisy multi-voice streams.
+- Video captions are relevant but repetitive ("A Twitch streamer is
+  playing..."); consider a prompt tweak or a higher
+  `video.dedup_change_threshold`.
+- ASR stays on CPU deliberately to reserve VRAM for the VLM; moving
+  faster-whisper to GPU is a candidate experiment if transcription lags.
+- `--check` accepts `quantization: 4bit` on machines without usable CUDA and
+  only fails at runtime; a check-time validation would surface this earlier.
 
 ## Blocked by
 
@@ -127,14 +171,8 @@ without sending public Twitch messages.
 
 ## Autopilot status
 
-Blocked-needs-human as of 2026-06-26. Dependencies 05, 08, 09, 10, and 11 are
-complete, and the operator workflow is documented, but this issue is a live HITL
-acceptance run. The current agent process does not have `OPENROUTER_API_KEY`,
-`TWITCH_BOT_USERNAME`, or `TWITCH_OAUTH_TOKEN` in its environment, and the
-remaining acceptance criteria require a bounded live Twitch session plus
-operator judgment of the Italian commentary quality.
-
-No secrets were inspected or recorded. Do not move this issue to `done/` until a
-real run has produced chat `msg`, audio `speech`, video `caption`, local
-commentary, observable queue/failure stats, and confirmation that no public
-Twitch messages were sent.
+Done as of 2026-07-07. The HITL live acceptance run happened on a real
+channel with operator credentials and operator judgment of the commentary
+quality ("il commentatore funziona da dio"). All acceptance criteria are
+checked; results and follow-up tuning are recorded above. No secrets were
+inspected or recorded.

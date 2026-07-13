@@ -456,6 +456,105 @@ def test_replay_redacts_secrets_from_legacy_run_event_artifacts(tmp_path):
     assert "[redacted" in panels
 
 
+def test_replay_loads_send_decision_events_with_markers(tmp_path):
+    """Send decision events (shadow/send) appear in MINNARONE with markers."""
+    from minnarone.replay import load_replay_state
+
+    run_dir = tmp_path / "run"
+    debug_dir = run_dir / "debug"
+    debug_dir.mkdir(parents=True)
+    (run_dir / "perceptions.jsonl").write_text("", encoding="utf-8")
+    (debug_dir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "schema": "minnarone.run_event.v1",
+                        "sequence": 1,
+                        "recorded_at": 1.0,
+                        "kind": "send_decision",
+                        "send_decision": {
+                            "message": "Ciao chat!",
+                            "action": "shadow",
+                            "reason": "ok",
+                            "channel": "#test",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "schema": "minnarone.run_event.v1",
+                        "sequence": 2,
+                        "recorded_at": 2.0,
+                        "kind": "send_decision",
+                        "send_decision": {
+                            "message": "Bella run!",
+                            "action": "send",
+                            "reason": "ok",
+                            "channel": "#test",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "schema": "minnarone.run_event.v1",
+                        "sequence": 3,
+                        "recorded_at": 3.0,
+                        "kind": "send_decision",
+                        "send_decision": {
+                            "message": "Budget esaurito",
+                            "action": "drop",
+                            "reason": "budget_minute",
+                            "channel": "#test",
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    state = load_replay_state(run_dir)
+
+    panels = {panel.title: panel.text for panel in state.render_panels()}
+    assert "[SHADOW] Ciao chat!" in panels["MINNARONE"]
+    assert "[SENT] Bella run!" in panels["MINNARONE"]
+    # Dropped messages should NOT appear in MINNARONE
+    assert "Budget esaurito" not in panels["MINNARONE"]
+    status = state.render_status_bar()
+    assert "minnarone=2" in status
+
+
+def test_replay_ignores_unknown_event_kinds_gracefully(tmp_path):
+    """Unknown event kinds from future/older runs do not break replay."""
+    from minnarone.replay import load_replay_state
+
+    run_dir = tmp_path / "run"
+    debug_dir = run_dir / "debug"
+    debug_dir.mkdir(parents=True)
+    (run_dir / "perceptions.jsonl").write_text("", encoding="utf-8")
+    (debug_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "schema": "minnarone.run_event.v1",
+                "sequence": 1,
+                "recorded_at": 1.0,
+                "kind": "future_kind_v99",
+                "data": {"foo": "bar"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    state = load_replay_state(run_dir)
+
+    # Should not crash, the unknown kind is silently skipped.
+    assert state.messages == []
+    assert state.triggers == []
+
+
 def test_run_replay_tui_uses_static_dashboard_provider(tmp_path):
     from minnarone.replay import run_replay_tui
 

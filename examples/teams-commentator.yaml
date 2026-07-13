@@ -8,7 +8,7 @@
 # Validazione a secco (nessun hardware aperto, nessuna rete):
 #   python -m minnarone examples/teams-commentator.yaml --check
 
-mode: private              # obbligatorio con commentator.enabled: true (solo output locale)
+mode: private              # obbligatorio con commentator profiles attivi (solo output locale)
 soul_path: original-chat-memory/soul.md  # identità dell'agente (relativo a questo file)
 facts_dir: original-chat-memory/facts    # cartella dei fatti per interlocutore/canale
 adapter: os_capture        # sorgente: cattura audio/video a livello di sistema operativo
@@ -27,10 +27,10 @@ os_capture:
 
 # Modalità commentatore: commenti privati destinati all'operatore.
 commentator:
-  enabled: true            # attiva il commentatore locale (richiede mode: private)
-  style: operator          # tono/registro dei commenti
   language: it             # lingua dei commenti
-  idle_interval: 30.0      # commento proattivo se non arrivano trigger (secondi)
+  profiles:
+    operator:
+      idle_interval: 30.0  # commento proattivo se non arrivano trigger (secondi)
 
 senser_interval: 0.5       # cadenza del Senser (secondi)
 idle_interval: 150.0       # fallback proattivo globale in assenza di trigger (secondi)

@@ -40,6 +40,7 @@ from .config import (
     Config,
     ConfigError,
     DisclosureConfig,
+    ProfileConfig,
     RetentionConfig,
     TwitchConfig,
 )
@@ -126,6 +127,7 @@ __all__ = [
     "DisclosureConfig",
     "RetentionConfig",
     "CommentatorConfig",
+    "ProfileConfig",
     "TwitchConfig",
     "PerceptionStore",
     "EventPerceiver",

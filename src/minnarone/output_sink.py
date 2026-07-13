@@ -64,8 +64,25 @@ class TuiPrivateOutputRouter(OutputRouter):
             public_router if public_router is not None else ConsoleOutputRouter()
         )
 
+    @property
+    def last_decision(self) -> object | None:
+        """Espone la decisione dell'inner public_router (trasparenza wrapper).
+
+        Il Reactor legge `router.last_decision` per capire se l'ultimo giro è
+        stato un drop (e saltare il note anti-ripetizione). Avvolgendo il router
+        pubblico, il wrapper deve delegare o quel segnale andrebbe perso.
+        """
+        return getattr(self._public_router, "last_decision", None)
+
     async def route(self, message: str, mode: OutputMode) -> None:
         if mode is OutputMode.PRIVATE:
             self.stream.append(message, mode)
             return
         await self._public_router.route(message, mode)
+        # Capture PUBLIC messages with send markers for dashboard MINNARONE panel.
+        last = getattr(self._public_router, "last_decision", None)
+        if last is not None:
+            if last.action == "send":
+                self.stream.append(f"[SENT] {message}", mode)
+            elif last.action != "drop":
+                self.stream.append(f"[SHADOW] {message}", mode)

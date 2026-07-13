@@ -10,8 +10,10 @@ campo). Il parsing del file usa PyYAML (`yaml.safe_load`).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from enum import Enum
 from pathlib import Path
+from typing import TypeVar, Union
 
 import yaml
 
@@ -34,15 +36,32 @@ class ConfigError(ValueError):
     """Configurazione mancante o non valida, con messaggio puntuale."""
 
 
-def _coerce_commentator_style(value: object) -> CommentatorStyle:
-    if isinstance(value, CommentatorStyle):
+_EnumT = TypeVar("_EnumT", bound=Enum)
+
+
+def _coerce_enum(
+    value: object,
+    enum_cls: type[_EnumT],
+    field_name: str,
+    *,
+    false_alias: _EnumT | None = None,
+) -> _EnumT:
+    """Coerce un valore di config in un membro dell'enum, con errore puntuale.
+
+    `false_alias`: membro restituito quando il valore è il booleano False.
+    Copre TUTTE le grafie falsy di YAML 1.1 (PyYAML): `off`, `no`, `false`,
+    `n`, ... non quotate arrivano qui come False.
+    """
+    if isinstance(value, enum_cls):
         return value
+    if false_alias is not None and value is False:
+        return false_alias
     try:
-        return CommentatorStyle(value)
+        return enum_cls(value)
     except (TypeError, ValueError) as exc:
-        accepted = ", ".join(style.value for style in CommentatorStyle)
+        accepted = ", ".join(member.value for member in enum_cls)
         raise ConfigError(
-            f"commentator.style {value!r} non valido (ammessi: {accepted})"
+            f"{field_name} {value!r} non valido (ammessi: {accepted})"
         ) from exc
 
 
@@ -62,60 +81,151 @@ class RetentionConfig:
 
 @dataclass(frozen=True, slots=True)
 class CommentatorConfig:
-    """Modalità commentatore locale: commenti privati per l'operatore."""
+    """Modalità commentatore locale: profili multipli per l'operatore.
 
-    enabled: bool = False
+    I profili attivi determinano lo stile del commentatore. Un dizionario
+    vuoto equivale a commentatore disabilitato.
+    """
+
     language: str = "it"
-    idle_interval: float | None = None
-    style: CommentatorStyle = CommentatorStyle.OPERATOR
+    profiles: dict[CommentatorStyle, "ProfileConfig"] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.enabled, bool):
-            raise ConfigError("commentator.enabled deve essere booleano")
-        object.__setattr__(self, "style", _coerce_commentator_style(self.style))
         if not isinstance(self.language, str) or not self.language.strip():
             raise ConfigError("commentator.language deve essere una stringa non vuota")
         object.__setattr__(self, "language", self.language.strip())
-        if self.idle_interval is None:
-            return
-        if isinstance(self.idle_interval, bool):
-            raise ConfigError("commentator.idle_interval deve essere > 0")
-        try:
-            interval = float(self.idle_interval)
-        except (TypeError, ValueError) as exc:
-            raise ConfigError("commentator.idle_interval deve essere > 0") from exc
-        if interval <= 0:
-            raise ConfigError("commentator.idle_interval deve essere > 0")
-        object.__setattr__(self, "idle_interval", interval)
+        if not isinstance(self.profiles, dict):
+            raise ConfigError("commentator.profiles deve essere un dizionario")
 
-    @property
-    def prompt_style(self) -> CommentatorStyle | None:
-        """Style consumed by prompt/reaction code; None means disabled."""
-        return self.style if self.enabled else None
-
-    def idle_interval_or(self, default: float) -> float:
-        """Return the commentator idle cadence when enabled, else default."""
-        if self.enabled and self.idle_interval is not None:
-            return self.idle_interval
-        return default
+    def active_styles(self) -> list[CommentatorStyle]:
+        """Return the list of active commentator styles (profile keys)."""
+        return list(self.profiles.keys())
 
     def uses_local_output(self, mode: OutputMode) -> bool:
         """Whether private mode should route commentator output locally."""
-        return self.enabled and mode is OutputMode.PRIVATE
+        return len(self.profiles) > 0 and mode is OutputMode.PRIVATE
+
+    _PRIVATE_ONLY_STYLES = frozenset(
+        {CommentatorStyle.MEETING_SYNTHESIZER, CommentatorStyle.SUGGESTER}
+    )
 
     def validate_for_mode(self, mode: OutputMode) -> None:
         """Validate commentator runtime policy against the selected output mode."""
-        if self.style is CommentatorStyle.ORIGINAL_CHAT and (
-            not self.enabled or mode is not OutputMode.PRIVATE
-        ):
+        if mode is not OutputMode.PRIVATE:
+            private_only = self._PRIVATE_ONLY_STYLES & self.profiles.keys()
+            if private_only:
+                names = ", ".join(sorted(s.value for s in private_only))
+                raise ConfigError(
+                    f"profilo/i {names} richiede mode: private"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorProfileConfig:
+    """Per-profile settings for the OPERATOR commentator style."""
+
+    idle_interval: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.idle_interval is not None:
+            if isinstance(self.idle_interval, bool):
+                raise ConfigError("OperatorProfileConfig.idle_interval deve essere > 0")
+            try:
+                interval = float(self.idle_interval)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(
+                    "OperatorProfileConfig.idle_interval deve essere > 0"
+                ) from exc
+            if interval <= 0:
+                raise ConfigError("OperatorProfileConfig.idle_interval deve essere > 0")
+            object.__setattr__(self, "idle_interval", interval)
+
+
+@dataclass(frozen=True, slots=True)
+class OriginalChatProfileConfig:
+    """Per-profile settings for the ORIGINAL_CHAT commentator style."""
+
+    idle_interval: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.idle_interval is not None:
+            if isinstance(self.idle_interval, bool):
+                raise ConfigError(
+                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
+                )
+            try:
+                interval = float(self.idle_interval)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(
+                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
+                ) from exc
+            if interval <= 0:
+                raise ConfigError(
+                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
+                )
+            object.__setattr__(self, "idle_interval", interval)
+
+
+@dataclass(frozen=True, slots=True)
+class MeetingSynthesizerProfileConfig:
+    """Per-profile settings for the MEETING_SYNTHESIZER commentator style."""
+
+    interval_s: float = 180.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.interval_s, bool):
             raise ConfigError(
-                "commentator.style: original_chat richiede "
-                "commentator.enabled: true e mode: private"
+                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
             )
-        if self.enabled and mode is not OutputMode.PRIVATE:
+        try:
+            interval = float(self.interval_s)
+        except (TypeError, ValueError) as exc:
             raise ConfigError(
-                "commentator.enabled richiede mode: private per evitare output pubblico"
+                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
+            ) from exc
+        if interval <= 0:
+            raise ConfigError(
+                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
             )
+        object.__setattr__(self, "interval_s", interval)
+
+
+@dataclass(frozen=True, slots=True)
+class SuggesterProfileConfig:
+    """Per-profile settings for the SUGGESTER commentator style (no fields yet)."""
+
+
+#: Union type for all profile configuration dataclasses.
+ProfileConfig = Union[
+    OperatorProfileConfig,
+    OriginalChatProfileConfig,
+    MeetingSynthesizerProfileConfig,
+    SuggesterProfileConfig,
+]
+
+#: Maps each commentator style to its ProfileConfig dataclass.
+_STYLE_PROFILE_CLASS: dict[CommentatorStyle, type] = {
+    CommentatorStyle.OPERATOR: OperatorProfileConfig,
+    CommentatorStyle.ORIGINAL_CHAT: OriginalChatProfileConfig,
+    CommentatorStyle.MEETING_SYNTHESIZER: MeetingSynthesizerProfileConfig,
+    CommentatorStyle.SUGGESTER: SuggesterProfileConfig,
+}
+
+
+def _build_profile_from_dict(
+    style: CommentatorStyle,
+    data: dict[str, object],
+) -> ProfileConfig:
+    """Build a typed ProfileConfig from a raw dict, rejecting unknown keys."""
+    config_cls = _STYLE_PROFILE_CLASS[style]
+    allowed = {f.name for f in fields(config_cls)}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ConfigError(
+            f"campi commentator.profiles.{style.value} non riconosciuti: "
+            + ", ".join(f"'{key}'" for key in unknown)
+        )
+    return config_cls(**data)  # type: ignore[return-value]
 
 
 def _coerce_config_float(value: object, field_name: str) -> float:
@@ -130,6 +240,139 @@ def _coerce_config_float(value: object, field_name: str) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"{field_name} deve essere numerico") from exc
+
+
+def _coerce_config_positive_int(value: object, field_name: str) -> int:
+    """Valida un intero di config con minimo 1, rifiutando i booleani.
+
+    Nota: i controlli equivalenti dei campi fratelli (`os_capture.monitor`,
+    `perception_queue_size`) possono adottare questo helper in futuro.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{field_name} deve essere un intero >= 1")
+    return value
+
+
+def _normalized_channel(value: object, field_name: str) -> str:
+    """Normalizza un canale Twitch dichiarato in config, indicando il campo.
+
+    Un valore non stringa è rifiutato esplicitamente come errore di schema,
+    senza affidarsi all'`AttributeError` interno di `normalize_twitch_channel`.
+    """
+    if not isinstance(value, str):
+        raise ConfigError(f"{field_name}: {value!r} non è un canale Twitch valido")
+    try:
+        return normalize_twitch_channel(value)
+    except ValueError as exc:
+        raise ConfigError(f"{field_name}: {exc}") from exc
+
+
+#: Variabile d'ambiente del token di SCRITTURA per l'invio pubblico su Twitch.
+#: Distinta dal token di lettura (`TWITCH_OAUTH_TOKEN`): una config read-only
+#: non deve mai avere il potere di inviare. Ne viene verificata solo la
+#: PRESENZA (al build dell'agente, vedi `app.build_agent`); il valore non
+#: entra mai in messaggi d'errore, log o artefatti.
+TWITCH_SEND_TOKEN_ENV_VAR = "TWITCH_SEND_OAUTH_TOKEN"
+
+
+class TwitchSendMode(Enum):
+    """Stato dell'invio pubblico: spento, prova senza rete, o invio reale."""
+
+    OFF = "off"
+    SHADOW = "shadow"
+    LIVE = "live"
+
+
+def _coerce_send_mode(value: object) -> TwitchSendMode:
+    # YAML 1.1 (PyYAML) interpreta le grafie truthy non quotate (`on`, `yes`,
+    # `true`, ...) come booleano True: nessuna corrisponde a un modo valido,
+    # quindi l'errore suggerisce esplicitamente di quotare il valore.
+    if isinstance(value, bool) and value is True:
+        quoted = [f"'{mode.value}'" for mode in TwitchSendMode]
+        accepted = ", ".join(quoted[:-1]) + f" o {quoted[-1]}"
+        raise ConfigError(
+            f"twitch.send.mode: usa {accepted} (quota il valore: "
+            "YAML interpreta on/yes/true come booleano)"
+        )
+    # `false_alias`: `mode: off` non quotato è la grafia naturale del default
+    # e YAML lo parsa come False (insieme a ogni altra grafia falsy).
+    return _coerce_enum(
+        value, TwitchSendMode, "twitch.send.mode", false_alias=TwitchSendMode.OFF
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TwitchSendConfig:
+    """Configurazione dell'invio pubblico in chat Twitch (blocco `twitch.send`).
+
+    Default conservativi: `mode: off` (nessun invio), allow-list vuota, budget
+    ben sotto i limiti IRC di Twitch (1 msg/min, 20 msg/ora) e auto-degrado a
+    shadow dopo 3 invii falliti consecutivi.
+    """
+
+    mode: TwitchSendMode = TwitchSendMode.OFF
+    allowed_channels: tuple[str, ...] = ()
+    max_per_minute: int = 1
+    max_per_hour: int = 20
+    failure_threshold: int = 3
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", _coerce_send_mode(self.mode))
+
+        channels = self.allowed_channels
+        if isinstance(channels, str) or not isinstance(channels, (list, tuple)):
+            raise ConfigError(
+                "twitch.send.allowed_channels deve essere una lista di canali"
+            )
+        normalized = tuple(
+            _normalized_channel(channel, "twitch.send.allowed_channels")
+            for channel in channels
+        )
+        object.__setattr__(self, "allowed_channels", normalized)
+
+        for name in ("max_per_minute", "max_per_hour", "failure_threshold"):
+            object.__setattr__(
+                self,
+                name,
+                _coerce_config_positive_int(
+                    getattr(self, name), f"twitch.send.{name}"
+                ),
+            )
+
+    def validate_for_mode(self, mode: OutputMode) -> None:
+        """Gate cross-field: l'invio pubblico ha senso solo con output public.
+
+        Speculare a `CommentatorConfig.validate_for_mode`: chiamato da
+        `Config.__post_init__`, dove il mode di root è noto.
+        """
+        if self.mode is not TwitchSendMode.OFF and mode is not OutputMode.PUBLIC:
+            raise ConfigError(
+                f"twitch.send.mode: '{self.mode.value}' richiede mode: public"
+            )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "TwitchSendConfig":
+        """Costruisce e valida il blocco `twitch.send:`, rifiutando campi ignoti."""
+        allowed = {
+            "mode",
+            "allowed_channels",
+            "max_per_minute",
+            "max_per_hour",
+            "failure_threshold",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "campi twitch.send non riconosciuti: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        return cls(
+            mode=data.get("mode", TwitchSendMode.OFF),  # type: ignore[arg-type]
+            allowed_channels=data.get("allowed_channels", ()),  # type: ignore[arg-type]
+            max_per_minute=data.get("max_per_minute", 1),  # type: ignore[arg-type]
+            max_per_hour=data.get("max_per_hour", 20),  # type: ignore[arg-type]
+            failure_threshold=data.get("failure_threshold", 3),  # type: ignore[arg-type]
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,12 +390,12 @@ class TwitchConfig:
     video: bool = False
     audio_chunk_seconds: float = 1.0
     video_fps: float = 1.0
+    send: TwitchSendConfig = field(default_factory=TwitchSendConfig)
 
     def __post_init__(self) -> None:
-        try:
-            object.__setattr__(self, "channel", normalize_twitch_channel(self.channel))
-        except (AttributeError, ValueError) as exc:
-            raise ConfigError(f"twitch.channel: {exc}") from exc
+        object.__setattr__(
+            self, "channel", _normalized_channel(self.channel, "twitch.channel")
+        )
 
         if not isinstance(self.quality, str) or not self.quality.strip():
             raise ConfigError("twitch.quality deve essere una stringa non vuota")
@@ -181,6 +424,25 @@ class TwitchConfig:
             raise ConfigError(f"twitch.video_fps: {exc}") from exc
         object.__setattr__(self, "video_fps", video_fps)
 
+        if not isinstance(self.send, TwitchSendConfig):
+            raise ConfigError("twitch.send deve essere una TwitchSendConfig")
+        self._validate_live_send_requirements()
+
+    def _validate_live_send_requirements(self) -> None:
+        """Gate cross-field di `mode: live`: il canale deve essere in allow-list.
+
+        La PRESENZA del token di scrittura (`TWITCH_SEND_TOKEN_ENV_VAR`) è
+        verificata al build dell'agente (vedi `app.build_agent`), non qui: lo
+        schema resta puro rispetto allo stato del processo.
+        """
+        if self.send.mode is not TwitchSendMode.LIVE:
+            return
+        if self.channel not in self.send.allowed_channels:
+            raise ConfigError(
+                f"twitch.send.mode: live richiede che il canale "
+                f"'{self.channel}' sia in twitch.send.allowed_channels"
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "TwitchConfig":
         """Costruisce e valida il blocco `twitch:` futuro."""
@@ -192,6 +454,7 @@ class TwitchConfig:
             "video",
             "audio_chunk_seconds",
             "video_fps",
+            "send",
         }
         unknown = sorted(set(data) - allowed)
         if unknown:
@@ -201,6 +464,10 @@ class TwitchConfig:
             )
         if "channel" not in data:
             raise ConfigError("campo obbligatorio 'twitch.channel' mancante")
+        send_raw = data.get("send")
+        if send_raw is not None and not isinstance(send_raw, dict):
+            raise ConfigError("'twitch.send' deve essere una tabella")
+        send = TwitchSendConfig.from_dict(send_raw or {})
         return cls(
             channel=data["channel"],  # type: ignore[arg-type]
             quality=data.get("quality", "best"),  # type: ignore[arg-type]
@@ -209,6 +476,7 @@ class TwitchConfig:
             video=data.get("video", False),  # type: ignore[arg-type]
             audio_chunk_seconds=data.get("audio_chunk_seconds", 1.0),  # type: ignore[arg-type]
             video_fps=data.get("video_fps", 1.0),  # type: ignore[arg-type]
+            send=send,
         )
 
     @staticmethod
@@ -380,13 +648,8 @@ def _speaker_clustering_config_from_dict(
             + ", ".join(f"speaker_clustering.{key}" for key in unknown)
         )
     try:
-        return SpeakerClusteringConfig(
-            threshold=data.get("threshold", 0.6),  # type: ignore[arg-type]
-            warmup_seconds=data.get("warmup_seconds", 60.0),  # type: ignore[arg-type]
-            min_update_seconds=data.get(
-                "min_update_seconds", 1.0
-            ),  # type: ignore[arg-type]
-        )
+        kwargs = {key: data[key] for key in allowed if key in data}
+        return SpeakerClusteringConfig(**kwargs)  # type: ignore[arg-type]
     except SpeakerConfigError as exc:
         raise ConfigError(f"speaker_clustering.{exc}") from exc
 
@@ -456,10 +719,8 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
 
 def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
     allowed = {
-        "enabled",
         "language",
-        "idle_interval",
-        "style",
+        "profiles",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -467,11 +728,27 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
             "campi commentator non riconosciuti: "
             + ", ".join(f"commentator.{key}" for key in unknown)
         )
+
+    profiles_raw = data.get("profiles")
+    if profiles_raw is None:
+        profiles_raw = {}
+    if not isinstance(profiles_raw, dict):
+        raise ConfigError("commentator.profiles deve essere una tabella")
+
+    parsed_profiles: dict[CommentatorStyle, ProfileConfig] = {}
+    for key, value in profiles_raw.items():
+        style = _coerce_enum(key, CommentatorStyle, "commentator.profiles")
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f"commentator.profiles.{key} deve essere una tabella"
+            )
+        parsed_profiles[style] = _build_profile_from_dict(style, value)
+
     return CommentatorConfig(
-        enabled=data.get("enabled", False),  # type: ignore[arg-type]
         language=data.get("language", "it"),  # type: ignore[arg-type]
-        idle_interval=data.get("idle_interval"),  # type: ignore[arg-type]
-        style=data.get("style", CommentatorStyle.OPERATOR),  # type: ignore[arg-type]
+        profiles=parsed_profiles,
     )
 
 
@@ -551,6 +828,9 @@ class Config:
         if not isinstance(self.commentator, CommentatorConfig):
             raise ConfigError("commentator deve essere una CommentatorConfig")
         self.commentator.validate_for_mode(self.mode)
+        self._validate_public_twitch_persona()
+        if self.twitch is not None:
+            self.twitch.send.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
         if self.adapter == "os_capture" and self.os_capture is None:
@@ -575,6 +855,32 @@ class Config:
             or self.perception_shutdown_timeout <= 0
         ):
             raise ConfigError("perception_shutdown_timeout deve essere > 0")
+
+    def _validate_public_twitch_persona(self) -> None:
+        """Su Twitch in modalità public la persona È l'original_chat.
+
+        La chat pubblica usa il contratto RE:/MSG:/#end_conv che solo lo stile
+        `original_chat` produce; un profilo `operator` (telecronista) parlerebbe
+        all'operatore invece di scrivere in chat. Questo controllo trasforma una
+        combinazione incoerente in un errore chiaro al `--check`, invece di
+        lasciar generare messaggi telecronista sull'output pubblico. Va qui (a
+        livello Config) perché serve la terna mode + adapter + commentator.
+        """
+        if self.adapter != "twitch" or self.mode is not OutputMode.PUBLIC:
+            return
+        offending = [
+            style
+            for style in self.commentator.active_styles()
+            if style is not CommentatorStyle.ORIGINAL_CHAT
+        ]
+        if offending:
+            names = ", ".join(style.value for style in offending)
+            raise ConfigError(
+                "su Twitch in modalità public la persona è sempre 'original_chat': "
+                f"il profilo commentator '{names}' non è ammesso. Usa "
+                "commentator.profiles.original_chat oppure rimuovi i profili "
+                "(il default per twitch+public è original_chat)."
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "Config":
