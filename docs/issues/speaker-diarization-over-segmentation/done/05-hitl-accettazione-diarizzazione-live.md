@@ -63,3 +63,12 @@ nelle note. Ricordare che qualche `?` occasionale è atteso, non un fallimento.
 
 - Implementazione del collasso (01), del marking (03), dell'hardening (04).
 - Correzione docs (02) — indipendente, non bloccante per questo run.
+
+## Esito accettazione (2026-07-13)
+
+ACCETTATO. Validato dal vivo su `andrew_live_channel`. Dopo il passaggio al modello
+embedding VoxCeleb **inglese** (`campplus_sv_en_voxceleb_16k`, `dimension: 512`) e
+soglia `0.5`, il pannello TRASCRIZIONE mostra solo `streamer` / `altro` / `?`
+(nessun `speaker_N`): run reale con 45 battute audio → streamer 11, altro 27, ? 7.
+Il tasto `s` (marking manuale dello streamer) funziona. Open question sulla soglia
+risolta: **0.5 col modello inglese**. Config operatore in `.local` (gitignored).
