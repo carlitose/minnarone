@@ -74,3 +74,14 @@ delay, respect budget, and every decision is auditable in events and replay.
 - User story 2
 - User story 28
 - User story 30
+
+## Esito accettazione (2026-07-13)
+
+ACCETTATO come prova generale shadow. Dopo i fix di wiring public+TUI, nel run
+attended (andrew_live_channel / allerendys) il pannello MINNARONE mostra messaggi
+`[SHADOW]` in stile **original-chat** (brevi, da chat), non più su stdout né in
+stile telecronista; status bar `send=shadow`. Persona `original_chat` confermata.
+
+Caveat (non esercitati separatamente in questo run ma coperti dai test automatici):
+skip su `#end_conv`, replay offline, accounting budget sotto cap. L'invio pubblico
+reale resta il ticket **11** (live).
