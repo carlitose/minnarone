@@ -59,7 +59,7 @@ reali. Il template è [`.env.example`](.env.example) (`cp .env.example .env`).
 
 | Variabile | Quando serve |
 |-----------|--------------|
-| `OPENROUTER_API_KEY` | Sempre: il provider LLM (OpenRouter, `grok`/`deepseek` via config) la legge da qui. |
+| `OPENROUTER_API_KEY` | Con `llm_provider: grok`/`deepseek` (OpenRouter). NON serve con `llm_provider: llamacpp` (LLM locale). |
 | `TWITCH_BOT_USERNAME` | Con `adapter: twitch` + `twitch.chat: true` (ingestione IRC in lettura). |
 | `TWITCH_OAUTH_TOKEN` | Con `adapter: twitch` + `twitch.chat: true` — token di **lettura** (`chat:read chat:edit`). |
 | `TWITCH_SEND_OAUTH_TOKEN` | **Solo** per `twitch.send.mode: live` — token di **scrittura** di un account bot dedicato. |
@@ -85,6 +85,7 @@ Il target esegue Ruff, Vulture, Deptry e Pylint limitato a `duplicate-code`
 ### Prerequisiti runtime
 
 - **`OPENROUTER_API_KEY`**: mettila in `.env` (o esportala nell'ambiente).
+  Non serve con `llm_provider: llamacpp` (vedi [LLM locale](#llm-locale-llamacpp)).
 - **Permessi macOS**: la cattura di percezione richiede di autorizzare il
   processo (es. il terminale) in *Impostazioni di sistema → Privacy e sicurezza*
   per **Microfono** (audio) e **Registrazione schermo** (video/schermo). L'audio
@@ -305,7 +306,7 @@ mode: public              # public | private (private = solo console locale)
 soul_path: soul.md        # identità dell'agente
 facts_dir: facts          # directory di fatti permanenti (uno o più file)
 adapter: twitch           # sorgente di percezione (twitch | os_capture)
-llm_provider: grok        # grok | deepseek (slug modello override via llm_params.model)
+llm_provider: grok        # grok | deepseek (slug via llm_params.model) | llamacpp (locale, modello fissato dal server)
 agent_name: minnarone     # nome a cui l'agente risponde (rilevamento menzioni)
 
 twitch:
@@ -389,6 +390,38 @@ auto_memory: false      # inerte in MVP
 
 I punti `retention` e `auto_memory` sono presenti nello schema ma non alterano
 il comportamento (estensione v2).
+
+## LLM locale (llama.cpp)
+
+Con `llm_provider: llamacpp` il Reactor genera le reazioni contro un
+`llama-server` locale ([llama.cpp](https://github.com/ggml-org/llama.cpp)) con
+API OpenAI-compatibile: **niente `OPENROUTER_API_KEY`**, nessuna dipendenza
+runtime nuova. Il server va avviato **a mano** prima del loop live (minnarone
+non gestisce il processo, fa solo un health-check su `GET /health` all'avvio):
+
+```bash
+llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 1
+```
+
+Config (esempio completo in
+[examples/llamacpp-local.example.yaml](examples/llamacpp-local.example.yaml)):
+
+```yaml
+llm_provider: llamacpp
+llamacpp:
+  base_url: http://127.0.0.1:8080   # default; porta esplicita richiesta
+```
+
+Note:
+
+- Niente `model` in config né nel body: il server serve il solo modello
+  caricato (lo slug reale compare nei meta di osservabilità della risposta).
+- Gli `llm_params` (`temperature`, `max_tokens`, `timeout`, ...) passano come
+  per i provider cloud; `thinking` viene droppato (il reasoning si spegne
+  server-side con `--reasoning off`).
+- `--check` resta un dry-run senza rete: valida solo la forma di `base_url`.
+  Se all'avvio live il server è giù o sta ancora caricando il modello (503),
+  la CLI esce con un errore che include il comando qui sopra.
 
 ## Smoke Twitch capture-only
 

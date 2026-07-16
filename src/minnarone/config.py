@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
 from typing import TypeVar, Union
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -554,6 +555,75 @@ class OsCaptureConfig:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class LlamaCppConfig:
+    """Blocco `llamacpp:`: dove trovare il `llama-server` locale.
+
+    Il server è avviato A MANO dall'utente (minnarone non gestisce il
+    processo): l'unica chiave è `base_url`. Niente `model` in config: il
+    server serve il solo modello caricato e il campo verrebbe ignorato.
+    La validazione è di sola forma (nessuna rete), così `--check` resta un
+    dry-run; la raggiungibilità è verificata all'avvio del loop live.
+    """
+
+    base_url: str = "http://127.0.0.1:8080"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.base_url, str) or not self.base_url.strip():
+            raise ConfigError(
+                "llamacpp.base_url deve essere una stringa non vuota "
+                "(es. 'http://127.0.0.1:8080')"
+            )
+        base_url = self.base_url.strip().rstrip("/")
+        parsed = urlsplit(base_url)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ConfigError(
+                f"llamacpp.base_url {self.base_url!r} non valido: la porta "
+                "deve essere numerica (es. 'http://127.0.0.1:8080')"
+            ) from exc
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ConfigError(
+                f"llamacpp.base_url {self.base_url!r} non valido: serve un URL "
+                "http(s) con host e porta esplicita (es. 'http://127.0.0.1:8080')"
+            )
+        # Solo scheme://host:porta: il provider aggiunge da sé `/v1/chat/...` e
+        # il probe aggiunge `/health`. Un path (tipicamente il `/v1` della
+        # convenzione dei client OpenAI), o una query/fragment, produrrebbero
+        # URL sbagliati (`/v1/v1/chat/...`, `/v1/health` → 404) diagnosticabili
+        # solo a runtime: meglio rifiutarli qui.
+        if parsed.path or parsed.query or parsed.fragment:
+            raise ConfigError(
+                f"llamacpp.base_url {self.base_url!r} non valido: indica solo "
+                "scheme://host:porta senza path (es. 'http://127.0.0.1:8080'), "
+                "il provider aggiunge da sé i path (niente '/v1')"
+            )
+        # Porta esplicita consigliata: llama-server non gira sulle porte
+        # standard 80/443, quindi un URL senza porta è quasi sempre un refuso.
+        # `port == 0` non è connettibile: trattato come porta mancante.
+        if not port:
+            raise ConfigError(
+                f"llamacpp.base_url {self.base_url!r} senza porta esplicita: "
+                "indica la porta del llama-server (es. 'http://127.0.0.1:8080')"
+            )
+        object.__setattr__(self, "base_url", base_url)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "LlamaCppConfig":
+        """Costruisce e valida il blocco `llamacpp:`, rifiutando campi ignoti."""
+        allowed = {"base_url"}
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "campi llamacpp non riconosciuti: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        # `base_url` assente → default del dataclass (unica fonte di verità,
+        # niente literal duplicato qui).
+        return cls(**data)  # type: ignore[arg-type]
+
+
 def _vad_config_from_dict(data: dict[str, object]) -> VadConfig:
     allowed = {
         "mode",
@@ -797,6 +867,8 @@ class Config:
     video: VideoPerceptionConfig = field(default_factory=VideoPerceptionConfig)
     vlm: QwenVlConfig = field(default_factory=QwenVlConfig)
     commentator: CommentatorConfig = field(default_factory=CommentatorConfig)
+    # Server llama.cpp locale (usato solo con `llm_provider: llamacpp`).
+    llamacpp: LlamaCppConfig = field(default_factory=LlamaCppConfig)
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, OutputMode):
@@ -827,6 +899,8 @@ class Config:
             raise ConfigError("vlm deve essere una QwenVlConfig")
         if not isinstance(self.commentator, CommentatorConfig):
             raise ConfigError("commentator deve essere una CommentatorConfig")
+        if not isinstance(self.llamacpp, LlamaCppConfig):
+            raise ConfigError("llamacpp deve essere una LlamaCppConfig")
         self.commentator.validate_for_mode(self.mode)
         self._validate_public_twitch_persona()
         if self.twitch is not None:
@@ -940,6 +1014,10 @@ class Config:
         if not isinstance(commentator_raw, dict):
             raise ConfigError("'commentator' deve essere una tabella")
         commentator = _commentator_config_from_dict(commentator_raw)
+        llamacpp_raw = data.get("llamacpp", {})
+        if not isinstance(llamacpp_raw, dict):
+            raise ConfigError("'llamacpp' deve essere una tabella")
+        llamacpp = LlamaCppConfig.from_dict(llamacpp_raw)
 
         try:
             return cls(
@@ -978,6 +1056,7 @@ class Config:
                 video=video,
                 vlm=vlm,
                 commentator=commentator,
+                llamacpp=llamacpp,
             )
         except (TypeError, ValueError) as exc:
             if isinstance(exc, ConfigError):

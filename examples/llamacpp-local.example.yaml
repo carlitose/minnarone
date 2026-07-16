@@ -1,0 +1,35 @@
+# Config di esempio con LLM locale via llama.cpp (nessuna OPENROUTER_API_KEY).
+#
+# Prerequisito: avvia `llama-server` A MANO in un altro terminale, es.:
+#   llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 1
+#
+# minnarone NON gestisce il processo del server: all'avvio del loop live fa
+# solo un health-check su GET {base_url}/health (200 = modello caricato).
+
+mode: public
+soul_path: soul.md
+facts_dir: facts
+adapter: os_capture
+llm_provider: llamacpp     # provider locale: llama-server OpenAI-compatibile
+
+llamacpp:
+  base_url: http://127.0.0.1:8080  # dove risponde il llama-server (porta esplicita)
+
+# Percezione: qui solo lo schermo, così il config passa `--check` senza altri
+# modelli. Il captioner VLM resta SPENTO (nessun `vlm.model`): su GPU piccole
+# conviene non affiancarlo a llama-server. Per l'audio servono anche VAD/ASR e
+# `speaker_embedding.model_path` (vedi minnarone.example.yaml).
+os_capture:
+  audio: false
+  video: true
+  video_fps: 1.0
+
+senser_interval: 0.5
+idle_interval: 150.0
+recent_chat_window: 15
+
+llm_params:
+  temperature: 0.7         # tuning passato nel body della richiesta
+  max_tokens: 256
+  # NOTA: `thinking` (usato dai provider cloud) qui non serve: per llamacpp
+  # viene droppato — il reasoning si spegne server-side con `--reasoning off`.
