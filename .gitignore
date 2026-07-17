@@ -28,3 +28,9 @@ perceptions.jsonl
 
 # Agent worktrees
 .claude/worktrees/
+
+# Tool caches e materiale personale (non fanno parte del repo)
+.agents/
+.tokensave/
+.ruff_cache/
+wiki/
