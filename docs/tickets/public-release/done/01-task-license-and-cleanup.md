@@ -54,3 +54,12 @@ committato).
 
 - Revisione screenshot (ticket 02) e lingua README (ticket 03).
 - Qualsiasi modifica ai docs interni.
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+Tutti i criteri soddisfatti: LICENSE MIT in root, pyproject `license = MIT`,
+sezione Licenza nel README, `.agents/` untracked e gitignorato insieme a
+`wiki/`/`.tokensave/`/`.ruff_cache/`. PR #26 mergiata su main (merge commit
+`974f327`). `git ls-files .agents wiki .tokensave` vuoto.
