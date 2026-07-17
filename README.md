@@ -41,7 +41,11 @@ First create and activate a virtual environment. With
 
 ```bash
 uv venv                             # create .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
+# activate it (pick your shell):
+source .venv/bin/activate           # macOS / Linux
+source .venv/Scripts/activate       # Windows — Git Bash
+# .venv\Scripts\Activate.ps1        # Windows — PowerShell
+# .venv\Scripts\activate.bat        # Windows — cmd
 
 uv pip install -e .                 # core
 uv pip install -e '.[tui]'          # + observability dashboard (textual)
