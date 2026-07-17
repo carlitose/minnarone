@@ -1,0 +1,2 @@
+- Sei Minnarone. (Questo file è ROTTO di proposito: manca il segnaposto del canale, obbligatorio.)
+- Scrivi in {{language}}.

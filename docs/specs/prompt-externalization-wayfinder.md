@@ -47,6 +47,28 @@ testo del file.
 - **Prior art**: i ticket done `meeting-synthesizer-prompt-template` e
   `suggester-prompt-template` hanno prodotto *template hard-coded* (con
   `{language}`), non file esterni — quindi il lavoro qui li supera esternalizzandoli.
+- **Struttura file (operatore, 2026-07-17)**: **separati ma co-locati** — `soul.md`
+  resta l'IDENTITÀ (→ `[MEMORIA PERMANENTE]`, via `FileMemory`, degrado con grazia);
+  un file a parte per le REGOLE di comportamento (→ `[REGOLE]`), servito dal nuovo
+  loader (fail-fast). NON unificati.
+- **`{language}` (operatore, 2026-07-17)**: **tenuto** come placeholder sostituito
+  dal loader dal codice lingua di config.
+- **Contratto prompt-source deciso (ticket 02 prototype, 2026-07-17)** — spike in
+  `spike/prompt_externalization/`, 8/8 test verdi:
+  - **Formato**: markdown-only. Un prompt-set = una directory; un `.md` per prompt
+    di prosa; i set "a chiavi" (6 situazioni, ecc.) come un `.md` con sezioni
+    `## <chiave>` in dict. Niente YAML/TOML.
+  - **Templating**: sostituzione sicura `{{nome}}` (doppia graffa); graffe singole e
+    `<...>` sopravvivono; valore inserito senza ri-scan (no injection); placeholder
+    sconosciuto/mancante → errore (fail-fast).
+  - **Packaging + override**: default impacchettati via `importlib.resources`
+    (`minnarone/prompts/` nel wheel) + `prompts_dir` da config; **precedenza
+    per-file** (override se il file c'è lì, altrimenti default).
+  - **Validazione**: fail-fast su file/placeholder/token di controllo mancante o
+    contenuto vuoto (più stretta di `FileMemory`, che degrada con grazia).
+  - **`prompts_dir`**: nuova chiave `Config` gemella di `soul_path`/`facts_dir`
+    (relativa alla dir del config); assente → solo default impacchettati.
+  - **Multilingua provato**: set `override_en/` servito solo puntandoci `prompts_dir`.
 
 ## Cosa si esternalizza (tunabile) vs cosa resta cablato (sicurezza)
 
@@ -80,38 +102,22 @@ testo del file.
 
 ## Not Yet Specified
 
-- **Formato dei file**: markdown per la prosa (SOUL.md), ma le parti
-  parametrizzate (`{language}`, canale) e quelle **a varianti chiave** (situazioni
-  per tipo di trigger, etichette gruppi summarizer) vogliono una struttura. Un
-  file solo markdown non basta → decidere: markdown-con-`{placeholder}` +
-  un file strutturato (YAML/TOML) per le varianti chiave e le etichette? O un
-  unico YAML con blocchi multilinea? (prototype, ticket 02)
-- **Meccanismo di templating/placeholder**: come iniettare `{language}`, canale e
-  i punti dove entra il contenuto dinamico. `str.format` è fragile se il testo
-  contiene `{`/`}`; serve un templater minimale e sicuro (il templating NON deve
-  diventare un vettore di injection). (ticket 02/03)
-- **Posizione e packaging dei file**: i default di prodotto devono essere
-  **impacchettati** con l'app (fresh install funziona) ma **sovrascrivibili**
-  dall'operatore (come oggi soul/facts puntano a `.local/`). Dove:
-  `importlib.resources` su `resources/prompts/` + dir di override da config?
-  (ticket 02/03)
-- **Validazione**: fail-fast su file mancante/invalido vs degrado con grazia.
-  Con le regole di sicurezza in codice, un persona-file mancante NON deve
-  degradare a vuoto silenzioso. Definire la severità + il check dei placeholder
-  richiesti. (ticket 02/03)
-- **Relazione SOUL.md ↔ `soul` di memoria**: OGGI il `soul` (memoria) = "chi è
-  l'agente (nome, età, gusti)" e finisce in `[MEMORIA PERMANENTE]`; le
-  `_ORIGINAL_CHAT_RULES` = regole di comportamento in `[REGOLE]`. Sono blocchi
-  DIVERSI. "SOUL.md" richiesto dall'utente potrebbe voler unificare i due concetti
-  o restare separato. **Decisione da prendere nel prototype** (ticket 02): unire
-  persona+regole in SOUL.md o tenere due file (memoria-soul vs regole-persona).
-- **Multi-canale / multilingua**: risolto "gratis" dall'esternalizzazione (chi
-  vuole un'altra lingua riscrive i file). Le uniche cose da decidere nel prototype:
-  (1) i file di prompt stanno in una **directory configurabile** (come soul/facts)
-  così un operatore punta al suo set senza toccare il codice — confermare che
-  riusiamo quel pattern; (2) se tenere il placeholder `{language}` o lasciar
-  dettare la lingua direttamente al testo del file. NIENTE motore i18n, niente
-  fallback multi-set complicati.
+Formato, templating, packaging, validazione, `prompts_dir`, SOUL.md↔memoria e
+multilingua: **tutti decisi** (vedi Decisions So Far, ticket 02). Restano solo
+questi refinements, da chiudere durante l'implementazione:
+
+- **Etichette di sezione** (`[MEMORIA]`, `[CHAT RECENTE]`, `[I TUOI ULTIMI
+  MESSAGGI]`, ...): esternalizzarle insieme al testo che le referenzia, o tenerle
+  come ancore strutturali cablate? Le situazioni le citano: se esternalizzate
+  vanno tenute coerenti. (ticket 04/06)
+- **Accoppiamento riferimenti-di-sezione nelle situazioni**: nel set inglese i
+  riferimenti (`[CONVERSAZIONE RECENTE]` ecc.) restano italiani finché gli header
+  non si esternalizzano → dipende dalla decisione sopra. (ticket 04)
+- **Modalità "strict set"**: la precedenza per-file può mischiare lingue con un
+  override parziale. Valutare un flag "niente fallback quando `prompts_dir` è
+  impostato" per evitare mix silenzioso di lingue. (ticket 03)
+- **Test di byte-invarianza sul loader reale**: da riscrivere contro i default
+  impacchettati. (ticket 07)
 
 ## Out of Scope
 
@@ -128,12 +134,12 @@ testo del file.
 
 ## Frontier / Blocking Edges
 
-- **Edge #1 (blocca l'implementazione): formato + templating + packaging +
-  validazione non decisi.** Senza un contratto di prompt-source provato, ogni
-  migrazione rischia di essere rifatta. Lo risolve il **prototype (ticket 02)**,
-  che deve anche sciogliere il nodo SOUL.md ↔ memoria-soul.
-- ✅ **Edge #2 — inventario**: CHIUSO dal ticket 01 (lista completa + classificazione
-  esterno/cablato + placeholder + voci a-varianti-chiave).
+- ✅ **Edge #1 — contratto prompt-source**: CHIUSO dal prototype (ticket 02),
+  provato end-to-end (spike `spike/prompt_externalization/`, 8/8 test verdi).
+- ✅ **Edge #2 — inventario**: CHIUSO dal ticket 01.
+- **Edge #3 (nuovo frontier): implementazione.** Il loader reale (03) va costruito
+  dallo spike; poi le migrazioni 04/05/06 (condividono `prompt.py`/`summarizer.py`
+  → sequenziali) e infine docs/fresh-install (07).
 
 ## Ticket Plan
 
