@@ -556,3 +556,7 @@ osservabilità e replay offline delle run.
 Il lavoro rimanente è centrato sulle **run di accettazione live con
 human-in-the-loop** (HITL). Vedi la
 [roadmap](docs/SPECIFICATION.md#10-roadmap-per-priorità) per MVP / v2 / v3.
+
+## Licenza
+
+Distribuito con licenza [MIT](LICENSE).
