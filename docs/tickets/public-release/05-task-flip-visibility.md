@@ -1,0 +1,58 @@
+# Flip della visibilità GitHub a public e verifica post-flip
+
+## Parent Spec
+
+[public-release-wayfinder.md](../../specs/public-release-wayfinder.md)
+
+## Type
+
+task
+
+## Outcome
+
+Il repo è pubblico su GitHub e verificato dall'esterno: clone anonimo
+funziona, README renderizza con link relativi validi, licenza riconosciuta da
+GitHub, nessun contenuto inatteso in issue/PR pubbliche.
+
+## Acceptance Criteria
+
+- [ ] Visibilità cambiata a public (Settings → Danger Zone → Change visibility,
+      oppure `gh repo edit --visibility public`).
+- [ ] GitHub mostra il badge "MIT license" nella pagina del repo.
+- [ ] Clone anonimo (senza credenziali) riesce.
+- [ ] I link relativi del README (docs/, examples/, .env.example) funzionano
+      nella pagina GitHub.
+- [ ] Issue e PR esistenti riviste: nessun contenuto da nascondere.
+
+## Blocked By
+
+- [01-task-license-and-cleanup.md](01-task-license-and-cleanup.md)
+- [02-grilling-screenshots-review.md](02-grilling-screenshots-review.md)
+- [03-grilling-readme-language.md](03-grilling-readme-language.md)
+- [04-task-security-preflight.md](04-task-security-preflight.md)
+
+## Frontier
+
+Azione finale e di fatto irreversibile: dal momento del flip la history è
+copiabile da chiunque. Va eseguita solo a mappa completamente verde, con
+conferma esplicita dell'utente al momento del flip.
+
+## Work Plan
+
+1. Confermare con l'utente che 01–04 sono chiusi e che si procede.
+2. Rileggere rapidamente issue/PR esistenti su GitHub.
+3. Eseguire il flip (UI o `gh repo edit --visibility public`).
+4. Verifica post-flip da sessione anonima: pagina repo, badge licenza, link
+   README, clone.
+5. Chiudere la mappa (Status: Done) e registrare l'esito.
+
+## Evidence to Capture
+
+- URL pubblico del repo.
+- Screenshot o esito testuale delle verifiche post-flip.
+
+## Out of Scope
+
+- Promozione (social preview, topics, description GitHub) — post-flip
+  opzionale.
+- CONTRIBUTING.md, code of conduct, CI badge.
