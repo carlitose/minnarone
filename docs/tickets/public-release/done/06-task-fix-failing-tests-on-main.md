@@ -63,3 +63,39 @@ flip (il ticket 05 ora dipende anche da questo).
 
 - Aggiungere CI (nice-to-have post-pubblicazione).
 - Refactor dei test non coinvolti.
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+Suite completa verde: **1093 passed, 0 failed** (era 4 failed). Diagnosi e fix
+per test:
+
+1. `test_readme_private_commentator_wording_is_not_contradictory` — **test
+   stantio**. Il refresh README (PR #24) ha rimosso il percorso "whisper v2";
+   oggi `private` = solo console locale, nessun PRIVMSG. Test aggiornato ad
+   ancore minime sul wording attuale (`sola **console locale**`, `messaggio
+   pubblico viene mai inviato`) + guardia che il wording contraddittorio
+   storico (`whisper v2`) non riappaia. Invariante preservata senza vincolare
+   la prosa (utile per la traduzione EN del ticket 08).
+2. `test_twitch_audio_runtime_writes_clustered_speaker_speech_perception` —
+   **fix codice** in `asr.py`: `_faster_whisper_progress_disabled` ora usa
+   `sys.modules.get("faster_whisper.transcribe")` invece di forzare un import
+   pesante dentro il worker; se il modulo non è caricato (modello fake nei
+   test) fa yield senza toccare tqdm. Comportamento reale invariato.
+3. `test_cli_check_fails_for_live_send_without_write_token` (+ test live
+   gemello) — **test non isolato**: la CLI ricarica `.env` dalla cwd, quindi un
+   `.env` locale dell'operatore con `TWITCH_SEND_OAUTH_TOKEN` vanificava il
+   `delenv`. Aggiunto `monkeypatch.chdir(tmp_path)`.
+4. `test_audio_reader_stop_kills_process_that_ignores_terminate` —
+   **test fragile su Windows**: `process_stop_timeout=0.01` sotto la risoluzione
+   del timer (~15ms) faceva scadere l'attesa del pump cancellato prima che il
+   pump venisse schedulato. Alzato a `0.1` solo in questo test (verifica il
+   kill del processo, non la race sul pump — quella la copre il test sullo
+   stdin close che si impianta, lasciato a 0.01). Codice `twitch_media.py`
+   invariato.
+
+ruff pulito sui file toccati. La modifica iniziale del subagent a
+`twitch_media.py` (heuristica `if not pump.cancelled()`) è stata scartata:
+rompeva il test gemello sullo stdin-close-hang perché non distingueva la race
+benigna dal hang genuino.

@@ -166,11 +166,12 @@ def _faster_whisper_progress_disabled():
     """Avoid faster-whisper/tqdm multiprocessing locks in Textual runtimes."""
     module = sys.modules.get("faster_whisper.transcribe")
     if module is None:
-        try:
-            import faster_whisper.transcribe as module
-        except ImportError:
-            yield
-            return
+        # faster-whisper non è già caricato (es. modello fake iniettato nei
+        # test): non c'è nessuna tqdm da neutralizzare, e importarlo qui
+        # costerebbe secondi di import pesanti dentro il worker di percezione.
+        # Un modello reale lo carica sempre via `_default_model_factory`.
+        yield
+        return
     original = getattr(module, "tqdm", None)
     if original is None:
         yield

@@ -324,6 +324,9 @@ def _twitch_send_config(tmp_path, send_block: str):
 def test_cli_check_fails_for_live_send_without_write_token(
     tmp_path, capsys, monkeypatch
 ):
+    # cwd isolata: la CLI ricarica `.env` dalla cwd, quindi un `.env` locale
+    # dell'operatore (con TWITCH_SEND_OAUTH_TOKEN) vanificherebbe il delenv.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
     cfg = _twitch_send_config(
         tmp_path,
@@ -344,6 +347,8 @@ def test_cli_check_fails_for_live_send_without_write_token(
 def test_cli_check_passes_for_shadow_send_without_write_token(
     tmp_path, capsys, monkeypatch
 ):
+    # cwd isolata: vedi il test live qui sopra.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
     cfg = _twitch_send_config(
         tmp_path,

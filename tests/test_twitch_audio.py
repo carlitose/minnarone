@@ -239,7 +239,13 @@ def test_audio_reader_stop_kills_process_that_ignores_terminate():
     reader = TwitchAudioReader(
         channel="minnarone",
         process_runner=_FakeProcessRunner([streamlink, ffmpeg]),
-        process_stop_timeout=0.01,
+        # Questo test verifica il terminate->kill del processo ostinato, non la
+        # race sul pump: con un timeout sotto la risoluzione del timer di
+        # Windows (~15ms) l'attesa del pump cancellato scade prima che il pump
+        # (già cancellato) venga schedulato, falsando lo stop come guasto. La
+        # semantica del pump-timeout la copre esplicitamente il test sullo
+        # stdin close che si impianta.
+        process_stop_timeout=0.1,
     )
 
     async def run():
