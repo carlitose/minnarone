@@ -102,6 +102,7 @@ from .twitch_video import TwitchVideoStreamOpener, VideoFrameDecoder
 from .vad import StreamingVad, WebRtcVadDetector
 from .video import Captioner, VideoFrame, VideoPerceiver
 from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
+from .vlm_llamacpp import LlamaCppCaptioner
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
@@ -710,9 +711,24 @@ def _build_default_video_perceiver(
     store: PerceptionStore,
     *,
     qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
+    llamacpp_captioner_factory: Callable[[Config], Captioner] | None = None,
 ) -> VideoPerceiver:
-    """Build the local video path (Qwen2-VL) shared by Twitch and os_capture."""
+    """Build the local video path shared by Twitch and os_capture.
+
+    Il backend di captioning è selezionato da `config.vlm.backend`:
+    - `qwen` (default) → `Qwen2VlCaptioner` (runtime torch locale);
+    - `llamacpp` → `LlamaCppCaptioner` sull'istanza multimodale `llama-server`
+      condivisa (riusa `config.llamacpp.base_url`).
+    Entrambe le costruzioni sono iniettabili per i test.
+    """
     def build_captioner() -> Captioner:
+        if config.vlm.backend == "llamacpp":
+            if llamacpp_captioner_factory is not None:
+                return llamacpp_captioner_factory(config)
+            return LlamaCppCaptioner(
+                base_url=config.llamacpp.base_url,
+                config=config.vlm,
+            )
         return (
             qwen_captioner_factory(config.vlm)
             if qwen_captioner_factory is not None
@@ -743,6 +759,7 @@ def build_agent(
     ]
     | None = None,
     qwen_captioner_factory: Callable[[QwenVlConfig], Captioner] | None = None,
+    llamacpp_captioner_factory: Callable[[Config], Captioner] | None = None,
     video_stream_opener: TwitchVideoStreamOpener | None = None,
     video_frame_decoder: VideoFrameDecoder | None = None,
     os_capture_audio_source: Captured | None = None,
@@ -1026,6 +1043,7 @@ def build_agent(
             config,
             store,
             qwen_captioner_factory=qwen_captioner_factory,
+            llamacpp_captioner_factory=llamacpp_captioner_factory,
         )
 
     # Dispatcher di percezione per-canale. "chat" è sempre disponibile (nessun

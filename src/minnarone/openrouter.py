@@ -100,19 +100,24 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _no_redirect_opener = urllib.request.build_opener(_NoRedirect())
 
 
-def _urllib_transport(
-    *, url: str, headers: Mapping[str, str], body: bytes, timeout: float
+def _open_request(
+    opener: urllib.request.OpenerDirector,
+    *,
+    url: str,
+    headers: Mapping[str, str],
+    body: bytes,
+    timeout: float,
 ) -> HttpResponse:
-    """Transport reale basato su stdlib `urllib.request` (nessuna dipendenza).
-
-    Non segue redirect (vedi `_NoRedirect`): un 3xx diventa un HTTPError e viene
-    restituito col suo status, così non re-inviamo il Bearer token cross-host.
-    """
+    """Esegue un POST con l'`opener` dato e mappa l'esito su `HttpResponse` /
+    `TransportError` / `TransportTimeout`. Condiviso dal transport remoto
+    (OpenRouter) e da quello locale (llama.cpp): cambia solo l'opener, non il
+    contratto di errore. Un 3xx torna come status (non seguito) se l'opener ha
+    il `_NoRedirect` installato."""
     req = urllib.request.Request(url, data=body, method="POST")
     for key, value in headers.items():
         req.add_header(key, value)
     try:
-        with _no_redirect_opener.open(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             return HttpResponse(status=resp.status, body=resp.read())
     except urllib.error.HTTPError as exc:  # risposta HTTP con status di errore (incl. 3xx)
         return HttpResponse(status=exc.code, body=exc.read())
@@ -125,8 +130,30 @@ def _urllib_transport(
         raise TransportError(str(exc)) from exc
 
 
+def _urllib_transport(
+    *, url: str, headers: Mapping[str, str], body: bytes, timeout: float
+) -> HttpResponse:
+    """Transport reale basato su stdlib `urllib.request` (nessuna dipendenza).
+
+    Non segue redirect (vedi `_NoRedirect`): un 3xx diventa un HTTPError e viene
+    restituito col suo status, così non re-inviamo il Bearer token cross-host.
+    """
+    return _open_request(
+        _no_redirect_opener, url=url, headers=headers, body=body, timeout=timeout
+    )
+
+
 class OpenRouterProvider(LLMProvider):
-    """`LLMProvider` reale che chiama OpenRouter Chat Completions."""
+    """`LLMProvider` reale che chiama OpenRouter Chat Completions.
+
+    Endpoint (`_url`) ed etichetta nei messaggi d'errore (`_LABEL`) sono
+    parametrizzati a livello di classe: i provider OpenAI-compatibili con host
+    diverso (es. `LlamaCppProvider`) li specializzano riusando trasporto,
+    parsing e mapping degli errori senza duplicare il flusso HTTP.
+    """
+
+    # Etichetta usata nei messaggi d'errore (specializzata dalle sottoclassi).
+    _LABEL = "OpenRouter"
 
     def __init__(
         self,
@@ -139,6 +166,7 @@ class OpenRouterProvider(LLMProvider):
     ) -> None:
         self.model = model
         self._api_key = api_key
+        self._url = OPENROUTER_URL
         self._transport = transport or _urllib_transport
         # Parametri di tuning passati nel body (temperature, max_tokens, …).
         self._params = dict(params or {})
@@ -183,7 +211,7 @@ class OpenRouterProvider(LLMProvider):
 
         def _call() -> HttpResponse:
             return self._transport(
-                url=OPENROUTER_URL,
+                url=self._url,
                 headers=headers,
                 body=body,
                 timeout=self._timeout,
@@ -199,25 +227,25 @@ class OpenRouterProvider(LLMProvider):
             # Messaggio FISSO: non interpoliamo il testo dell'eccezione, che
             # potrebbe echeggiare header (incl. il Bearer token). La causa
             # resta disponibile via chaining.
-            raise LLMError("errore trasporto OpenRouter") from exc
+            raise LLMError(f"errore trasporto {self._LABEL}") from exc
 
         return self._parse_response(response)
 
-    @staticmethod
-    def _parse_response(response: HttpResponse) -> LLMResult:
+    @classmethod
+    def _parse_response(cls, response: HttpResponse) -> LLMResult:
         if response.status != 200:
             raise LLMError(
-                f"OpenRouter ha risposto con status {response.status}: "
+                f"{cls._LABEL} ha risposto con status {response.status}: "
                 f"{response.body[:200]!r}"
             )
         try:
             data = json.loads(response.body.decode("utf-8"))
             message = data["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError) as exc:
-            raise LLMError(f"risposta OpenRouter malformata: {exc}") from exc
+            raise LLMError(f"risposta {cls._LABEL} malformata: {exc}") from exc
 
         if not isinstance(message, str):
-            raise LLMError("contenuto del messaggio OpenRouter non testuale")
+            raise LLMError(f"contenuto del messaggio {cls._LABEL} non testuale")
 
         return LLMResult(message=message, meta=_extract_meta(data))
 
@@ -261,9 +289,24 @@ def build_provider(
     default; `llm_params.model` lo può sovrascrivere; gli altri `llm_params`
     (es. `temperature`, `max_tokens`) sono passati come tuning nel body.
     Cambiare provider in config cambia il modello senza modifiche al codice.
+
+    `llm_provider: llamacpp` instrada invece verso il `LlamaCppProvider`
+    locale (`llamacpp.base_url`, nessuna API key): il server serve un solo
+    modello, quindi un eventuale `llm_params.model` viene ignorato.
     """
     params = dict(config.llm_params)
     model_override = params.pop("model", None)
+
+    if config.llm_provider == "llamacpp":
+        # Import locale per evitare il ciclo openrouter <-> llamacpp (il
+        # modulo llamacpp riusa da qui trasporto e parsing condivisi).
+        from .llamacpp import LlamaCppProvider
+
+        return LlamaCppProvider(
+            base_url=config.llamacpp.base_url,
+            transport=transport,
+            params=params,
+        )
 
     if model_override is not None:
         model = str(model_override)
@@ -272,7 +315,8 @@ def build_provider(
         if model is None:
             raise LLMError(
                 f"llm_provider sconosciuto: {config.llm_provider!r} "
-                f"(ammessi: {sorted(_DEFAULT_MODELS)} o specifica llm_params.model)"
+                f"(ammessi: {sorted([*_DEFAULT_MODELS, 'llamacpp'])} "
+                "o specifica llm_params.model)"
             )
 
     return OpenRouterProvider(model=model, transport=transport, params=params)

@@ -30,7 +30,8 @@ pip install -e .                 # core
 pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
 pip install -e '.[audio]'        # + runtime audio: faster-whisper + sherpa-onnx (ASR + speaker)
 pip install -e '.[video]'        # + runtime video Twitch: Streamlink Python + PyAV
-pip install -e '.[vlm]'          # + captioning video locale: transformers + torch/torchvision + Pillow
+pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
+pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: solo Pillow (via llama-server multimodale, niente torch)
 pip install -e '.[os-capture]'   # + cattura audio di sistema (soundcard) e schermo (mss)
 
 # Valida la config e costruisci l'agente (dry-run, niente loop né rete):
@@ -59,7 +60,7 @@ reali. Il template è [`.env.example`](.env.example) (`cp .env.example .env`).
 
 | Variabile | Quando serve |
 |-----------|--------------|
-| `OPENROUTER_API_KEY` | Sempre: il provider LLM (OpenRouter, `grok`/`deepseek` via config) la legge da qui. |
+| `OPENROUTER_API_KEY` | Con `llm_provider: grok`/`deepseek` (OpenRouter). NON serve con `llm_provider: llamacpp` (LLM locale). |
 | `TWITCH_BOT_USERNAME` | Con `adapter: twitch` + `twitch.chat: true` (ingestione IRC in lettura). |
 | `TWITCH_OAUTH_TOKEN` | Con `adapter: twitch` + `twitch.chat: true` — token di **lettura** (`chat:read chat:edit`). |
 | `TWITCH_SEND_OAUTH_TOKEN` | **Solo** per `twitch.send.mode: live` — token di **scrittura** di un account bot dedicato. |
@@ -85,6 +86,7 @@ Il target esegue Ruff, Vulture, Deptry e Pylint limitato a `duplicate-code`
 ### Prerequisiti runtime
 
 - **`OPENROUTER_API_KEY`**: mettila in `.env` (o esportala nell'ambiente).
+  Non serve con `llm_provider: llamacpp` (vedi [LLM locale](#llm-locale-llamacpp)).
 - **Permessi macOS**: la cattura di percezione richiede di autorizzare il
   processo (es. il terminale) in *Impostazioni di sistema → Privacy e sicurezza*
   per **Microfono** (audio) e **Registrazione schermo** (video/schermo). L'audio
@@ -103,9 +105,10 @@ suo canale (`chat`/`audio`/`video`) → store.
 - Il canale **audio** usa VAD locale + faster-whisper + speaker embedding
   `sherpa-onnx` quando `twitch.audio: true` (o `os_capture.audio: true`) e i
   backend locali sono installati/configurati.
-- Il canale **video** usa Streamlink + PyAV + un backend locale Qwen2-VL quando
-  `twitch.video: true`, `vlm.model` è configurato e gli extra `video`/`vlm` sono
-  installati.
+- Il canale **video** usa Streamlink + PyAV + un backend di captioning locale
+  quando `twitch.video: true` e l'extra `video` è installato. Il backend è scelto
+  da `vlm.backend`: `qwen` (Qwen2-VL torch, richiede `vlm.model` + extra `vlm`) o
+  `llamacpp` (llama-server multimodale, extra leggero `vlm-llamacpp`).
 - L'adapter **`os_capture`** (mic + audio di sistema loopback + registrazione
   schermo) osserva la macchina locale invece di uno stream remoto.
 
@@ -305,7 +308,7 @@ mode: public              # public | private (private = solo console locale)
 soul_path: soul.md        # identità dell'agente
 facts_dir: facts          # directory di fatti permanenti (uno o più file)
 adapter: twitch           # sorgente di percezione (twitch | os_capture)
-llm_provider: grok        # grok | deepseek (slug modello override via llm_params.model)
+llm_provider: grok        # grok | deepseek (slug via llm_params.model) | llamacpp (locale, modello fissato dal server)
 agent_name: minnarone     # nome a cui l'agente risponde (rilevamento menzioni)
 
 twitch:
@@ -364,7 +367,8 @@ video:
   dedup_change_threshold: 0.0  # 0 = salta solo frame byte-identici
 
 vlm:
-  model: null                  # percorso/id locale Qwen2-VL-compatible
+  backend: qwen                # qwen (torch locale) | llamacpp (llama-server multimodale)
+  model: null                  # percorso/id locale Qwen2-VL-compatible (solo backend qwen)
   device: auto
   device_map: auto
   torch_dtype: auto
@@ -389,6 +393,89 @@ auto_memory: false      # inerte in MVP
 
 I punti `retention` e `auto_memory` sono presenti nello schema ma non alterano
 il comportamento (estensione v2).
+
+## LLM locale (llama.cpp)
+
+Con `llm_provider: llamacpp` il Reactor genera le reazioni contro un
+`llama-server` locale ([llama.cpp](https://github.com/ggml-org/llama.cpp)) con
+API OpenAI-compatibile: **niente `OPENROUTER_API_KEY`**, nessuna dipendenza
+runtime nuova. Il server va avviato **a mano** prima del loop live (minnarone
+non gestisce il processo, fa solo un health-check su `GET /health` all'avvio):
+
+```bash
+llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 8192 --reasoning off --parallel 1
+```
+
+Config (esempio completo in
+[examples/llamacpp-local.example.yaml](examples/llamacpp-local.example.yaml)):
+
+```yaml
+llm_provider: llamacpp
+llamacpp:
+  base_url: http://127.0.0.1:8080   # default; porta esplicita richiesta
+```
+
+Note:
+
+- Niente `model` in config né nel body: il server serve il solo modello
+  caricato (lo slug reale compare nei meta di osservabilità della risposta).
+- Gli `llm_params` (`temperature`, `max_tokens`, `timeout`, ...) passano come
+  per i provider cloud; `thinking` viene droppato (il reasoning si spegne
+  server-side con `--reasoning off`).
+- `--check` resta un dry-run senza rete: valida solo la forma di `base_url`.
+  Se all'avvio live il server è giù o sta ancora caricando il modello (503),
+  la CLI esce con un errore che include il comando qui sopra.
+
+### Captioning video locale via llama.cpp (`vlm.backend: llamacpp`)
+
+Il canale video può descrivere i frame usando un `llama-server` **multimodale**
+(modello + proiettore `--mmproj`, es. Gemma multimodale) invece del backend
+torch Qwen2-VL. Vantaggio decisivo su GPU piccole (~4 GB): **una sola istanza
+`llama-server` multimodale serve sia le reazioni testo (`llm_provider:
+llamacpp`) sia il captioning**, evitando la doppia residenza in VRAM di
+torch-VLM + LLM. Nessuna dipendenza runtime nuova (transformers/torch non
+servono con questo backend): il trasporto è lo stesso urllib del provider LLM
+locale.
+
+Avvia l'istanza multimodale a mano, aggiungendo il proiettore `--mmproj` e
+`--parallel 2` (così testo e visione girano in concorrenza sulla stessa
+istanza, costo ~10 MiB VRAM):
+
+```bash
+llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 16384 --reasoning off --parallel 2
+```
+
+> **Contesto e `--parallel`**: `llama-server` divide `-c` tra gli slot, quindi
+> il contesto per-richiesta è `n_ctx / n_slots`. Con `--parallel 2` serve
+> `-c 16384` per avere 8192 token a slot: un prompt multi-canale (chat + audio +
+> video + soul/facts) supera facilmente i 2048 che darebbe `-c 4096 --parallel 2`,
+> e llama-server risponderebbe `400 "exceeds the available context size"`. La KV
+> cache di E2B è piccola: quadruplicare il contesto costa ~+80 MiB VRAM.
+
+Config: il backend riusa `llamacpp.base_url` (stessa istanza del provider LLM),
+mentre `prompt`/`language`/`max_new_tokens`/downscale/`max_caption_chars`
+restano nel blocco `vlm:`:
+
+```yaml
+vlm:
+  backend: llamacpp     # captiona i frame via l'istanza llama-server multimodale
+llamacpp:
+  base_url: http://127.0.0.1:8080   # condiviso col provider LLM locale
+```
+
+Note:
+
+- All'avvio del loop live (mai in `--check`) la CLI verifica via `GET /props`
+  che l'istanza esponga la visione (`modalities.vision == true`). Se manca il
+  proiettore, esce con un errore azionabile che ricorda `--mmproj`. Il check
+  gira anche con `llm_provider` cloud (il captioner usa comunque
+  `llamacpp.base_url`).
+- Contratto best-effort: su errore di trasporto/HTTP a runtime il captioner
+  ritorna una caption vuota (salta il frame) e logga l'evento, senza uccidere
+  il canale video. Il backend `qwen` resta invariato per chi lo seleziona.
+- **Installazione leggera**: questo backend richiede solo l'extra
+  `vlm-llamacpp` (`pip install -e '.[vlm-llamacpp]'` → solo Pillow), non l'extra
+  `vlm` pesante (torch/transformers), che serve solo al backend `qwen`.
 
 ## Smoke Twitch capture-only
 

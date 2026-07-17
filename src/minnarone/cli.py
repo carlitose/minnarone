@@ -4,8 +4,10 @@ Carica e valida la `Config` dal file YAML, poi costruisce l'agente. Con
 `--check` si ferma dopo il build (dry-run: nessun loop bloccante, nessuna rete,
 nessun device) — utile per validare un config e in CI/test. Senza `--check`
 avvia il loop di reazione live (il loop di PERCEZIONE — cattura audio/schermo —
-è il passo manuale documentato nel README: richiede permessi macOS e
-`OPENROUTER_API_KEY`).
+è il passo manuale documentato nel README: richiede permessi macOS). Il
+provider LLM cloud (`grok`/`deepseek`) richiede `OPENROUTER_API_KEY`; il
+provider locale `llamacpp` no — al suo posto fa un health-check del llama-server
+avviato a mano.
 
 Un config mancante o invalido produce un errore CHIARO su stderr e un exit code
 != 0 (riusa `ConfigError`).
@@ -28,6 +30,7 @@ from .live_tui import (
     ensure_live_tui_available,
     run_live_tui,
 )
+from .llamacpp import LlamaCppServerNotReady, ensure_llamacpp_ready
 from .output_sink import MinnaroneOutputStream
 from .replay import run_replay_tui
 from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
@@ -185,6 +188,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"(mode={config.mode.value}, provider={config.llm_provider})"
         )
         return 0
+
+    # Health-check del llama-server locale SOLO sul percorso live: `--check`
+    # resta un dry-run senza rete. Il server è avviato a mano dall'utente,
+    # quindi un server assente/in caricamento è un errore azionabile, non un
+    # loop che parte e salta tutti i turni.
+    try:
+        ensure_llamacpp_ready(config)
+    except LlamaCppServerNotReady as exc:
+        # Come il percorso di fallimento di build_agent (sopra): un run_session
+        # già creato (--tui) va marcato completato, altrimenti resta 'attivo' su
+        # disco e la retention non lo pota mai (orfano a ogni avvio fallito).
+        if run_session is not None:
+            with suppress(Exception):
+                run_session.mark_completed()
+        print(f"errore llama-server: {exc}", file=sys.stderr)
+        return 1
 
     # Avvio del loop di reazione live. La cattura di percezione (audio/schermo)
     # è il passo manuale documentato: richiede device e permessi macOS.
