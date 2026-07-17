@@ -41,7 +41,11 @@ Crea e attiva prima un ambiente virtuale. Con
 
 ```bash
 uv venv                             # crea .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
+# attivala (scegli la tua shell):
+source .venv/bin/activate           # macOS / Linux
+source .venv/Scripts/activate       # Windows — Git Bash
+# .venv\Scripts\Activate.ps1        # Windows — PowerShell
+# .venv\Scripts\activate.bat        # Windows — cmd
 
 uv pip install -e .                 # core
 uv pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
