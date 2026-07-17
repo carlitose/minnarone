@@ -527,10 +527,22 @@ def test_twitch_operator_docs_do_not_show_direct_secret_exports():
 def test_readme_private_commentator_wording_is_not_contradictory():
     text = Path("README.md").read_text(encoding="utf-8")
 
-    # Il refresh del README (PR #24) ha rimosso il vecchio percorso "whisper
-    # v2": oggi `private` = output solo su console locale, mai messaggi
-    # pubblici. Ancore minime sul wording attuale, così la garanzia resta
-    # verificata senza vincolare la prosa.
+    # Il README è ora in inglese (ticket 08). La garanzia resta la stessa: in
+    # `private` l'output va solo sulla console locale, nessun messaggio pubblico
+    # viene mai inviato. Ancore minime sul wording inglese attuale, così la
+    # garanzia resta verificata senza vincolare la prosa.
+    assert "only the **local console**" in text
+    assert "no public message is ever sent" in text
+    # Il wording storico contraddittorio non deve riapparire.
+    assert "whisper v2" not in text.lower()
+
+
+def test_readme_it_private_commentator_wording_is_not_contradictory():
+    text = Path("README.it.md").read_text(encoding="utf-8")
+
+    # La versione italiana (README.it.md) conserva la stessa garanzia: in
+    # `private` l'output va sulla sola console locale, nessun messaggio pubblico
+    # viene mai inviato.
     assert "sola **console locale**" in text
     assert "messaggio pubblico viene mai inviato" in text
     # Il wording storico contraddittorio non deve riapparire.

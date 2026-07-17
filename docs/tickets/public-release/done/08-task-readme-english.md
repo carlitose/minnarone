@@ -59,3 +59,28 @@ fix test (06) fa doppio lavoro sul test docs. Ordine consigliato: 06 → 08 → 
 - Traduzione dei docs operativi (`docs/*.md`) e dei docs interni — restano in
   italiano.
 - Riscrittura/miglioramento dei contenuti (solo traduzione fedele).
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+`README.md` tradotto interamente in inglese; `README.it.md` conserva
+l'italiano; link incrociati in testa a entrambi. Test docs aggiornati: le
+ancore inglesi (`only the **local console**`, `no public message is ever
+sent`) sul README.md e un nuovo test gemello sulle ancore italiane in
+README.it.md → copertura equivalente, invariante non indebolita. Suite: 1094
+passed, 0 failed.
+
+Extra richiesti dall'utente in corso d'opera:
+- **Hero image**: recuperata la copertina del video di enkk
+  (`https://img.youtube.com/vi/EkunaRO0uKg/maxresdefault.jpg` →
+  `docs/source/minnarone-cover.jpg`, 1280x720), inserita in cima a entrambi i
+  README con caption che linka il video e accredita enkk. Stesso ombrello di
+  rischio accettato del grilling 02 (materiale di enkk, video pubblico).
+- **Sezione "offrimi un caffè"**: PENDENTE — l'utente fornisce l'URL di
+  donazione (scelta "me lo dai tu"). Da aggiungere prima del flip.
+
+Polish: commenti bash del quickstart tradotti in inglese; il blocco
+config-example (YAML) resta con commenti italiani per coerenza con i file
+`examples/*.yaml` che gli utenti copiano (operational docs/examples fuori scope
+per decisione grilling 03).
