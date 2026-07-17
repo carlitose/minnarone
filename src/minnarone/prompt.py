@@ -24,12 +24,17 @@ byte-invariante per una config fissa.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from .memory import MemoryBlocks
 from .output import CommentatorStyle
-from .perception import Perception, Source, format_perception_line
+from .perception import (
+    Perception,
+    Source,
+    format_perception_line,
+    format_recent_line,
+)
 from .senser import Trigger
 
 # Delimitatori del blocco di DATI non fidati: tutto ciò che è percepito
@@ -232,6 +237,7 @@ class PromptBuilder:
         trigger: Trigger,
         summary: str | None = None,
         self_messages: Sequence[str] = (),
+        now: float | None = None,
     ) -> str:
         """Assembla il prompt completo per il turno corrente.
 
@@ -261,6 +267,12 @@ class PromptBuilder:
         Multi-party: quando il trigger porta un `interlocutor`, lo si esplicita
         nella SITUAZIONE così l'LLM, leggendo la finestra recente, può rivolgersi
         alla persona giusta anche in chat affollata.
+
+        `now` è il riferimento temporale (epoch secondi) catturato una volta per
+        tick dal Reactor. Serve SOLO alla recent-context original-chat, dove ogni
+        riga riceve il prefisso relativo `-<N>s` (divergenza B). Se `None` — le
+        altre modalità, o quando non fornito — si ripiega sulla resa piatta
+        `who: text` senza timestamp, così il comportamento resta invariato.
         """
         if self._commentator_style is CommentatorStyle.ORIGINAL_CHAT:
             return self._build_original_chat(
@@ -268,6 +280,7 @@ class PromptBuilder:
                 trigger=trigger,
                 summary=summary,
                 self_messages=self_messages,
+                now=now,
             )
 
         if self._commentator_style is CommentatorStyle.MEETING_SYNTHESIZER:
@@ -406,6 +419,7 @@ class PromptBuilder:
         trigger: Trigger,
         summary: str | None,
         self_messages: Sequence[str],
+        now: float | None = None,
     ) -> str:
         return self._dynamic_prompt(
             recent=recent,
@@ -418,6 +432,7 @@ class PromptBuilder:
             recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
             situation_header="[SITUAZIONE]",
             situation_line=self._original_chat_situation(trigger),
+            now=now,
         )
 
     def _original_chat_situation(self, trigger: Trigger) -> str:
@@ -487,12 +502,14 @@ class PromptBuilder:
         self_messages: Sequence[str] = (),
         self_messages_header: str | None = None,
         recent_source_headers: Sequence[OriginalChatContextSpec] | None = None,
+        now: float | None = None,
     ) -> str:
         recent_context = self._recent_context_block(
             recent_header,
             recent,
             trigger.perception,
             recent_source_headers,
+            now,
         )
         return (
             f"{self.stable_prefix()}\n"
@@ -505,10 +522,12 @@ class PromptBuilder:
 
     @staticmethod
     def _recent_block(
-        recent: Sequence[Perception], situation_perception: Perception | None
+        recent: Sequence[Perception],
+        situation_perception: Perception | None,
+        render_line: Callable[[Perception], str] = format_perception_line,
     ) -> str:
         history = [p for p in recent if p != situation_perception]
-        return "\n".join(format_perception_line(p) for p in history)
+        return "\n".join(render_line(p) for p in history)
 
     @classmethod
     def _recent_context_block(
@@ -517,12 +536,24 @@ class PromptBuilder:
         recent: Sequence[Perception],
         situation_perception: Perception | None,
         source_headers: Sequence[OriginalChatContextSpec] | None,
+        now: float | None = None,
     ) -> str:
         if source_headers is None:
             return (
                 f"{header}\n"
                 f"{cls._fence(cls._recent_block(recent, situation_perception))}\n\n"
             )
+
+        # Recent-context original-chat: se `now` è disponibile ogni riga adotta
+        # il formato timestamp+brackets (`-<N>s <who>: testo`, divergenza B);
+        # altrimenti si ripiega sulla resa piatta. È l'UNICO punto in cui il
+        # formato timestamp viene applicato: situazione e altre modalità restano
+        # su `format_perception_line`.
+        if now is not None:
+            def render_line(p: Perception) -> str:
+                return format_recent_line(p, now)
+        else:
+            render_line = format_perception_line
 
         blocks = [header]
         for spec in source_headers:
@@ -533,7 +564,7 @@ class PromptBuilder:
             ]
             blocks.append(
                 f"{spec.header}\n"
-                f"{cls._fence(cls._recent_block(source_recent, situation_perception))}"
+                f"{cls._fence(cls._recent_block(source_recent, situation_perception, render_line))}"
             )
         return "\n\n".join(blocks) + "\n\n"
 

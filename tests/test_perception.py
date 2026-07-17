@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from minnarone.perception import Perception, Source, format_perception_line
+from minnarone.perception import (
+    Perception,
+    Source,
+    format_perception_line,
+    format_recent_line,
+)
 
 
 def test_roundtrip_preserves_fields():
@@ -82,3 +87,20 @@ def test_format_perception_line_uses_speaker():
 def test_format_perception_line_falls_back_to_anon_when_no_speaker():
     p = Perception(ts=1.0, source=Source.VIDEO, type="caption", text="una stanza")
     assert format_perception_line(p) == "anon: una stanza"
+
+
+def test_format_recent_line_prefixes_relative_seconds_and_brackets():
+    p = Perception(
+        ts=977.0, source=Source.CHAT, type="msg", text="KEKW", speaker="leo95nf"
+    )
+    assert format_recent_line(p, now=1000.0) == "-23s <leo95nf>: KEKW"
+
+
+def test_format_recent_line_rounds_to_nearest_second():
+    p = Perception(ts=100.4, source=Source.CHAT, type="msg", text="ok", speaker="bob")
+    assert format_recent_line(p, now=110.0) == "-10s <bob>: ok"
+
+
+def test_format_recent_line_anon_when_no_speaker_still_bracketed():
+    p = Perception(ts=95.0, source=Source.VIDEO, type="caption", text="un editor")
+    assert format_recent_line(p, now=100.0) == "-5s <anon>: un editor"

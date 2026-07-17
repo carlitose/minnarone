@@ -44,10 +44,11 @@ class OriginalChatDryRun:
     reactor: Reactor
 
 
-def _build_original_chat_dry_run(tmp_path, *, llm_messages: list[str]):
+def _build_original_chat_dry_run(tmp_path, *, llm_messages: list[str], clock=None):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(store, agent_name="minnarone")
+    senser_kwargs = {} if clock is None else {"clock": clock}
+    senser = Senser(store, agent_name="minnarone", **senser_kwargs)
     builder = PromptBuilder(
         FakeMemory(
             soul="Sono Minnarone nel canale di enkk.",
@@ -115,6 +116,7 @@ def test_fake_original_chat_dry_run_routes_re_msg_locally_and_observes_prompt(
     runtime = _build_original_chat_dry_run(
         tmp_path,
         llm_messages=["re : parata clutch\nmsg : bella parata"],
+        clock=lambda: 100.0,  # clock costante: timestamp relativi deterministici
     )
     _seed_fake_multimodal_context(runtime)
     runtime.chat.perceive(
@@ -137,11 +139,14 @@ def test_fake_original_chat_dry_run_routes_re_msg_locally_and_observes_prompt(
     assert runtime.provider.prompts == [prompt]
     assert "[FORMATO RISPOSTA]" in prompt
     assert "[CHAT RECENTE]" in prompt
-    assert "bob: chat sta spammando KEKW" in prompt
+    # recent-context original-chat: righe con prefisso `-<N>s` e speaker tra < >
+    # (divergenza B). now=100 => bob@1.0 -> -99s, streamer@2.0 -> -98s.
+    assert "-99s <bob>: chat sta spammando KEKW" in prompt
     assert "[PARLATO RECENTE]" in prompt
-    assert "streamer: ho appena parato il colpo del boss" in prompt
+    assert "-98s <streamer>: ho appena parato il colpo del boss" in prompt
     assert "[SCHERMO RECENTE]" in prompt
-    assert "anon: boss staggered with low health bar on screen" in prompt
+    assert "s <anon>: boss staggered with low health bar on screen" in prompt
+    # la SITUAZIONE (trigger) NON è timestamped: resta la resa piatta.
     assert "alice: minnarone guarda questa parata" in prompt
 
     stable_prefix = runtime.builder.stable_prefix()

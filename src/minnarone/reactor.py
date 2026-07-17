@@ -123,12 +123,18 @@ class Reactor:
         recent = self._recent_for_prompt()
         # Leggi il riassunto corrente (se c'è una fonte) una volta per tick.
         summary = self._summary_provider() if self._summary_provider else None
+        # Riferimento temporale del tick: catturato UNA volta dallo STESSO clock
+        # del Senser così i timestamp relativi `-<N>s` della recent-context
+        # original-chat (divergenza B) sono coerenti e deterministici nei test.
+        # Guardia `hasattr` per non rompere senser minimali/fake privi di now().
+        now = self._senser.now() if hasattr(self._senser, "now") else None
         for trigger in triggers:
             prompt = self._prompt_builder.build(
                 recent=recent,
                 trigger=trigger,
                 summary=summary,
                 self_messages=list(self._self_messages),
+                now=now,
             )
             try:
                 with prompt_observation_context(f"reactor:{trigger.kind}"):

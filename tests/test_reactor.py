@@ -414,8 +414,8 @@ def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_pat
         def __init__(self):
             self.snapshots: list[list[str]] = []
 
-        def build(self, *, recent, trigger, summary=None, self_messages):
-            del recent, trigger, summary
+        def build(self, *, recent, trigger, summary=None, self_messages, now=None):
+            del recent, trigger, summary, now
             self.snapshots.append(list(self_messages))
             try:
                 self_messages.append("mutation from prompt builder")
@@ -450,9 +450,14 @@ def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_pat
 
 
 def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
+    # Clock deterministico: il Reactor cattura `now` dal Senser e lo inoltra al
+    # PromptBuilder, così le righe recent-context portano il prefisso `-<N>s`
+    # (divergenza B, ticket 03). Con now=10 le percezioni a ts=1/2/3 diventano
+    # -9s/-8s/-7s.
+    clock = lambda: 10.0  # noqa: E731 (clock costante per determinismo)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(store, agent_name="Minnarone")
+    senser = Senser(store, agent_name="Minnarone", clock=clock)
     builder = PromptBuilder(
         FakeMemory(soul="Sono Minnarone.", facts="").load(),
         commentator_style=CommentatorStyle.ORIGINAL_CHAT,
@@ -492,14 +497,14 @@ def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
 
     assert llm.last_prompt is not None
     assert "[PARLATO RECENTE]" in llm.last_prompt
-    assert "audio ancora rilevante" in llm.last_prompt
+    assert "-9s <streamer>: audio ancora rilevante" in llm.last_prompt
     assert "[SCHERMO RECENTE]" in llm.last_prompt
-    assert "video ancora rilevante" in llm.last_prompt
+    assert "-8s <anon>: video ancora rilevante" in llm.last_prompt
     chat_recent = llm.last_prompt.split("[CHAT RECENTE]", maxsplit=1)[1].split(
         "[PARLATO RECENTE]", maxsplit=1
     )[0]
-    assert "bob: chat non trigger" in chat_recent
-    assert "alice: minnarone guarda qui" not in chat_recent
+    assert "-7s <bob>: chat non trigger" in chat_recent
+    assert "<alice>: minnarone guarda qui" not in chat_recent
     assert llm.last_prompt.count("minnarone guarda qui") == 1
 
 
