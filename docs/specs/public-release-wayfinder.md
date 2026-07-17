@@ -72,8 +72,11 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   release): chi clona il repo pubblico e lancia `pytest` vede subito 4 failure.
   Uno è un test docs stantio dal refresh README (PR #24), gli altri 3 sono da
   diagnosticare. → ticket 06.
+- **Nessuna verifica da installazione pulita**: il README è verificato "sulla
+  carta" ma nessuno ha rifatto di recente il percorso utente-nuovo (clone →
+  venv pulito → install → avvio modalità) seguendo SOLO il README. → ticket 07.
 - **Flip a pubblico**: azione GitHub irreversibile di fatto (issue/PR diventano
-  pubblici). Va fatta per ultima, dopo che 01–04 e 06 sono chiusi. → ticket 05.
+  pubblici). Va fatta per ultima, dopo che 01–04, 06 e 07 sono chiusi. → ticket 05.
 
 ## Ticket Plan
 
@@ -91,6 +94,9 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   anonimo, link README funzionanti, pagina repo) → repo pubblico verificato.
 - 06 — task — Sistemare i 4 test falliti su main (1 test docs stantio da
   PR #24 + 3 da diagnosticare) → `pytest` verde su main.
+- 07 — task — Verifica da installazione pulita seguendo SOLO il README (clone
+  fresco, venv nuovo, extra, `--check` su tutti gli examples, avvio modalità
+  fattibili, smoke CLI, replay) → gap README↔realtà registrati e risolti.
 
 ## Next Review
 
