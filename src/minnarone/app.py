@@ -821,6 +821,13 @@ def build_agent(
     # gli override per-file vincono sui default impacchettati.
     prompt_set = load_prompt_set(config.prompts_dir)
 
+    # Il canale nel prompt ({{channel}} in rules.md/intro.md) segue
+    # `twitch.channel` quando la sezione twitch è configurata; senza (run
+    # non-Twitch) resta il default del PromptBuilder.
+    prompt_channel_kwargs: dict[str, str] = (
+        {"channel": config.twitch.channel} if config.twitch is not None else {}
+    )
+
     prompt_recorder = PromptObservationRecorder(
         debug_dir=run_session.debug_dir if run_session is not None else None
     )
@@ -980,6 +987,7 @@ def build_agent(
             commentator_language=config.commentator.language,
             commentator_style=style,
             prompt_set=prompt_set,
+            **prompt_channel_kwargs,
         )
 
         style_router = _per_profile_routers.get(style, out_router)
@@ -1019,6 +1027,7 @@ def build_agent(
             commentator_language=config.commentator.language,
             commentator_style=None,
             prompt_set=prompt_set,
+            **prompt_channel_kwargs,
         )
     first_reactor: Reactor
     if reactors:

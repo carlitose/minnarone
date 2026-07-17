@@ -478,6 +478,9 @@ valori vengono da config/codice (dati fidati, mai contenuto percepito), le graff
 singole `{ }` e i `<...>` sopravvivono intatti, e un valore iniettato non viene
 mai ri-scansionato (niente injection ricorsiva via template).
 
+`{{channel}}` segue `twitch.channel` del file di config — non cablare un nome di
+canale dentro i file di prompt.
+
 ### Canale non italiano / multi-canale
 
 L'esternalizzazione dei prompt **È** il meccanismo di localizzazione — non c'è

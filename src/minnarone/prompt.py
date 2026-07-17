@@ -210,7 +210,7 @@ class PromptBuilder:
             "i costi.\n\n"
             "CHI SEI:\n"
             f"{soul}"
-            "COSA SAI SU @enkk (lo streamer):\n"
+            f"COSA SAI SU @{self._channel} (lo streamer):\n"
             f"{facts}"
             "\n"
             # [FORMATO RISPOSTA] è il TRACER del ticket 03: il corpo (contratto

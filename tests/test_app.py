@@ -3449,3 +3449,49 @@ def test_run_surfaces_cancelled_child_cleanup_failure(tmp_path, monkeypatch):
             await asyncio.wait_for(task, timeout=5.0)
 
     asyncio.run(drive())
+
+
+def test_original_chat_prompt_uses_channel_from_twitch_config(
+    tmp_path, monkeypatch
+):
+    # FU-01: il canale nel prompt deve seguire twitch.channel della config,
+    # non il default cablato "enkk".
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+
+    from minnarone.fakes import FakeSourceAdapter
+
+    cfg = Config.load(
+        _write_workspace(
+            tmp_path,
+            mode="private",
+            adapter="twitch",
+            twitch_block=textwrap.dedent(
+                """
+                twitch:
+                  channel: multiplayerit
+                  chat: true
+                  audio: false
+                  video: false
+                """
+            ),
+            extra=textwrap.dedent(
+                """
+                commentator:
+                  profiles:
+                    original_chat: {}
+                """
+            ),
+        )
+    )
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        store_path=tmp_path / "p.jsonl",
+        adapter=FakeSourceAdapter([], channels=set()),
+    )
+
+    prefix = agent.prompt_builder.stable_prefix()
+    assert "multiplayerit" in prefix
+    assert "enkk" not in prefix

@@ -479,6 +479,9 @@ values come from config/code (trusted data, never perceived content), single
 braces `{ }` and `<...>` survive untouched, and an injected value is never
 re-scanned (no recursive template injection).
 
+`{{channel}}` follows `twitch.channel` from your config file — do not hard-code
+a channel name inside the prompt files.
+
 ### Non-Italian / multi-channel
 
 Externalizing the prompts **is** the localization mechanism — there is no i18n
