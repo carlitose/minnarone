@@ -161,6 +161,17 @@ _ORIGINAL_CHAT_RULES = (
     "le emote che vedi in chat.\n"
 )
 
+# Apertura della parte DINAMICA original-chat (ticket 05/F): un banner + la riga
+# del canale, come negli screenshot originali. Sta nella sezione dinamica (mai
+# nel prefisso stabile). Il canale è "enkk" coerentemente con _ORIGINAL_CHAT_RULES
+# (hard-coded qui perché non c'è ancora un canale configurabile nel PromptBuilder;
+# se in futuro lo si rende parametrico, questa riga leggerà da lì). Il numero
+# esatto di "=" del banner è una ricostruzione (screenshot parziali).
+_ORIGINAL_CHAT_INTRO = (
+    "====== SITUAZIONE ATTUALE ======\n"
+    "Ti trovi nel canale di enkk.\n"
+)
+
 
 class PromptBuilder:
     """Costruisce il prompt da memoria stabile + messaggi recenti + trigger.
@@ -442,6 +453,7 @@ class PromptBuilder:
             trigger=trigger,
             summary=summary,
             self_messages=self_messages,
+            intro=_ORIGINAL_CHAT_INTRO,
             summary_header="[MEMORIA] (com'e' andata la live e le conversazioni recenti)",
             self_messages_header="[I TUOI ULTIMI MESSAGGI]",
             recent_header="[CONVERSAZIONE RECENTE]",
@@ -519,6 +531,7 @@ class PromptBuilder:
         self_messages_header: str | None = None,
         recent_source_headers: Sequence[OriginalChatContextSpec] | None = None,
         now: float | None = None,
+        intro: str = "",
     ) -> str:
         recent_context = self._recent_context_block(
             recent_header,
@@ -529,6 +542,7 @@ class PromptBuilder:
         )
         return (
             f"{self.stable_prefix()}\n"
+            f"{intro}"
             f"{self._summary_block(summary_header, summary)}"
             f"{self._self_messages_block(self_messages_header, self_messages, now)}"
             f"{recent_context}"

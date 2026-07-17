@@ -1545,3 +1545,31 @@ def test_original_chat_self_messages_stay_out_of_stable_prefix():
     assert prompt.startswith(prefix)
     assert "dinamico" not in prefix
     assert "[I TUOI ULTIMI MESSAGGI]" not in prefix
+
+
+def test_original_chat_opens_with_situazione_attuale_banner():
+    # Ticket 05 (F): apertura "====== SITUAZIONE ATTUALE ======" + riga canale,
+    # subito dopo il prefisso stabile e prima di [MEMORIA]. Solo original-chat.
+    builder = PromptBuilder(_blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT)
+    prefix = builder.stable_prefix()
+    prompt = builder.build(recent=[], trigger=_idle_trigger())
+
+    assert "====== SITUAZIONE ATTUALE ======" in prompt
+    assert "Ti trovi nel canale di enkk." in prompt
+    # L'apertura sta nella parte dinamica (mai nel prefisso stabile) e precede
+    # sia [MEMORIA] sia la [SITUAZIONE] finale.
+    assert "SITUAZIONE ATTUALE" not in prefix
+    i_banner = prompt.index("====== SITUAZIONE ATTUALE ======")
+    assert len(prefix) <= i_banner < prompt.index("[SITUAZIONE]")
+
+
+def test_situazione_attuale_banner_only_in_original_chat():
+    for style in (
+        CommentatorStyle.OPERATOR,
+        CommentatorStyle.MEETING_SYNTHESIZER,
+        CommentatorStyle.SUGGESTER,
+    ):
+        prompt = PromptBuilder(_blocks(), commentator_style=style).build(
+            recent=[], trigger=_trigger()
+        )
+        assert "SITUAZIONE ATTUALE" not in prompt
