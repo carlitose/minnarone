@@ -251,6 +251,12 @@ does not require `OPENROUTER_API_KEY`) and writes bounded artifacts to the
 `--output` directory: `raw/audio/*.pcm` (PCM mono 16 kHz s16le), `raw/video/*.jpg`, and
 `stats.json` with counts and any failures.
 
+> The `minnarone-oscapture-smoke` entry point lives in the virtualenv, so it is
+> only on your `PATH` when the venv is **activated** (see the install section).
+> Otherwise invoke it without activation via
+> `python -m minnarone.oscapture_smoke ...` or
+> `uv run minnarone-oscapture-smoke ...`. Requires the `os-capture` extra.
+
 Verify audio capture from the default output loopback:
 
 ```bash
