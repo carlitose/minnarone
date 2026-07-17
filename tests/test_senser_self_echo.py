@@ -210,7 +210,7 @@ def test_self_perception_excluded_from_reactor_recent_for_prompt(tmp_path):
     class SpyPromptBuilder:
         commentator_style = None
 
-        def build(self, *, recent, trigger, summary=None, self_messages=()):
+        def build(self, *, recent, trigger, summary=None, self_messages=(), now=None):
             captured_recent.extend(recent)
             return "prompt"
 
@@ -270,7 +270,7 @@ def test_reactor_without_bot_identity_includes_all_perceptions(tmp_path):
     class SpyPromptBuilder:
         commentator_style = None
 
-        def build(self, *, recent, trigger, summary=None, self_messages=()):
+        def build(self, *, recent, trigger, summary=None, self_messages=(), now=None):
             captured_recent.extend(recent)
             return "prompt"
 

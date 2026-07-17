@@ -280,6 +280,57 @@ def test_continuation_wired_end_to_end_via_reactor(tmp_path):
     assert len(router.sent) == 2
 
 
+def test_original_chat_reactor_records_reason_and_ts_for_self_messages(tmp_path):
+    # In original-chat il Reactor arricchisce i propri messaggi con la reason
+    # (RE:) e il ts d'invio (clock del Senser), così al tick successivo compaiono
+    # come `-<N>s tu: "<msg>" (rispondevi a: <reason>)` sotto il nuovo header.
+    # Clock deterministico: message inviato a t=0, secondo tick a t=30 -> -30s.
+    class FakeClock:
+        def __init__(self, start=0.0):
+            self.t = start
+
+        def __call__(self):
+            return self.t
+
+        def advance(self, dt):
+            self.t += dt
+
+    clock = FakeClock(start=0.0)
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(store, agent_name="Minnarone", clock=clock)
+    builder = PromptBuilder(
+        FakeMemory(soul="Sono Minnarone.", facts="").load(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+    )
+    llm = FakeLLMProvider(message="RE: saluto iniziale\nMSG: ciao a tutti")
+    router = FakeOutputRouter()
+    reactor = Reactor(
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
+    )
+
+    chat.perceive("minnarone ciao", speaker="alice", ts=0.0)
+    asyncio.run(reactor.run_once())
+    # Il testo instradato è il MSG:; la dashboard vede stringhe nude.
+    assert router.sent == [("ciao a tutti", OutputMode.PUBLIC)]
+    assert reactor.recent_messages() == ["ciao a tutti"]
+
+    clock.advance(30.0)
+    chat.perceive("minnarone ancora", speaker="alice", ts=30.0)
+    asyncio.run(reactor.run_once())
+
+    assert llm.last_prompt is not None
+    assert "[I TUOI ULTIMI MESSAGGI]" in llm.last_prompt
+    assert (
+        '-30s tu: "ciao a tutti" (rispondevi a: saluto iniziale)' in llm.last_prompt
+    )
+
+
 def test_run_loop_reacts_only_when_trigger_fires_then_stops(tmp_path):
     store, chat, llm, router, reactor = _build(tmp_path)
     chat.perceive("ciao a tutti", speaker="enkk", ts=1.0)
@@ -414,8 +465,8 @@ def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_pat
         def __init__(self):
             self.snapshots: list[list[str]] = []
 
-        def build(self, *, recent, trigger, summary=None, self_messages):
-            del recent, trigger, summary
+        def build(self, *, recent, trigger, summary=None, self_messages, now=None):
+            del recent, trigger, summary, now
             self.snapshots.append(list(self_messages))
             try:
                 self_messages.append("mutation from prompt builder")
@@ -445,14 +496,24 @@ def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_pat
     chat.perceive("minnarone seconda", speaker="enkk", ts=2.0)
     asyncio.run(reactor.run_once())
 
-    assert builder.snapshots == [[], ["first reply"]]
+    # Il Reactor passa una copia difensiva dei record self-message: una mutazione
+    # del builder non deve corrompere lo stato interno. I record trasportano il
+    # testo (qui senza reason, path non-original-chat).
+    assert [
+        [record.text for record in snapshot] for snapshot in builder.snapshots
+    ] == [[], ["first reply"]]
     assert reactor.recent_messages() == ["first reply", "second reply"]
 
 
 def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
+    # Clock deterministico: il Reactor cattura `now` dal Senser e lo inoltra al
+    # PromptBuilder, così le righe recent-context portano il prefisso `-<N>s`
+    # (divergenza B, ticket 03). Con now=10 le percezioni a ts=1/2/3 diventano
+    # -9s/-8s/-7s.
+    clock = lambda: 10.0  # noqa: E731 (clock costante per determinismo)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(store, agent_name="Minnarone")
+    senser = Senser(store, agent_name="Minnarone", clock=clock)
     builder = PromptBuilder(
         FakeMemory(soul="Sono Minnarone.", facts="").load(),
         commentator_style=CommentatorStyle.ORIGINAL_CHAT,
@@ -492,14 +553,14 @@ def test_original_chat_reactor_reads_recent_context_by_source(tmp_path):
 
     assert llm.last_prompt is not None
     assert "[PARLATO RECENTE]" in llm.last_prompt
-    assert "audio ancora rilevante" in llm.last_prompt
+    assert "-9s <streamer>: audio ancora rilevante" in llm.last_prompt
     assert "[SCHERMO RECENTE]" in llm.last_prompt
-    assert "video ancora rilevante" in llm.last_prompt
+    assert "-8s <anon>: video ancora rilevante" in llm.last_prompt
     chat_recent = llm.last_prompt.split("[CHAT RECENTE]", maxsplit=1)[1].split(
         "[PARLATO RECENTE]", maxsplit=1
     )[0]
-    assert "bob: chat non trigger" in chat_recent
-    assert "alice: minnarone guarda qui" not in chat_recent
+    assert "-7s <bob>: chat non trigger" in chat_recent
+    assert "<alice>: minnarone guarda qui" not in chat_recent
     assert llm.last_prompt.count("minnarone guarda qui") == 1
 
 

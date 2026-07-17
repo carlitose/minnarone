@@ -23,7 +23,7 @@ from .llm import LLMError, LLMProvider
 from .original_chat_output import normalize_original_chat_response
 from .output import CommentatorStyle, OutputMode, OutputRouter
 from .perception import Perception, Source
-from .prompt import ORIGINAL_CHAT_CONTEXT_SPECS, PromptBuilder
+from .prompt import ORIGINAL_CHAT_CONTEXT_SPECS, PromptBuilder, SelfMessage
 from .prompt_observation import prompt_observation_context
 from .senser import Senser
 from .store import PerceptionStore
@@ -80,6 +80,14 @@ class Reactor:
         # al filtro human-likeness; il Senser traccia il *tempo* dell'ultimo
         # messaggio (continuazione), non il testo.
         self._self_messages: deque[str] = deque(maxlen=_DEFAULT_SELF_HISTORY)
+        # Vista arricchita PARALLELA dei messaggi propri (testo + reason + ts
+        # d'invio): alimenta la sezione [I TUOI ULTIMI MESSAGGI] del prompt
+        # original-chat, che rende `-<N>s tu: "..." (rispondevi a: ...)`. La deque
+        # di stringhe qui sopra resta la fonte per il dedup (HumanLikeness) e per
+        # la dashboard (`recent_messages`): i due contratti restano invariati.
+        self._self_message_records: deque[SelfMessage] = deque(
+            maxlen=_DEFAULT_SELF_HISTORY
+        )
         # Fonte OPZIONALE della memoria a breve termine: una callable zero-arg che
         # restituisce il riassunto corrente (es. `summarizer.current_summary`).
         # Il Reactor la LEGGE soltanto al momento del build — non possiede né
@@ -123,12 +131,18 @@ class Reactor:
         recent = self._recent_for_prompt()
         # Leggi il riassunto corrente (se c'è una fonte) una volta per tick.
         summary = self._summary_provider() if self._summary_provider else None
+        # Riferimento temporale del tick: catturato UNA volta dallo STESSO clock
+        # del Senser così i timestamp relativi `-<N>s` della recent-context
+        # original-chat (divergenza B) sono coerenti e deterministici nei test.
+        # Guardia `hasattr` per non rompere senser minimali/fake privi di now().
+        now = self._senser.now() if hasattr(self._senser, "now") else None
         for trigger in triggers:
             prompt = self._prompt_builder.build(
                 recent=recent,
                 trigger=trigger,
                 summary=summary,
-                self_messages=list(self._self_messages),
+                self_messages=list(self._self_message_records),
+                now=now,
             )
             try:
                 with prompt_observation_context(f"reactor:{trigger.kind}"):
@@ -170,12 +184,16 @@ class Reactor:
                 if self._last_route_was_dropped():
                     return
                 if response.message:
-                    self._note_self_message(response.message)
+                    self._note_self_message(
+                        response.message, reason=response.reason
+                    )
             else:
                 # Private path: unchanged behaviour.
                 await self._route_local_output(response.display_text)
                 if response.message and not response.end_conversation:
-                    self._note_self_message(response.message)
+                    self._note_self_message(
+                        response.message, reason=response.reason
+                    )
             return
 
         if self._human is None:
@@ -207,17 +225,26 @@ class Reactor:
         await self._router.route(message, self._mode)
         self._record_minnarone_output(message)
 
-    def _note_self_message(self, message: str) -> None:
-        """Ricorda un messaggio proprio effettivamente inviabile."""
+    def _note_self_message(self, message: str, *, reason: str | None = None) -> None:
+        """Ricorda un messaggio proprio effettivamente inviabile.
+
+        Aggiorna DUE viste allineate: la deque di stringhe (dedup HumanLikeness +
+        dashboard) e la deque arricchita `SelfMessage` (testo + `reason` + `ts`
+        d'invio) per la sezione [I TUOI ULTIMI MESSAGGI]. La `reason` è il `RE:`
+        della risposta original-chat, `None` altrove (degrado con grazia).
+        """
         self._self_messages.append(message)
+        # `ts` d'invio dallo STESSO clock del Senser (via `now()`), così il
+        # prefisso relativo `-<N>s` resta deterministico nei test. Guardia
+        # `hasattr` per non rompere eventuali senser minimali/fake privi di now().
+        ts = self._senser.now() if hasattr(self._senser, "now") else None
+        self._self_message_records.append(
+            SelfMessage(text=message, reason=reason, ts=ts)
+        )
         # Notifica al Senser che l'agente ha appena parlato, così la
-        # continuazione (UC03) funziona nel sistema assemblato. Si usa lo
-        # STESSO clock del Senser (via `now()`) per restare deterministici.
-        # Guardia `hasattr` per non rompere eventuali senser minimali/fake.
-        if hasattr(self._senser, "note_agent_message") and hasattr(
-            self._senser, "now"
-        ):
-            self._senser.note_agent_message(self._senser.now())
+        # continuazione (UC03) funziona nel sistema assemblato.
+        if ts is not None and hasattr(self._senser, "note_agent_message"):
+            self._senser.note_agent_message(ts)
 
     async def run(self, *, interval: float = 0.5) -> None:
         """Esegue il loop finché `stop()` non viene chiamato.

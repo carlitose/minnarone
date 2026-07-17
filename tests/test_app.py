@@ -1788,8 +1788,8 @@ def test_meeting_synthesizer_reactor_produces_private_output_at_interval(
         from minnarone.openrouter import HttpResponse
 
         prompt = _prompt_from_body(body)
-        # Summarizer calls have "## EVENTI", reactor calls don't
-        if "## EVENTI" not in prompt:
+        # Summarizer calls have "Sei un sintetizzatore", reactor calls don't
+        if "Sei un sintetizzatore" not in prompt:
             prompts.append(prompt)
         content = "Riepilogo della riunione: argomenti discussi e decisioni prese."
         payload = json.dumps({"choices": [{"message": {"content": content}}]})
@@ -1986,7 +1986,7 @@ def test_suggester_speech_perception_produces_private_output(
         from minnarone.openrouter import HttpResponse
 
         prompt = _prompt_from_body(body)
-        if "## EVENTI" not in prompt:
+        if "Sei un sintetizzatore" not in prompt:
             prompts.append(prompt)
         content = "Dovresti chiedere qual e' il budget previsto per il Q3."
         payload = json.dumps({"choices": [{"message": {"content": content}}]})
@@ -2048,7 +2048,7 @@ def test_suggester_nothing_response_produces_no_output(tmp_path, monkeypatch):
         from minnarone.openrouter import HttpResponse
 
         prompt = _prompt_from_body(body)
-        if "## EVENTI" in prompt:
+        if "Sei un sintetizzatore" in prompt:
             content = "summary"
         else:
             content = "#nothing"
@@ -2105,7 +2105,7 @@ def test_suggester_non_speech_perceptions_do_not_trigger(tmp_path, monkeypatch):
         from minnarone.openrouter import HttpResponse
 
         prompt = _prompt_from_body(body)
-        if "## EVENTI" not in prompt:
+        if "Sei un sintetizzatore" not in prompt:
             llm_calls.append(prompt)
         payload = json.dumps(
             {"choices": [{"message": {"content": "suggestion"}}]}
@@ -2378,7 +2378,7 @@ def test_multi_profile_concurrent_run_produces_output_from_all(
         from minnarone.openrouter import HttpResponse
 
         prompt = _prompt_from_body(body)
-        if "## EVENTI" in prompt:
+        if "Sei un sintetizzatore" in prompt:
             content = "summary"
         elif "commentatore locale" in prompt:
             content = "Commento dall'operatore."
@@ -2999,7 +2999,7 @@ def _prompt_from_body(body: bytes) -> str:
 def _recording_transport(prompts: list[str], *, summary: str = "RIASSUNTO-NOTO"):
     """Transport fake che registra i prompt e risponde in modo deterministico.
 
-    Riconosce la chiamata del Summarizer dal suo header ("## EVENTI") e risponde
+    Riconosce la chiamata del Summarizer dal suo header ("Sei un sintetizzatore") e risponde
     con un riassunto noto; per ogni altra chiamata (reazione del Reactor) risponde
     "ciao" e registra il prompt in `prompts`, così il test può asserire che il
     riassunto è fluito nel prompt di reazione.
@@ -3008,7 +3008,7 @@ def _recording_transport(prompts: list[str], *, summary: str = "RIASSUNTO-NOTO")
 
     def transport(*, url, headers, body, timeout):
         prompt = _prompt_from_body(body)
-        if "## EVENTI" in prompt:
+        if "Sei un sintetizzatore" in prompt:
             content = summary
         else:
             prompts.append(prompt)

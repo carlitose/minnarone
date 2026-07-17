@@ -44,10 +44,11 @@ class OriginalChatDryRun:
     reactor: Reactor
 
 
-def _build_original_chat_dry_run(tmp_path, *, llm_messages: list[str]):
+def _build_original_chat_dry_run(tmp_path, *, llm_messages: list[str], clock=None):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(store, agent_name="minnarone")
+    senser_kwargs = {} if clock is None else {"clock": clock}
+    senser = Senser(store, agent_name="minnarone", **senser_kwargs)
     builder = PromptBuilder(
         FakeMemory(
             soul="Sono Minnarone nel canale di enkk.",
@@ -115,6 +116,7 @@ def test_fake_original_chat_dry_run_routes_re_msg_locally_and_observes_prompt(
     runtime = _build_original_chat_dry_run(
         tmp_path,
         llm_messages=["re : parata clutch\nmsg : bella parata"],
+        clock=lambda: 100.0,  # clock costante: timestamp relativi deterministici
     )
     _seed_fake_multimodal_context(runtime)
     runtime.chat.perceive(
@@ -137,18 +139,21 @@ def test_fake_original_chat_dry_run_routes_re_msg_locally_and_observes_prompt(
     assert runtime.provider.prompts == [prompt]
     assert "[FORMATO RISPOSTA]" in prompt
     assert "[CHAT RECENTE]" in prompt
-    assert "bob: chat sta spammando KEKW" in prompt
+    # recent-context original-chat: righe con prefisso `-<N>s` e speaker tra < >
+    # (divergenza B). now=100 => bob@1.0 -> -99s, streamer@2.0 -> -98s.
+    assert "-99s <bob>: chat sta spammando KEKW" in prompt
     assert "[PARLATO RECENTE]" in prompt
-    assert "streamer: ho appena parato il colpo del boss" in prompt
+    assert "-98s <streamer>: ho appena parato il colpo del boss" in prompt
     assert "[SCHERMO RECENTE]" in prompt
-    assert "anon: boss staggered with low health bar on screen" in prompt
+    assert "s <anon>: boss staggered with low health bar on screen" in prompt
+    # la SITUAZIONE (trigger) NON è timestamped: resta la resa piatta.
     assert "alice: minnarone guarda questa parata" in prompt
 
     stable_prefix = runtime.builder.stable_prefix()
     assert prompt.startswith(stable_prefix)
     assert FAKE_SUMMARY not in stable_prefix
     assert prompt.index(FAKE_SUMMARY) > len(stable_prefix)
-    assert prompt.index("[RIASSUNTO]") < prompt.index("[CONVERSAZIONE RECENTE]")
+    assert prompt.index("[MEMORIA]") < prompt.index("[CONVERSAZIONE RECENTE]")
 
 
 def test_fake_original_chat_dry_run_second_end_conv_is_visible_and_closes_window(
@@ -194,9 +199,12 @@ def test_fake_original_chat_dry_run_second_end_conv_is_visible_and_closes_window
     stable_prefix = runtime.builder.stable_prefix()
     second_prompt = observations[1].prompt
     assert "bella parata" not in stable_prefix
-    assert "[TUOI MESSAGGI RECENTI]" in second_prompt
-    assert "minnarone: bella parata" in second_prompt
-    assert second_prompt.index("minnarone: bella parata") > len(stable_prefix)
-    assert second_prompt.index("[TUOI MESSAGGI RECENTI]") < second_prompt.index(
+    assert "[I TUOI ULTIMI MESSAGGI]" in second_prompt
+    # Formato divergenza C: `tu: "<msg>" (rispondevi a: <reason RE:>)`. Il
+    # prefisso `-<N>s` dipende dal clock reale del dry-run, quindi si asserisce
+    # sulla parte deterministica (testo + reason).
+    assert 'tu: "bella parata" (rispondevi a: parata clutch)' in second_prompt
+    assert second_prompt.index('tu: "bella parata"') > len(stable_prefix)
+    assert second_prompt.index("[I TUOI ULTIMI MESSAGGI]") < second_prompt.index(
         "[CONVERSAZIONE RECENTE]"
     )

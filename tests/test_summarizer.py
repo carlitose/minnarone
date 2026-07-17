@@ -9,6 +9,7 @@ import asyncio
 
 from minnarone.chat import ChatPerceiver
 from minnarone.fakes import FakeLLMProvider
+from minnarone.perception import Perception, Source
 from minnarone.prompt_observation import ObservedLLMProvider, PromptObservationRecorder
 from minnarone.store import PerceptionStore
 from minnarone.summarizer import Summarizer
@@ -20,6 +21,16 @@ def _build(tmp_path, llm_message="enkk ha battuto il boss."):
     llm = FakeLLMProvider(message=llm_message)
     summarizer = Summarizer(llm=llm, store=store)
     return store, chat, llm, summarizer
+
+
+def _speech(store, text, speaker="streamer", ts=1.0):
+    store.append(
+        Perception(ts=ts, source=Source.AUDIO, type="speech", text=text, speaker=speaker)
+    )
+
+
+def _caption(store, text, ts=1.0):
+    store.append(Perception(ts=ts, source=Source.VIDEO, type="caption", text=text))
 
 
 def test_summarize_reads_store_calls_llm_returns_text(tmp_path):
@@ -118,6 +129,77 @@ def test_llm_error_during_loop_keeps_previous_summary(tmp_path):
 
     # il riassunto precedente è conservato
     assert summarizer.current_summary == "riassunto valido"
+
+
+def test_summarize_prompt_is_rolling_sintetizzatore_shape(tmp_path):
+    # Il prompt e' quello incrementale del "sintetizzatore", non piu' il vecchio
+    # "## EVENTI" from-scratch.
+    store, chat, llm, summarizer = _build(tmp_path)
+    chat.perceive("ciao", speaker="tizio", ts=1.0)
+
+    asyncio.run(summarizer.summarize())
+
+    assert "Sei un sintetizzatore" in llm.last_prompt
+    assert "Riassunto attuale:" in llm.last_prompt
+    assert "Eventi recenti:" in llm.last_prompt
+    assert "Aggiorna il riassunto." in llm.last_prompt
+    assert "## EVENTI" not in llm.last_prompt
+
+
+def test_summarize_prompt_first_turn_uses_neutral_placeholder(tmp_path):
+    # Primo giro: riassunto precedente vuoto -> placeholder neutro, non riga vuota.
+    store, chat, llm, summarizer = _build(tmp_path)
+    chat.perceive("ciao", speaker="tizio", ts=1.0)
+
+    asyncio.run(summarizer.summarize())
+
+    prompt = llm.last_prompt
+    after = prompt.split("Riassunto attuale:\n", 1)[1]
+    first_line = after.splitlines()[0]
+    assert first_line.strip() != ""
+
+
+def test_summarize_prompt_reinjects_previous_summary(tmp_path):
+    # Il riassunto precedente viene reiniettato sotto "Riassunto attuale:".
+    store, chat, llm, summarizer = _build(tmp_path, llm_message="Prima: enkk gioca.")
+    chat.perceive("ciao", speaker="tizio", ts=1.0)
+    asyncio.run(summarizer.summarize())  # stabilisce il riassunto precedente
+
+    chat.perceive("come va?", speaker="caio", ts=2.0)
+    asyncio.run(summarizer.summarize())
+
+    prompt = llm.last_prompt
+    reinjected = prompt.split("Riassunto attuale:\n", 1)[1]
+    assert "Prima: enkk gioca." in reinjected.split("Eventi recenti:", 1)[0]
+
+
+def test_summarize_prompt_groups_events_by_source(tmp_path):
+    store, chat, llm, summarizer = _build(tmp_path)
+    _speech(store, "adesso sistemo il dedup", speaker="streamer", ts=1.0)
+    _caption(store, "editor di codice", ts=2.0)
+    chat.perceive("finalmente funziona", speaker="pippo", ts=3.0)
+
+    asyncio.run(summarizer.summarize())
+
+    prompt = llm.last_prompt
+    assert "STREAMER ha detto:" in prompt
+    assert "SCHERMO:" in prompt
+    assert "CHAT:" in prompt
+    assert "- adesso sistemo il dedup" in prompt
+    assert "- editor di codice" in prompt
+    assert "- pippo: finalmente funziona" in prompt
+
+
+def test_summarize_prompt_omits_empty_groups(tmp_path):
+    store, chat, llm, summarizer = _build(tmp_path)
+    chat.perceive("solo chat qui", speaker="pippo", ts=1.0)
+
+    asyncio.run(summarizer.summarize())
+
+    prompt = llm.last_prompt
+    assert "CHAT:" in prompt
+    assert "STREAMER ha detto:" not in prompt
+    assert "SCHERMO:" not in prompt
 
 
 def test_run_loop_updates_summary_then_stops(tmp_path):

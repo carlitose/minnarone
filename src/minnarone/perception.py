@@ -125,3 +125,23 @@ def format_perception_line(p: Perception) -> str:
     """
     who = p.speaker if p.speaker else "anon"
     return f"{who}: {p.text}"
+
+
+def format_recent_line(p: Perception, now: float) -> str:
+    """Resa di una percezione per la recent-context original-chat.
+
+    Formato fedele all'originale di enkk: ``-<N>s <who>: <text>`` — prefisso
+    temporale relativo (secondi trascorsi da `p.ts` rispetto a `now`, arrotondato
+    all'intero più vicino), speaker tra ``< >`` (``anon`` se ignoto), poi il
+    testo. Distinto da `format_perception_line`: quest'ultima resta l'helper del
+    testo nudo ``who: text`` usato altrove (situazione, Summarizer, dashboard).
+
+    Il riferimento temporale `now` è iniettato dal chiamante (il Reactor lo
+    cattura una volta per tick dal clock del Senser), così la resa è
+    deterministica nei test e i timestamp vivono SOLO nella sezione dinamica.
+    """
+    who = p.speaker if p.speaker else "anon"
+    # Clamp a 0: se `p.ts > now` (skew del clock o percezione marcata dopo il
+    # `now` del tick) eviteremmo un doppio meno "--Ns" nell'output.
+    seconds = max(0, int(round(now - p.ts)))
+    return f"-{seconds}s <{who}>: {p.text}"

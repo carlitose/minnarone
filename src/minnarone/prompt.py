@@ -24,12 +24,17 @@ byte-invariante per una config fissa.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from .memory import MemoryBlocks
 from .output import CommentatorStyle
-from .perception import Perception, Source, format_perception_line
+from .perception import (
+    Perception,
+    Source,
+    format_perception_line,
+    format_recent_line,
+)
 from .senser import Trigger
 
 # Delimitatori del blocco di DATI non fidati: tutto ciò che è percepito
@@ -53,6 +58,22 @@ class OriginalChatContextSpec:
     source: Source
     type: str
     header: str
+
+
+@dataclass(frozen=True, slots=True)
+class SelfMessage:
+    """Messaggio proprio recente del bot, arricchito per la resa original-chat.
+
+    `text` è il messaggio inviato; `reason` è il `RE:` (a cosa stava rispondendo)
+    quando noto, `None` altrimenti; `ts` è l'epoch d'invio (dal clock del Senser),
+    usato per il prefisso relativo `-<N>s`. Se `reason` o `ts` mancano la resa
+    degrada con grazia: rispettivamente niente suffisso `(rispondevi a: ...)` e
+    niente prefisso temporale. Non si inventa MAI una reason.
+    """
+
+    text: str
+    reason: str | None = None
+    ts: float | None = None
 
 
 ORIGINAL_CHAT_CONTEXT_SPECS = (
@@ -138,6 +159,17 @@ _ORIGINAL_CHAT_RULES = (
     "WeirdChamp, Copium, ICANT. La maggior parte dei messaggi sta meglio senza "
     "emote: al massimo circa uno su tre, mai la stessa per abitudine; preferisci "
     "le emote che vedi in chat.\n"
+)
+
+# Apertura della parte DINAMICA original-chat (ticket 05/F): un banner + la riga
+# del canale, come negli screenshot originali. Sta nella sezione dinamica (mai
+# nel prefisso stabile). Il canale è "enkk" coerentemente con _ORIGINAL_CHAT_RULES
+# (hard-coded qui perché non c'è ancora un canale configurabile nel PromptBuilder;
+# se in futuro lo si rende parametrico, questa riga leggerà da lì). Il numero
+# esatto di "=" del banner è una ricostruzione (screenshot parziali).
+_ORIGINAL_CHAT_INTRO = (
+    "====== SITUAZIONE ATTUALE ======\n"
+    "Ti trovi nel canale di enkk.\n"
 )
 
 
@@ -231,7 +263,8 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None = None,
-        self_messages: Sequence[str] = (),
+        self_messages: Sequence[SelfMessage | str] = (),
+        now: float | None = None,
     ) -> str:
         """Assembla il prompt completo per il turno corrente.
 
@@ -261,6 +294,12 @@ class PromptBuilder:
         Multi-party: quando il trigger porta un `interlocutor`, lo si esplicita
         nella SITUAZIONE così l'LLM, leggendo la finestra recente, può rivolgersi
         alla persona giusta anche in chat affollata.
+
+        `now` è il riferimento temporale (epoch secondi) catturato una volta per
+        tick dal Reactor. Serve SOLO alla recent-context original-chat, dove ogni
+        riga riceve il prefisso relativo `-<N>s` (divergenza B). Se `None` — le
+        altre modalità, o quando non fornito — si ripiega sulla resa piatta
+        `who: text` senza timestamp, così il comportamento resta invariato.
         """
         if self._commentator_style is CommentatorStyle.ORIGINAL_CHAT:
             return self._build_original_chat(
@@ -268,6 +307,7 @@ class PromptBuilder:
                 trigger=trigger,
                 summary=summary,
                 self_messages=self_messages,
+                now=now,
             )
 
         if self._commentator_style is CommentatorStyle.MEETING_SYNTHESIZER:
@@ -405,19 +445,22 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None,
-        self_messages: Sequence[str],
+        self_messages: Sequence[SelfMessage | str],
+        now: float | None = None,
     ) -> str:
         return self._dynamic_prompt(
             recent=recent,
             trigger=trigger,
             summary=summary,
             self_messages=self_messages,
-            summary_header="[RIASSUNTO]",
-            self_messages_header="[TUOI MESSAGGI RECENTI]",
+            intro=_ORIGINAL_CHAT_INTRO,
+            summary_header="[MEMORIA] (com'e' andata la live e le conversazioni recenti)",
+            self_messages_header="[I TUOI ULTIMI MESSAGGI]",
             recent_header="[CONVERSAZIONE RECENTE]",
             recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
             situation_header="[SITUAZIONE]",
             situation_line=self._original_chat_situation(trigger),
+            now=now,
         )
 
     def _original_chat_situation(self, trigger: Trigger) -> str:
@@ -457,8 +500,8 @@ class PromptBuilder:
                 return (
                     "Lo streamer ha parlato poco dopo un tuo messaggio: "
                     "POTREBBE star continuando lo scambio con te, ma non e' "
-                    "detto. Guarda il suo parlato recente e [CONVERSAZIONE "
-                    "RECENTE] per capire se ti sta davvero rispondendo: "
+                    "detto. Guarda il suo parlato recente e [I TUOI ULTIMI "
+                    "MESSAGGI] per capire se ti sta davvero rispondendo: "
                     "RIFLETTICI ATTENTAMENTE. Se si', fornisci un nuovo "
                     "messaggio coerente; se no, rispondi con MSG: #end_conv.\n"
                     f"{self._fence(format_perception_line(trigger.perception))}"
@@ -466,7 +509,8 @@ class PromptBuilder:
             return (
                 "Lo streamer si e' rivolto a TE (ti ha nominato o sta "
                 "riprendendo un tuo messaggio). Rispondigli, in modo naturale "
-                "e tenendo il filo di cio' che vi siete detti.\n"
+                "e tenendo il filo di cio' che vi siete detti "
+                "([I TUOI ULTIMI MESSAGGI] e [MEMORIA]).\n"
                 f"{self._fence(format_perception_line(trigger.perception))}"
             )
         return (
@@ -484,20 +528,24 @@ class PromptBuilder:
         recent_header: str,
         situation_header: str,
         situation_line: str,
-        self_messages: Sequence[str] = (),
+        self_messages: Sequence[SelfMessage | str] = (),
         self_messages_header: str | None = None,
         recent_source_headers: Sequence[OriginalChatContextSpec] | None = None,
+        now: float | None = None,
+        intro: str = "",
     ) -> str:
         recent_context = self._recent_context_block(
             recent_header,
             recent,
             trigger.perception,
             recent_source_headers,
+            now,
         )
         return (
             f"{self.stable_prefix()}\n"
+            f"{intro}"
             f"{self._summary_block(summary_header, summary)}"
-            f"{self._self_messages_block(self_messages_header, self_messages)}"
+            f"{self._self_messages_block(self_messages_header, self_messages, now)}"
             f"{recent_context}"
             f"{situation_header}\n"
             f"{situation_line}\n"
@@ -505,10 +553,12 @@ class PromptBuilder:
 
     @staticmethod
     def _recent_block(
-        recent: Sequence[Perception], situation_perception: Perception | None
+        recent: Sequence[Perception],
+        situation_perception: Perception | None,
+        render_line: Callable[[Perception], str] = format_perception_line,
     ) -> str:
         history = [p for p in recent if p != situation_perception]
-        return "\n".join(format_perception_line(p) for p in history)
+        return "\n".join(render_line(p) for p in history)
 
     @classmethod
     def _recent_context_block(
@@ -517,12 +567,24 @@ class PromptBuilder:
         recent: Sequence[Perception],
         situation_perception: Perception | None,
         source_headers: Sequence[OriginalChatContextSpec] | None,
+        now: float | None = None,
     ) -> str:
         if source_headers is None:
             return (
                 f"{header}\n"
                 f"{cls._fence(cls._recent_block(recent, situation_perception))}\n\n"
             )
+
+        # Recent-context original-chat: se `now` è disponibile ogni riga adotta
+        # il formato timestamp+brackets (`-<N>s <who>: testo`, divergenza B);
+        # altrimenti si ripiega sulla resa piatta. È l'UNICO punto in cui il
+        # formato timestamp viene applicato: situazione e altre modalità restano
+        # su `format_perception_line`.
+        if now is not None:
+            def render_line(p: Perception) -> str:
+                return format_recent_line(p, now)
+        else:
+            render_line = format_perception_line
 
         blocks = [header]
         for spec in source_headers:
@@ -533,7 +595,7 @@ class PromptBuilder:
             ]
             blocks.append(
                 f"{spec.header}\n"
-                f"{cls._fence(cls._recent_block(source_recent, situation_perception))}"
+                f"{cls._fence(cls._recent_block(source_recent, situation_perception, render_line))}"
             )
         return "\n\n".join(blocks) + "\n\n"
 
@@ -545,17 +607,45 @@ class PromptBuilder:
 
     @classmethod
     def _self_messages_block(
-        cls, header: str | None, self_messages: Sequence[str]
+        cls,
+        header: str | None,
+        self_messages: Sequence[SelfMessage | str],
+        now: float | None = None,
     ) -> str:
-        messages = [message for message in self_messages if message.strip()]
-        if header is None or not messages:
+        records = [
+            record
+            for record in (_coerce_self_message(m) for m in self_messages)
+            if record.text.strip()
+        ]
+        if header is None or not records:
             return ""
-        body = "\n".join(f"minnarone: {message}" for message in messages)
+        body = "\n".join(
+            cls._format_self_message_line(record, now) for record in records
+        )
         return (
             f"{header}\n"
             "Usali per tenere continuita' e non ripeterti.\n"
             f"{cls._fence(body)}\n\n"
         )
+
+    @staticmethod
+    def _format_self_message_line(record: SelfMessage, now: float | None) -> str:
+        """Resa di un messaggio proprio: ``-<N>s tu: "<msg>" (rispondevi a: ...)``.
+
+        Il prefisso ``-<N>s`` compare solo se sia ``record.ts`` sia ``now`` sono
+        noti (secondi trascorsi, clamp a 0). Il suffisso ``(rispondevi a: ...)``
+        compare solo se la reason è nota e non vuota. In assenza di questi dati la
+        riga degrada con grazia, senza inventare nulla.
+        """
+        prefix = ""
+        if record.ts is not None and now is not None:
+            seconds = max(0, int(round(now - record.ts)))
+            prefix = f"-{seconds}s "
+        line = f'{prefix}tu: "{record.text}"'
+        reason = record.reason.strip() if record.reason else ""
+        if reason:
+            line = f"{line} (rispondevi a: {reason})"
+        return line
 
     @staticmethod
     def _fence(content: str) -> str:
@@ -574,6 +664,18 @@ class PromptBuilder:
             f"{_DATA_LINE_PREFIX}{line}" for line in content.split("\n")
         )
         return f"{_UNTRUSTED_OPEN}\n{body}\n{_UNTRUSTED_CLOSE}"
+
+
+def _coerce_self_message(message: SelfMessage | str) -> SelfMessage:
+    """Normalizza un self-message a ``SelfMessage``.
+
+    Le stringhe nude (chiamanti legacy, retrocompatibilità) diventano un
+    ``SelfMessage`` senza reason né ts: la resa degrada con grazia (nessun
+    prefisso temporale, nessun suffisso ``(rispondevi a: ...)``).
+    """
+    if isinstance(message, SelfMessage):
+        return message
+    return SelfMessage(text=message)
 
 
 def _sanitize_display_token(token: str | None) -> str | None:
