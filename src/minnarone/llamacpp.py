@@ -67,21 +67,28 @@ def _local_transport(
         _local_opener, url=url, headers=headers, body=body, timeout=timeout
     )
 
-#: Comando di riferimento per avviare il server (argomenti pinnati dal
-#: wayfinder: offload totale, ctx 4096, reasoning spento, una richiesta alla
-#: volta). Incluso nei messaggi d'errore azionabili del health-check.
+#: Comando di riferimento per avviare il server (offload totale, reasoning
+#: spento, una richiesta alla volta). Incluso nei messaggi d'errore azionabili.
+#: NOTA CONTESTO: `llama-server` divide `-c` per il numero di slot
+#: (`--parallel`), quindi il contesto per-richiesta è `n_ctx / n_slots`. Con
+#: `--parallel 1` qui l'intero `-c 8192` è disponibile per richiesta; margine
+#: ampio per il prompt `original_chat` (soul + facts + finestra chat).
 LLAMA_SERVER_COMMAND = (
-    "llama-server -m <modello.gguf> --port <porta> -ngl 99 -c 4096 "
+    "llama-server -m <modello.gguf> --port <porta> -ngl 99 -c 8192 "
     "--reasoning off --parallel 1"
 )
 
 #: Comando di riferimento per il server MULTIMODALE (captioner `vlm.backend:
 #: llamacpp`): oltre al modello serve il proiettore `--mmproj`; `--parallel 2`
-#: per servire testo e visione in concorrenza (decisione del grilling, ticket
-#: 02/03). Incluso nei messaggi d'errore del health-check vision.
+#: per servire testo e visione in concorrenza (ticket 02/03). ATTENZIONE: con
+#: `--parallel 2` il contesto per-richiesta è `-c / 2`, quindi serve `-c 16384`
+#: per dare 8192 token a ogni slot — un prompt multi-canale (chat + audio + video
+#: + soul/facts) supera facilmente i 2048 che darebbe `-c 4096 --parallel 2`
+#: (llama-server risponderebbe 400 "exceeds the available context size"). La KV
+#: cache di E2B è piccola: 4× contesto costa ~+80 MiB VRAM.
 LLAMA_SERVER_MULTIMODAL_COMMAND = (
     "llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port <porta> "
-    "-ngl 99 -c 4096 --reasoning off --parallel 2"
+    "-ngl 99 -c 16384 --reasoning off --parallel 2"
 )
 
 #: Timeout (secondi) della probe di readiness: locale, deve rispondere subito.

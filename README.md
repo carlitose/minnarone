@@ -403,7 +403,7 @@ runtime nuova. Il server va avviato **a mano** prima del loop live (minnarone
 non gestisce il processo, fa solo un health-check su `GET /health` all'avvio):
 
 ```bash
-llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 1
+llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 8192 --reasoning off --parallel 1
 ```
 
 Config (esempio completo in
@@ -442,8 +442,15 @@ Avvia l'istanza multimodale a mano, aggiungendo il proiettore `--mmproj` e
 istanza, costo ~10 MiB VRAM):
 
 ```bash
-llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 2
+llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 16384 --reasoning off --parallel 2
 ```
+
+> **Contesto e `--parallel`**: `llama-server` divide `-c` tra gli slot, quindi
+> il contesto per-richiesta è `n_ctx / n_slots`. Con `--parallel 2` serve
+> `-c 16384` per avere 8192 token a slot: un prompt multi-canale (chat + audio +
+> video + soul/facts) supera facilmente i 2048 che darebbe `-c 4096 --parallel 2`,
+> e llama-server risponderebbe `400 "exceeds the available context size"`. La KV
+> cache di E2B è piccola: quadruplicare il contesto costa ~+80 MiB VRAM.
 
 Config: il backend riusa `llamacpp.base_url` (stessa istanza del provider LLM),
 mentre `prompt`/`language`/`max_new_tokens`/downscale/`max_caption_chars`

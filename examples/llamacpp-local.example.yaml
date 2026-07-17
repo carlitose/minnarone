@@ -1,7 +1,7 @@
 # Config di esempio con LLM locale via llama.cpp (nessuna OPENROUTER_API_KEY).
 #
 # Prerequisito: avvia `llama-server` A MANO in un altro terminale, es.:
-#   llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 1
+#   llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 8192 --reasoning off --parallel 1
 #
 # minnarone NON gestisce il processo del server: all'avvio del loop live fa
 # solo un health-check su GET {base_url}/health (200 = modello caricato).
@@ -27,9 +27,11 @@ os_capture:
 
 # Captioning video sulla STESSA istanza llama-server (multimodale): decommenta
 # il blocco `vlm` sotto e riavvia il server con `--mmproj <mmproj.gguf>` e
-# `--parallel 2`. Il backend riusa `llamacpp.base_url` qui sopra: niente doppia
-# residenza torch-VLM + LLM in VRAM. All'avvio live la CLI verifica la visione
-# via GET /props (errore azionabile se manca --mmproj).
+# `--parallel 2` MA con `-c 16384` (il contesto e' diviso per gli slot: con
+# --parallel 2 servono 16384 per avere 8192 token a richiesta; -c 4096 darebbe
+# solo 2048/slot e un prompt multi-canale sforerebbe -> 400). Il backend riusa
+# `llamacpp.base_url` qui sopra: niente doppia residenza torch-VLM + LLM in VRAM.
+# All'avvio live la CLI verifica la visione via GET /props (errore se manca --mmproj).
 # vlm:
 #   backend: llamacpp
 

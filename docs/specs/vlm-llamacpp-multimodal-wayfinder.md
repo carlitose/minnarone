@@ -70,6 +70,16 @@ grilling 02: MVP solo testo; migrazione VLM decisa dai numeri del ticket 04).
   vs 2601 MiB su 4094). Ai ritmi reali (`video_fps` 1.0 + dedup) le collisioni
   sono rare. **Raccomandazione: `--parallel 2`**. Dettagli:
   `docs/tickets/vlm-llamacpp-multimodal/done/02-…`.
+- **[Correzione 2026-07-17] `--parallel 2` dimezza il contesto per-richiesta.**
+  Scoperto in un run reale "tutto attivo" (chat+audio+video): `llama-server`
+  divide `-c` tra gli slot (`n_ctx_slot = n_ctx / n_slots`), quindi
+  `-c 4096 --parallel 2` dà solo **2048 token/slot**. Un prompt `original_chat`
+  multi-canale arriva a 2500–3000+ token → il server risponde **400 "exceeds the
+  available context size"**. Il ticket 02 aveva misurato la concorrenza con
+  prompt corti e non aveva colto questa divisione. **Fix**: con `--parallel 2`
+  usare `-c 16384` (→ 8192/slot); costo VRAM trascurabile (+~80 MiB, la KV cache
+  di E2B è piccola: misurato 2611→2689 MiB da 4096→16384). Aggiornati i comandi
+  consigliati in `llamacpp.py` (`LLAMA_SERVER_*COMMAND`), README ed esempio.
 
 ## Not Yet Specified
 
