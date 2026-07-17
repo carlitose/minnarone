@@ -404,3 +404,174 @@ def test_default_sets_pass_per_key_validation() -> None:
     # I default impacchettati passano invariati con i vincoli per-sezione.
     load_prompt_set()
     load_summarizer_prompt_set()
+
+
+# --- headers.md (FU-03): header di sezione esternalizzati -------------------
+
+# Le chiavi del contratto `headers.md`: ogni header/framing tunabile del prompt
+# di reazione. `cosa_sai` e' l'unica con `{{channel}}`; le `_std` sono le
+# etichette degli stili non-original-chat (il prefisso `## ` resta strutturale,
+# composto in codice).
+_HEADER_KEYS = frozenset(
+    {
+        "regole",
+        "memoria_permanente",
+        "memoria_permanente_uso",
+        "chi_sei",
+        "cosa_sai",
+        "formato_risposta",
+        "memoria",
+        "memoria_suffix",
+        "tuoi_ultimi_messaggi",
+        "conversazione_recente",
+        "situazione",
+        "chat_recente",
+        "parlato_recente",
+        "schermo_recente",
+        "riassunto_std",
+        "conversazione_recente_std",
+        "situazione_std",
+    }
+)
+
+# Base per gli override nei test: un headers.md inglese completo e conforme.
+_VALID_HEADERS_EN = {
+    "regole": "[RULES]",
+    "memoria_permanente": "[PERMANENT MEMORY] (context about you and the streamer)",
+    "memoria_permanente_uso": "Use it ONLY when it makes sense.",
+    "chi_sei": "WHO YOU ARE:",
+    "cosa_sai": "WHAT YOU KNOW ABOUT @{{channel}} (the streamer):",
+    "formato_risposta": "[RESPONSE FORMAT]",
+    "memoria": "[MEMORY]",
+    "memoria_suffix": "(how the stream has been going)",
+    "tuoi_ultimi_messaggi": "[YOUR LAST MESSAGES]",
+    "conversazione_recente": "[RECENT CONVERSATION]",
+    "situazione": "[SITUATION]",
+    "chat_recente": "[RECENT CHAT]",
+    "parlato_recente": "[RECENT SPEECH]",
+    "schermo_recente": "[RECENT SCREEN]",
+    "riassunto_std": "SUMMARY",
+    "conversazione_recente_std": "RECENT CONVERSATION",
+    "situazione_std": "SITUATION",
+}
+
+
+def _write_headers(tmp_path: Path, overrides: dict[str, str]) -> None:
+    sections = {**_VALID_HEADERS_EN, **overrides}
+    text = "\n\n".join(f"## {key}\n{body}" for key, body in sections.items())
+    (tmp_path / "headers.md").write_text(text + "\n", encoding="utf-8")
+
+
+def test_headers_default_set_serves_all_keys() -> None:
+    ps = load_prompt_set()
+    assert ps.keys("headers.md") == _HEADER_KEYS
+    # I default sono byte-identici agli header storici cablati.
+    assert ps.section("headers.md", "regole") == "[REGOLE]"
+    assert ps.section("headers.md", "memoria") == "[MEMORIA]"
+    assert ps.section("headers.md", "memoria_suffix") == (
+        "(com'e' andata la live e le conversazioni recenti)"
+    )
+    assert ps.section("headers.md", "tuoi_ultimi_messaggi") == (
+        "[I TUOI ULTIMI MESSAGGI]"
+    )
+    assert ps.section("headers.md", "cosa_sai", channel="enkk") == (
+        "COSA SAI SU @enkk (lo streamer):"
+    )
+    assert ps.section("headers.md", "riassunto_std") == "RIASSUNTO"
+
+
+def test_headers_valid_full_override_passes(tmp_path: Path) -> None:
+    _write_headers(tmp_path, {})
+    ps = load_prompt_set(tmp_path)
+    assert ps.section("headers.md", "regole") == "[RULES]"
+    assert ps.section("headers.md", "cosa_sai", channel="pepper") == (
+        "WHAT YOU KNOW ABOUT @pepper (the streamer):"
+    )
+
+
+def test_headers_missing_key_fails_fast(tmp_path: Path) -> None:
+    # Un headers.md senza una chiave obbligatoria fallisce all'avvio nominando
+    # il file (mai un header vuoto silenzioso a runtime).
+    (tmp_path / "headers.md").write_text(
+        "## regole\n[RULES]\n", encoding="utf-8"
+    )
+    with pytest.raises(PromptError, match=r"headers\.md"):
+        load_prompt_set(tmp_path)
+
+
+def test_headers_channel_only_allowed_in_cosa_sai(tmp_path: Path) -> None:
+    # `{{channel}}` fuori da `cosa_sai` e' un errore per-sezione: il render
+    # degli altri header non fornisce valori.
+    _write_headers(tmp_path, {"situazione": "[SITUATION of {{channel}}]"})
+    with pytest.raises(
+        PromptError, match=r"'headers\.md' sezione 'situazione'.*channel"
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_headers_cosa_sai_requires_channel(tmp_path: Path) -> None:
+    # Un override non puo' "perdere" il canale (stessa regola di rules/intro).
+    _write_headers(tmp_path, {"cosa_sai": "WHAT YOU KNOW (the streamer):"})
+    with pytest.raises(
+        PromptError, match=r"'headers\.md' sezione 'cosa_sai'.*channel"
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_headers_reject_header_ref_placeholders_no_recursion(
+    tmp_path: Path,
+) -> None:
+    # I placeholder `{{header_*}}` sono per i CORPI (situations.md), non per
+    # headers.md stesso: niente ricorsione header->header.
+    _write_headers(tmp_path, {"memoria": "{{header_situazione}}"})
+    with pytest.raises(
+        PromptError, match=r"'headers\.md' sezione 'memoria'"
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_situations_bodies_may_cite_headers_via_placeholder(
+    tmp_path: Path,
+) -> None:
+    # I riferimenti incrociati nei corpi usano `{{header_*}}`: ammessi in ogni
+    # sezione di situations.md (il render li fornisce sempre).
+    _write_situations(
+        tmp_path,
+        {
+            "idle": "guarda {{header_memoria}}; se nulla MSG: #end_conv",
+            "streamer-mention": (
+                "rispondi tenendo il filo ({{header_tuoi_ultimi_messaggi}} "
+                "e {{header_memoria}})"
+            ),
+            "chat-continuation": (
+                "{{user}} continua ({{mention}}): guarda "
+                "{{header_conversazione_recente}}; se no MSG: #end_conv"
+            ),
+        },
+    )
+    ps = load_prompt_set(tmp_path)
+    rendered = ps.section(
+        "situations.md",
+        "streamer-mention",
+        header_memoria="[MEMORIA]",
+        header_tuoi_ultimi_messaggi="[I TUOI ULTIMI MESSAGGI]",
+        header_conversazione_recente="[CONVERSAZIONE RECENTE]",
+    )
+    assert "[I TUOI ULTIMI MESSAGGI] e [MEMORIA]" in rendered
+
+
+def test_default_situations_reference_headers_not_literals() -> None:
+    # Nei default i corpi NON cablano piu' i nomi degli header: li citano via
+    # placeholder, risolti dagli stessi valori di headers.md (coerenza per
+    # costruzione).
+    from importlib.resources import files
+
+    raw = (files(DEFAULT_PROMPTS_PKG) / "situations.md").read_text(
+        encoding="utf-8"
+    )
+    assert "{{header_tuoi_ultimi_messaggi}}" in raw
+    assert "{{header_memoria}}" in raw
+    assert "{{header_conversazione_recente}}" in raw
+    assert "[I TUOI ULTIMI MESSAGGI]" not in raw
+    assert "[CONVERSAZIONE RECENTE]" not in raw
+    assert "[MEMORIA]" not in raw

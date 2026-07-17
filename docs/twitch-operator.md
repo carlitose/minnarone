@@ -699,7 +699,11 @@ Packaged prompt files:
 - `rules.md` — original-chat persona/style (placeholder `{{channel}}`).
 - `intro.md` — the current-situation banner (placeholder `{{channel}}`).
 - `situations.md` — the 6 keyed situation variants (`{{user}}`, `{{mention}}`,
-  `{{reason}}`; keeps the `#end_conv` control token).
+  `{{reason}}`; keeps the `#end_conv` control token). Bodies cite section
+  headers via `{{header_*}}` placeholders resolved from `headers.md`.
+- `headers.md` — the keyed section headers and framing lines of the reaction
+  prompt (`{{channel}}` in `cosa_sai` only). Renaming a header here also
+  updates every body text that cites it via `{{header_*}}`.
 - `format.md` — the `RE:`/`MSG:` response contract (keeps `RE:`, `MSG:`,
   `#end_conv`).
 - `operator.md`, `meeting_synthesizer.md`, `suggester.md` — per-style rules
@@ -721,7 +725,9 @@ token or an empty required section aborts startup rather than degrading to
 empty text.
 
 Placeholders use double braces `{{name}}`; the whitelist is `{{channel}}`,
-`{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}`. Values come from
+`{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}`, plus the header
+references `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}` and
+`{{header_conversazione_recente}}` (resolved from `headers.md`). Values come from
 config/code (trusted data), single braces `{ }` and `<...>` survive untouched,
 and injected values are never re-scanned.
 

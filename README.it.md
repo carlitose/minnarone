@@ -444,7 +444,8 @@ esterni, non nel codice Python. Sono impacchettati nel wheel sotto
 |------|-------|
 | `rules.md` | Regole persona/stile original-chat. Usa `{{channel}}`. |
 | `intro.md` | Banner "situazione attuale" + riga canale. Usa `{{channel}}`. |
-| `situations.md` | Le 6 varianti di situazione (a chiavi `## <chiave>`). Usa `{{user}}`, `{{mention}}`, `{{reason}}`; deve mantenere il token `#end_conv`. |
+| `situations.md` | Le 6 varianti di situazione (a chiavi `## <chiave>`). Usa `{{user}}`, `{{mention}}`, `{{reason}}`; deve mantenere il token `#end_conv`. I corpi citano gli header di sezione via `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`, `{{header_conversazione_recente}}` (risolti da `headers.md`, ammessi in ogni sezione). |
+| `headers.md` | Gli header di sezione e le righe di framing del prompt di reazione (a chiavi `## <chiave>`: `regole`, `memoria`, `memoria_suffix`, `situazione`, `chat_recente`, …, più `riassunto_std`/`conversazione_recente_std`/`situazione_std` per gli stili non-original-chat, dove il prefisso markdown `## ` resta strutturale). `{{channel}}` obbligatorio solo in `cosa_sai`. I riferimenti nei corpi si risolvono dagli stessi valori: rinominare un header qui aggiorna ogni testo che lo cita. |
 | `format.md` | Il contratto di risposta `RE:`/`MSG:`. Deve mantenere `RE:`, `MSG:`, `#end_conv`. |
 | `operator.md` | Regole del commentatore locale. Usa `{{language}}`. |
 | `meeting_synthesizer.md` | Regole della sintesi riunione. Usa `{{language}}`. |
@@ -478,7 +479,9 @@ una riga per file rotto altrimenti.
 ### Placeholder
 
 La sostituzione usa le doppie graffe `{{nome}}`. I nomi in whitelist sono
-`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}` e `{{reason}}`. I loro
+`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}` e i
+riferimenti agli header `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`,
+`{{header_conversazione_recente}}` (risolti da `headers.md`). I loro
 valori vengono da config/codice (dati fidati, mai contenuto percepito), le graffe
 singole `{ }` e i `<...>` sopravvivono intatti, e un valore iniettato non viene
 mai ri-scansionato (niente injection ricorsiva via template).

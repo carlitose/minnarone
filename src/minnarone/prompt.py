@@ -56,9 +56,16 @@ _SAFE_DISPLAY_TOKEN_RE = re.compile(r"@?[A-Za-z0-9_]{1,25}\Z")
 
 @dataclass(frozen=True)
 class OriginalChatContextSpec:
+    """Una fonte della recent-context original-chat e il suo header di sezione.
+
+    `header_key` è la CHIAVE in `headers.md` (FU-03), non il testo: il testo si
+    risolve per-istanza dal `PromptSet` del builder al momento del render, mai a
+    import-time — così un set custom cambia gli header senza toccare il codice.
+    """
+
     source: Source
     type: str
-    header: str
+    header_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,9 +85,9 @@ class SelfMessage:
 
 
 ORIGINAL_CHAT_CONTEXT_SPECS = (
-    OriginalChatContextSpec(Source.CHAT, "msg", "[CHAT RECENTE]"),
-    OriginalChatContextSpec(Source.AUDIO, "speech", "[PARLATO RECENTE]"),
-    OriginalChatContextSpec(Source.VIDEO, "caption", "[SCHERMO RECENTE]"),
+    OriginalChatContextSpec(Source.CHAT, "msg", "chat_recente"),
+    OriginalChatContextSpec(Source.AUDIO, "speech", "parlato_recente"),
+    OriginalChatContextSpec(Source.VIDEO, "caption", "schermo_recente"),
 )
 
 # Regole comuni di robustezza (anti-injection): byte-invarianti.
@@ -160,6 +167,39 @@ class PromptBuilder:
         """Selected commentator style visible at the reaction prompt boundary."""
         return self._commentator_style
 
+    def _header(self, key: str) -> str:
+        """Testo di un header di sezione tunabile, servito da `headers.md` (FU-03).
+
+        La risoluzione è per-istanza (dal `PromptSet` iniettato), mai a
+        import-time: un set custom cambia gli header senza toccare il codice.
+        `cosa_sai` è l'unica chiave con placeholder e ha un call-site dedicato.
+        """
+        return self._prompts.section("headers.md", key)
+
+    def _std_header(self, key: str) -> str:
+        """Header degli stili non-original-chat: `## ` + etichetta da `headers.md`.
+
+        Il prefisso markdown `## ` è un'ancora strutturale e resta composto in
+        codice (un corpo che iniziasse con `## ` verrebbe comunque parsato come
+        nuova sezione del file a chiavi); il file fornisce solo l'etichetta.
+        """
+        return f"## {self._header(key)}"
+
+    def _situation_header_refs(self) -> dict[str, str]:
+        """I valori dei riferimenti `{{header_*}}` citabili dai corpi delle situazioni.
+
+        Sono risolti DALLA STESSA fonte (`headers.md`) usata per rendere gli
+        header di sezione: il riferimento nel corpo non può divergere
+        dall'header, per costruzione. `header_memoria` è l'ancora `[MEMORIA]`
+        SENZA il suffisso esplicativo (`memoria_suffix` appartiene solo alla
+        riga dell'header di sezione).
+        """
+        return {
+            "header_memoria": self._header("memoria"),
+            "header_tuoi_ultimi_messaggi": self._header("tuoi_ultimi_messaggi"),
+            "header_conversazione_recente": self._header("conversazione_recente"),
+        }
+
     def stable_prefix(self) -> str:
         """La parte cacheable del prompt: dati stabili (regole + soul + facts)."""
         if self._commentator_style is CommentatorStyle.ORIGINAL_CHAT:
@@ -194,30 +234,29 @@ class PromptBuilder:
         soul = f"{self._blocks.soul}\n\n" if self._blocks.soul else "\n"
         facts = f"{self._blocks.facts}\n" if self._blocks.facts else "\n"
         return (
-            # Header strutturale cablato (ancora); il corpo delle REGOLE è servito
-            # byte-preserving da `rules.md` via il loader, con `{{channel}}` reso
-            # dalla config/codice (byte-identico al vecchio testo per "enkk").
-            "[REGOLE]\n"
+            # Il LABEL delle regole è tunabile (headers.md); il TESTO di
+            # sicurezza sotto (anti-injection + disclosure) resta cablato e
+            # viene SEMPRE prepeso, qualunque sia il label. Il corpo delle
+            # REGOLE tunabili è servito byte-preserving da `rules.md` via il
+            # loader, con `{{channel}}` reso dalla config/codice.
+            f"{self._header('regole')}\n"
             f"{_ROBUSTNESS_RULES}"
             f"{_DISCLOSURE_HIDE}"
             f"{self._prompts.text('rules.md', channel=self._channel)}"
             "\n"
-            "[MEMORIA PERMANENTE] "
-            "(informazioni di contesto su di te e sullo streamer)\n"
-            "Usale SOLO se sensate e appropriate al momento - per esempio se ti "
-            "fanno una domanda. Non infilare a forza nei messaggi ne' "
-            "sciorinarle senza motivo: sono contesto, non cose da dire a tutti "
-            "i costi.\n\n"
-            "CHI SEI:\n"
+            # Header e righe di framing serviti da `headers.md` (FU-03):
+            # byte-identici ai vecchi literal con i default impacchettati.
+            f"{self._header('memoria_permanente')}\n"
+            f"{self._header('memoria_permanente_uso')}\n\n"
+            f"{self._header('chi_sei')}\n"
             f"{soul}"
-            f"COSA SAI SU @{self._channel} (lo streamer):\n"
+            f"{self._prompts.section('headers.md', 'cosa_sai', channel=self._channel)}\n"
             f"{facts}"
             "\n"
-            # [FORMATO RISPOSTA] è il TRACER del ticket 03: il corpo (contratto
-            # RE:/MSG:/#end_conv) è servito dal file impacchettato `format.md`
-            # via il prompt-source, non più da una costante inline. L'header è
-            # un'ancora strutturale cablata (esternalizzazione rimandata a 04).
-            "[FORMATO RISPOSTA]\n"
+            # [FORMATO RISPOSTA]: il corpo (contratto RE:/MSG:/#end_conv) è
+            # servito dal file impacchettato `format.md` via il prompt-source;
+            # l'header viene da `headers.md` come gli altri.
+            f"{self._header('formato_risposta')}\n"
             f"{self._prompts.text('format.md')}"
         )
 
@@ -326,9 +365,9 @@ class PromptBuilder:
             recent=recent,
             trigger=trigger,
             summary=summary,
-            summary_header="## RIASSUNTO",
-            recent_header="## CONVERSAZIONE RECENTE",
-            situation_header="## SITUAZIONE",
+            summary_header=self._std_header("riassunto_std"),
+            recent_header=self._std_header("conversazione_recente_std"),
+            situation_header=self._std_header("situazione_std"),
             situation_line=situation_line,
         )
 
@@ -354,9 +393,9 @@ class PromptBuilder:
             recent=recent,
             trigger=trigger,
             summary=summary,
-            summary_header="## RIASSUNTO",
-            recent_header="## CONVERSAZIONE RECENTE",
-            situation_header="## SITUAZIONE",
+            summary_header=self._std_header("riassunto_std"),
+            recent_header=self._std_header("conversazione_recente_std"),
+            situation_header=self._std_header("situazione_std"),
             situation_line=situation_line,
         )
 
@@ -397,9 +436,9 @@ class PromptBuilder:
             recent=recent,
             trigger=trigger,
             summary=summary,
-            summary_header="## RIASSUNTO",
-            recent_header="## CONVERSAZIONE RECENTE",
-            situation_header="## SITUAZIONE",
+            summary_header=self._std_header("riassunto_std"),
+            recent_header=self._std_header("conversazione_recente_std"),
+            situation_header=self._std_header("situazione_std"),
             situation_line=situation_line,
         )
 
@@ -412,17 +451,23 @@ class PromptBuilder:
         self_messages: Sequence[SelfMessage | str],
         now: float | None = None,
     ) -> str:
+        # L'header della memoria è composto da DUE chiavi: `memoria` (l'ancora
+        # citata dai corpi via `{{header_memoria}}`) + `memoria_suffix` (la
+        # parentesi esplicativa, solo qui). Coi default: byte-identico al
+        # vecchio literal "[MEMORIA] (com'e' andata la live e ...)".
         return self._dynamic_prompt(
             recent=recent,
             trigger=trigger,
             summary=summary,
             self_messages=self_messages,
             intro=self._prompts.text("intro.md", channel=self._channel),
-            summary_header="[MEMORIA] (com'e' andata la live e le conversazioni recenti)",
-            self_messages_header="[I TUOI ULTIMI MESSAGGI]",
-            recent_header="[CONVERSAZIONE RECENTE]",
+            summary_header=(
+                f"{self._header('memoria')} {self._header('memoria_suffix')}"
+            ),
+            self_messages_header=self._header("tuoi_ultimi_messaggi"),
+            recent_header=self._header("conversazione_recente"),
             recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
-            situation_header="[SITUAZIONE]",
+            situation_header=self._header("situazione"),
             situation_line=self._original_chat_situation(trigger),
             now=now,
         )
@@ -431,11 +476,15 @@ class PromptBuilder:
         # I corpi delle situazioni sono serviti da `situations.md` (sezioni a
         # chiavi). `.section()` fa lo strip del whitespace: i vecchi corpi non
         # avevano whitespace significativo ai bordi, quindi la resa è identica.
+        # OGNI render fornisce i riferimenti `{{header_*}}` (FU-03), risolti da
+        # `headers.md`: il corpo cita gli header con gli stessi valori usati
+        # per renderli come sezioni — coerenza per costruzione.
         # Il fence dei dati percepiti è dinamico (dipende dalla percezione) e
         # resta cablato: lo si riappende con `\n` come faceva il testo inline
         # (l'unica situazione senza fence è `idle`, che non ha percezione).
+        refs = self._situation_header_refs()
         if trigger.perception is None:
-            return self._prompts.section("situations.md", "idle")
+            return self._prompts.section("situations.md", "idle", **refs)
         fence = self._fence(format_perception_line(trigger.perception))
         if trigger.perception.source is Source.CHAT:
             user = (
@@ -450,7 +499,7 @@ class PromptBuilder:
                 else "chat-mention"
             )
             body = self._prompts.section(
-                "situations.md", key, user=user, mention=mention
+                "situations.md", key, user=user, mention=mention, **refs
             )
             return f"{body}\n{fence}"
         if trigger.perception.source is Source.AUDIO:
@@ -459,9 +508,10 @@ class PromptBuilder:
                 if trigger.kind == "continuation"
                 else "streamer-mention"
             )
-            return f"{self._prompts.section('situations.md', key)}\n{fence}"
+            body = self._prompts.section("situations.md", key, **refs)
+            return f"{body}\n{fence}"
         body = self._prompts.section(
-            "situations.md", "generic", reason=trigger.reason
+            "situations.md", "generic", reason=trigger.reason, **refs
         )
         return f"{body}\n{fence}"
 
@@ -507,19 +557,20 @@ class PromptBuilder:
         history = [p for p in recent if p != situation_perception]
         return "\n".join(render_line(p) for p in history)
 
-    @classmethod
     def _recent_context_block(
-        cls,
+        self,
         header: str,
         recent: Sequence[Perception],
         situation_perception: Perception | None,
         source_headers: Sequence[OriginalChatContextSpec] | None,
         now: float | None = None,
     ) -> str:
+        # Metodo d'istanza (FU-03): gli header per-fonte si risolvono qui, dal
+        # `PromptSet` del builder (`spec.header_key` -> testo in headers.md).
         if source_headers is None:
             return (
                 f"{header}\n"
-                f"{cls._fence(cls._recent_block(recent, situation_perception))}\n\n"
+                f"{self._fence(self._recent_block(recent, situation_perception))}\n\n"
             )
 
         # Recent-context original-chat: se `now` è disponibile ogni riga adotta
@@ -541,8 +592,8 @@ class PromptBuilder:
                 if p.source is spec.source and p.type == spec.type
             ]
             blocks.append(
-                f"{spec.header}\n"
-                f"{cls._fence(cls._recent_block(source_recent, situation_perception, render_line))}"
+                f"{self._header(spec.header_key)}\n"
+                f"{self._fence(self._recent_block(source_recent, situation_perception, render_line))}"
             )
         return "\n\n".join(blocks) + "\n\n"
 

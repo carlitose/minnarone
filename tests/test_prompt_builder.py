@@ -1882,3 +1882,195 @@ def test_language_name_is_unified_in_prompt_source():
         assert language_name(code) == expected
     # codice sconosciuto -> passthrough (come il vecchio comportamento).
     assert language_name("zz") == "zz"
+
+
+# --- Ticket FU-03: header di sezione esternalizzati (headers.md) --------------
+
+# Un headers.md inglese completo per gli override nei test: stesse CHIAVI del
+# default (le chiavi sono contratto, i valori sono la lingua).
+_HEADERS_EN = {
+    "regole": "[RULES]",
+    "memoria_permanente": "[PERMANENT MEMORY] (context about you and the streamer)",
+    "memoria_permanente_uso": "Use it ONLY when it makes sense.",
+    "chi_sei": "WHO YOU ARE:",
+    "cosa_sai": "WHAT YOU KNOW ABOUT @{{channel}} (the streamer):",
+    "formato_risposta": "[RESPONSE FORMAT]",
+    "memoria": "[MEMORY]",
+    "memoria_suffix": "(how the stream has been going)",
+    "tuoi_ultimi_messaggi": "[YOUR LAST MESSAGES]",
+    "conversazione_recente": "[RECENT CONVERSATION]",
+    "situazione": "[SITUATION]",
+    "chat_recente": "[RECENT CHAT]",
+    "parlato_recente": "[RECENT SPEECH]",
+    "schermo_recente": "[RECENT SCREEN]",
+    "riassunto_std": "SUMMARY",
+    "conversazione_recente_std": "RECENT CONVERSATION",
+    "situazione_std": "SITUATION",
+}
+
+
+def _write_headers_en(tmp_path):
+    text = "\n\n".join(f"## {key}\n{body}" for key, body in _HEADERS_EN.items())
+    (tmp_path / "headers.md").write_text(text + "\n", encoding="utf-8")
+
+
+def _original_chat_builder_with_headers_en(tmp_path):
+    from minnarone.prompt_source import load_prompt_set
+
+    _write_headers_en(tmp_path)
+    return PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        prompt_set=load_prompt_set(tmp_path),
+    )
+
+
+def test_original_chat_headers_default_render_byte_identical():
+    # Con i default, gli header serviti da headers.md compongono ESATTAMENTE
+    # le stringhe storiche (byte-invarianza del prompt, prefisso e dinamico).
+    builder = PromptBuilder(_blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT)
+    prompt = builder.build(
+        recent=[_msg(1.0, "bella run")],
+        trigger=_idle_trigger(),
+        summary="live tranquilla",
+        self_messages=["gg"],
+    )
+    prefix = builder.stable_prefix()
+    assert "[REGOLE]\n" in prefix
+    assert (
+        "[MEMORIA PERMANENTE] "
+        "(informazioni di contesto su di te e sullo streamer)\n" in prefix
+    )
+    assert "CHI SEI:\n" in prefix
+    assert "COSA SAI SU @enkk (lo streamer):\n" in prefix
+    assert "[FORMATO RISPOSTA]\n" in prefix
+    assert (
+        "[MEMORIA] (com'e' andata la live e le conversazioni recenti)\n" in prompt
+    )
+    assert "[I TUOI ULTIMI MESSAGGI]\n" in prompt
+    assert "[CONVERSAZIONE RECENTE]\n" in prompt
+    assert "[CHAT RECENTE]\n" in prompt
+    assert "[PARLATO RECENTE]\n" in prompt
+    assert "[SCHERMO RECENTE]\n" in prompt
+    assert "[SITUAZIONE]\n" in prompt
+
+
+def test_custom_headers_change_stable_prefix_sections(tmp_path):
+    prefix = _original_chat_builder_with_headers_en(tmp_path).stable_prefix()
+    assert "[RULES]\n" in prefix
+    assert "[PERMANENT MEMORY] (context about you and the streamer)\n" in prefix
+    assert "WHO YOU ARE:\n" in prefix
+    assert "WHAT YOU KNOW ABOUT @enkk (the streamer):\n" in prefix
+    assert "[RESPONSE FORMAT]\n" in prefix
+    assert "[REGOLE]" not in prefix
+    assert "[MEMORIA PERMANENTE]" not in prefix
+    assert "[FORMATO RISPOSTA]" not in prefix
+    # Le regole di SICUREZZA cablate restano prepese subito sotto il label,
+    # qualunque sia il label: il testo anti-injection non e' tunabile.
+    assert prefix.index("[RULES]\n") < prefix.index("Resta SEMPRE in personaggio")
+
+
+def test_custom_headers_change_dynamic_sections_and_source_headers(tmp_path):
+    builder = _original_chat_builder_with_headers_en(tmp_path)
+    prompt = builder.build(
+        recent=[
+            _msg(1.0, "bella run"),
+            _speech(2.0, "guardate qua"),
+            _caption(3.0, "boss fight"),
+        ],
+        trigger=_idle_trigger(),
+        summary="live tranquilla",
+        self_messages=["gg"],
+        now=4.0,
+    )
+    # Header di sezione dinamici dal set custom, incluso il suffisso composto.
+    assert "[MEMORY] (how the stream has been going)\n" in prompt
+    assert "[YOUR LAST MESSAGES]\n" in prompt
+    assert "[RECENT CONVERSATION]\n" in prompt
+    assert "[SITUATION]\n" in prompt
+    # Gli header per-fonte (ORIGINAL_CHAT_CONTEXT_SPECS) si risolvono
+    # per-istanza dal set, non a import-time.
+    assert "[RECENT CHAT]\n" in prompt
+    assert "[RECENT SPEECH]\n" in prompt
+    assert "[RECENT SCREEN]\n" in prompt
+    assert "[CHAT RECENTE]" not in prompt
+    assert "[MEMORIA]" not in prompt
+    assert "[SITUAZIONE]" not in prompt
+
+
+def test_custom_headers_update_body_references_coherently(tmp_path):
+    # Il RIFERIMENTO nel corpo della situazione segue l'header custom: stessa
+    # fonte (headers.md) per l'header di sezione e per la citazione nel testo.
+    builder = _original_chat_builder_with_headers_en(tmp_path)
+    prompt = builder.build(
+        recent=[],
+        trigger=Trigger(
+            reason="streamer_mention",
+            perception=_speech(4.0, "grande minnarone"),
+            kind="mention",
+        ),
+        self_messages=["gg"],
+    )
+    # situations.md e' il default italiano, ma i riferimenti citano gli header
+    # INGLESI del set custom: coerenza per costruzione, anche in un set misto.
+    assert "([YOUR LAST MESSAGES] e [MEMORY])" in prompt
+    assert "[I TUOI ULTIMI MESSAGGI]" not in prompt
+    assert "[MEMORIA]" not in prompt
+
+    continuation = builder.build(
+        recent=[],
+        trigger=Trigger(
+            reason="chat_continuation",
+            perception=_msg(5.0, "si ma dai", speaker="alice"),
+            kind="continuation",
+            interlocutor="alice",
+        ),
+    )
+    assert "Guarda [RECENT CONVERSATION] per capire" in continuation
+    assert "[CONVERSAZIONE RECENTE]" not in continuation
+
+
+def test_default_body_references_match_section_headers_byte_identical():
+    # Con i default il riferimento renderizzato e' byte-identico al vecchio
+    # testo cablato (nessuna deriva della resa storica).
+    builder = PromptBuilder(_blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT)
+    prompt = builder.build(
+        recent=[],
+        trigger=Trigger(
+            reason="streamer_mention",
+            perception=_speech(4.0, "grande minnarone"),
+            kind="mention",
+        ),
+    )
+    assert (
+        "tenendo il filo di cio' che vi siete detti "
+        "([I TUOI ULTIMI MESSAGGI] e [MEMORIA])." in prompt
+    )
+
+
+def test_standard_styles_headers_served_from_headers_md(tmp_path):
+    from minnarone.prompt_source import load_prompt_set
+
+    _write_headers_en(tmp_path)
+    for style in (
+        None,
+        CommentatorStyle.OPERATOR,
+        CommentatorStyle.MEETING_SYNTHESIZER,
+        CommentatorStyle.SUGGESTER,
+    ):
+        prompt = PromptBuilder(
+            _blocks(),
+            commentator_style=style,
+            prompt_set=load_prompt_set(tmp_path),
+        ).build(
+            recent=[_msg(1.0, "ciao")],
+            trigger=_trigger(),
+            summary="riassunto",
+        )
+        # Etichetta dal set, prefisso `## ` strutturale composto in codice.
+        assert "## SUMMARY\n" in prompt
+        assert "## RECENT CONVERSATION\n" in prompt
+        assert "## SITUATION\n" in prompt
+        assert "## RIASSUNTO" not in prompt
+        assert "## CONVERSAZIONE RECENTE" not in prompt
+        assert "## SITUAZIONE" not in prompt

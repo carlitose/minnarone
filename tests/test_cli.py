@@ -499,7 +499,8 @@ def test_cli_validate_prompts_partial_override_notice(tmp_path, capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert "override parziale" in out
-    assert "1 file da override, 7 dal default" in out
+    # 9 file totali (8 original-chat incluso headers.md + summarizer).
+    assert "1 file da override, 8 dal default" in out
 
 
 def test_cli_validate_prompts_full_override_has_no_partial_notice(
@@ -516,6 +517,7 @@ def test_cli_validate_prompts_full_override_has_no_partial_notice(
         "rules.md",
         "intro.md",
         "situations.md",
+        "headers.md",
         "operator.md",
         "meeting_synthesizer.md",
         "suggester.md",

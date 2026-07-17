@@ -446,7 +446,8 @@ files, not in Python. They ship packaged with the wheel under
 |------|-----------|
 | `rules.md` | Original-chat persona/style rules. Uses `{{channel}}`. |
 | `intro.md` | "Current situation" banner + channel line. Uses `{{channel}}`. |
-| `situations.md` | The 6 situation variants (keyed by `## <key>`). Validated **per section**: `{{user}}`/`{{mention}}` only in `chat-mention`/`chat-continuation`, `{{reason}}` only in `generic`; `#end_conv` required in `idle`, `chat-mention`, `chat-continuation` and `streamer-continuation`. |
+| `situations.md` | The 6 situation variants (keyed by `## <key>`). Validated **per section**: `{{user}}`/`{{mention}}` only in `chat-mention`/`chat-continuation`, `{{reason}}` only in `generic`; `#end_conv` required in `idle`, `chat-mention`, `chat-continuation` and `streamer-continuation`. Bodies cite section headers via `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`, `{{header_conversazione_recente}}` (resolved from `headers.md`, allowed in every section). |
+| `headers.md` | The section headers and framing lines of the reaction prompt (keyed by `## <key>`: `regole`, `memoria`, `memoria_suffix`, `situazione`, `chat_recente`, …, plus `riassunto_std`/`conversazione_recente_std`/`situazione_std` for the non-original-chat styles, where the `## ` markdown prefix stays structural). `{{channel}}` required in `cosa_sai` only. In-body references resolve from the same values, so renaming a header here updates every text that cites it. |
 | `format.md` | The `RE:`/`MSG:` response contract. Must keep `RE:`, `MSG:`, `#end_conv`. |
 | `operator.md` | Local-commentator rules. Uses `{{language}}`. |
 | `meeting_synthesizer.md` | Meeting-notes rules. Uses `{{language}}`. |
@@ -485,7 +486,9 @@ feature, but a half-translated set should be intentional, not silent.
 ### Placeholders
 
 Substitution uses double braces `{{name}}`. The whitelisted names are
-`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}` and `{{reason}}`. Their
+`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}` and the
+header references `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`,
+`{{header_conversazione_recente}}` (resolved from `headers.md`). Their
 values come from config/code (trusted data, never perceived content), single
 braces `{ }` and `<...>` survive untouched, and an injected value is never
 re-scanned (no recursive template injection).

@@ -92,6 +92,7 @@ def test_fresh_install_packaged_resources_are_importable() -> None:
         "rules.md",
         "intro.md",
         "situations.md",
+        "headers.md",
         "format.md",
         "operator.md",
         "meeting_synthesizer.md",
@@ -115,13 +116,16 @@ def test_override_set_is_served_when_prompts_dir_points_at_it() -> None:
 
 
 def test_override_is_per_file_unlisted_files_fall_back_to_default() -> None:
-    # `examples/prompts-en` sovrascrive solo rules.md/intro.md: situations.md e
-    # format.md NON sono lì → cadono sul default impacchettato (italiano).
-    assert not (_EXAMPLE_EN / "situations.md").exists()
+    # `examples/prompts-en` NON sovrascrive format.md (né i file per-stile):
+    # cadono sul default impacchettato (italiano). FU-03: situations.md e
+    # headers.md invece SONO nel set inglese (riferimenti-via-header completi).
+    assert not (_EXAMPLE_EN / "format.md").exists()
     ps = load_prompt_set(_EXAMPLE_EN)
     assert "RE:" in ps.text("format.md")  # default risolto
-    idle = ps.section("situations.md", "idle")
-    assert idle.strip()  # default italiano, non vuoto
+    assert "ESATTAMENTE due righe" in ps.text("format.md")  # italiano
+    # I file presenti nell'esempio vincono: header e situazioni inglesi.
+    assert ps.section("headers.md", "situazione") == "[SITUATION]"
+    assert "Nobody addressed you" in ps.section("situations.md", "idle")
 
 
 def test_override_reflected_in_builder_stable_prefix() -> None:

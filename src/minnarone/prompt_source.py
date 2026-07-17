@@ -412,6 +412,21 @@ INTRO_SPEC = PromptSpec(
     required_placeholders=frozenset({"channel"}),
 )
 
+# Riferimenti incrociati agli header (FU-03): i corpi di `situations.md` non
+# scrivono più il nome letterale di un header ("[MEMORIA]", ...) ma un
+# placeholder `{{header_*}}` risolto dal render con gli STESSI valori di
+# `headers.md` usati per rendere gli header di sezione → il riferimento non può
+# divergere dall'header, per costruzione. Il render delle situazioni fornisce
+# SEMPRE questi tre valori, quindi sono ammessi in OGNI sezione (un set custom
+# può citare la memoria anche da `idle`, per esempio).
+HEADER_REF_PLACEHOLDERS = frozenset(
+    {
+        "header_memoria",
+        "header_tuoi_ultimi_messaggi",
+        "header_conversazione_recente",
+    }
+)
+
 # Le 6 varianti di SITUAZIONE, a chiavi, con vincoli PER-SEZIONE (FU-02) che
 # rispecchiano i percorsi di render di `prompt._original_chat_situation`:
 #
@@ -424,11 +439,13 @@ INTRO_SPEC = PromptSpec(
 #   non fornisce valori esploderebbe a runtime → fail-fast al load, per sezione.
 #   I valori vengono neutralizzati a monte (`_sanitize_display_token`) prima di
 #   essere iniettati.
+# - I riferimenti `{{header_*}}` (FU-03) sono ammessi ovunque: il render li
+#   fornisce a ogni sezione.
 # - Niente whitelist file-wide esplicita: i `key_specs` sono l'unica fonte di
 #   verità (il check file-wide ammette la loro unione per il testo fuori
 #   sezione e per eventuali sezioni extra non censite).
 _CHAT_SITUATION_KEY_SPEC = KeySpec(
-    allowed_placeholders=frozenset({"user", "mention"}),
+    allowed_placeholders=frozenset({"user", "mention"}) | HEADER_REF_PLACEHOLDERS,
     required_tokens=("#end_conv",),
 )
 
@@ -446,12 +463,68 @@ SITUATIONS_SPEC = PromptSpec(
         }
     ),
     key_specs={
-        "idle": KeySpec(required_tokens=("#end_conv",)),
+        "idle": KeySpec(
+            allowed_placeholders=HEADER_REF_PLACEHOLDERS,
+            required_tokens=("#end_conv",),
+        ),
         "chat-mention": _CHAT_SITUATION_KEY_SPEC,
         "chat-continuation": _CHAT_SITUATION_KEY_SPEC,
-        "streamer-mention": KeySpec(),
-        "streamer-continuation": KeySpec(required_tokens=("#end_conv",)),
-        "generic": KeySpec(allowed_placeholders=frozenset({"reason"})),
+        "streamer-mention": KeySpec(
+            allowed_placeholders=HEADER_REF_PLACEHOLDERS
+        ),
+        "streamer-continuation": KeySpec(
+            allowed_placeholders=HEADER_REF_PLACEHOLDERS,
+            required_tokens=("#end_conv",),
+        ),
+        "generic": KeySpec(
+            allowed_placeholders=frozenset({"reason"}) | HEADER_REF_PLACEHOLDERS
+        ),
+    },
+)
+
+# Header di sezione e righe di framing del prompt di reazione (FU-03), a chiavi.
+# Ogni chiave è un header TUNABILE: un prompt-set in un'altra lingua può
+# tradurre anche gli header, non solo i corpi. Decisioni di confine:
+#
+# - I marcatori di SICUREZZA restano cablati in `prompt.py`: il fence
+#   (`DATI_PERCEPITI`, prefisso `| `) SEMPRE; il testo delle regole
+#   anti-injection/disclosure SEMPRE (viene prepeso sotto il label `regole`
+#   qualunque sia il label). Solo il LABEL `[REGOLE]` è tunabile.
+# - `memoria` è spezzato in `memoria` (l'ancora citata dai corpi) e
+#   `memoria_suffix` (la parentesi esplicativa): l'header di sezione compone
+#   "{memoria} {memoria_suffix}", i riferimenti nei corpi usano solo `memoria`.
+# - Le chiavi `_std` sono le etichette degli stili non-original-chat
+#   (RIASSUNTO/CONVERSAZIONE RECENTE/SITUAZIONE): il prefisso markdown `## ` è
+#   un'ancora strutturale, composta in codice (e un corpo che iniziasse con
+#   `## ` verrebbe comunque parsato come nuova sezione del file a chiavi).
+# - `{{channel}}` è ammesso (e obbligatorio) SOLO in `cosa_sai`: come per
+#   rules/intro, un override non può "perdere" il canale. Nessun `{{header_*}}`
+#   è ammesso QUI dentro: niente ricorsione header→header.
+_PLAIN_HEADER_KEYS = (
+    "regole",
+    "memoria_permanente",
+    "memoria_permanente_uso",
+    "chi_sei",
+    "formato_risposta",
+    "memoria",
+    "memoria_suffix",
+    "tuoi_ultimi_messaggi",
+    "conversazione_recente",
+    "situazione",
+    "chat_recente",
+    "parlato_recente",
+    "schermo_recente",
+    "riassunto_std",
+    "conversazione_recente_std",
+    "situazione_std",
+)
+
+HEADERS_SPEC = PromptSpec(
+    filename="headers.md",
+    keyed=True,
+    key_specs={
+        **{key: KeySpec() for key in _PLAIN_HEADER_KEYS},
+        "cosa_sai": KeySpec(required_placeholders=frozenset({"channel"})),
     },
 )
 
@@ -490,6 +563,7 @@ ORIGINAL_CHAT_SET = PromptSetSpec(
         RULES_SPEC,
         INTRO_SPEC,
         SITUATIONS_SPEC,
+        HEADERS_SPEC,
         OPERATOR_RULES_SPEC,
         MEETING_SYNTHESIZER_RULES_SPEC,
         SUGGESTER_RULES_SPEC,
