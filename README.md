@@ -567,6 +567,12 @@ The remaining work is centered on the **live acceptance runs with
 human-in-the-loop** (HITL). See the
 [roadmap](docs/SPECIFICATION.md#10-roadmap-per-priorità) for MVP / v2 / v3.
 
+## Support
+
+If this project is useful to you, you can buy me a coffee ☕
+
+[![Buy me a coffee — PayPal](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/CarloSergi)
+
 ## License
 
 Distributed under the [MIT](LICENSE) license.

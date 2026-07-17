@@ -566,6 +566,12 @@ Il lavoro rimanente è centrato sulle **run di accettazione live con
 human-in-the-loop** (HITL). Vedi la
 [roadmap](docs/SPECIFICATION.md#10-roadmap-per-priorità) per MVP / v2 / v3.
 
+## Offrimi un caffè
+
+Se il progetto ti è utile, puoi offrirmi un caffè ☕
+
+[![Offrimi un caffè — PayPal](https://img.shields.io/badge/Offrimi%20un%20caff%C3%A8-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/CarloSergi)
+
 ## Licenza
 
 Distribuito con licenza [MIT](LICENSE).
