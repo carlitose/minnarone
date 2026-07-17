@@ -60,6 +60,22 @@ class OriginalChatContextSpec:
     header: str
 
 
+@dataclass(frozen=True, slots=True)
+class SelfMessage:
+    """Messaggio proprio recente del bot, arricchito per la resa original-chat.
+
+    `text` è il messaggio inviato; `reason` è il `RE:` (a cosa stava rispondendo)
+    quando noto, `None` altrimenti; `ts` è l'epoch d'invio (dal clock del Senser),
+    usato per il prefisso relativo `-<N>s`. Se `reason` o `ts` mancano la resa
+    degrada con grazia: rispettivamente niente suffisso `(rispondevi a: ...)` e
+    niente prefisso temporale. Non si inventa MAI una reason.
+    """
+
+    text: str
+    reason: str | None = None
+    ts: float | None = None
+
+
 ORIGINAL_CHAT_CONTEXT_SPECS = (
     OriginalChatContextSpec(Source.CHAT, "msg", "[CHAT RECENTE]"),
     OriginalChatContextSpec(Source.AUDIO, "speech", "[PARLATO RECENTE]"),
@@ -236,7 +252,7 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None = None,
-        self_messages: Sequence[str] = (),
+        self_messages: Sequence[SelfMessage | str] = (),
         now: float | None = None,
     ) -> str:
         """Assembla il prompt completo per il turno corrente.
@@ -418,7 +434,7 @@ class PromptBuilder:
         recent: Sequence[Perception],
         trigger: Trigger,
         summary: str | None,
-        self_messages: Sequence[str],
+        self_messages: Sequence[SelfMessage | str],
         now: float | None = None,
     ) -> str:
         return self._dynamic_prompt(
@@ -427,7 +443,7 @@ class PromptBuilder:
             summary=summary,
             self_messages=self_messages,
             summary_header="[RIASSUNTO]",
-            self_messages_header="[TUOI MESSAGGI RECENTI]",
+            self_messages_header="[I TUOI ULTIMI MESSAGGI]",
             recent_header="[CONVERSAZIONE RECENTE]",
             recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
             situation_header="[SITUAZIONE]",
@@ -499,7 +515,7 @@ class PromptBuilder:
         recent_header: str,
         situation_header: str,
         situation_line: str,
-        self_messages: Sequence[str] = (),
+        self_messages: Sequence[SelfMessage | str] = (),
         self_messages_header: str | None = None,
         recent_source_headers: Sequence[OriginalChatContextSpec] | None = None,
         now: float | None = None,
@@ -514,7 +530,7 @@ class PromptBuilder:
         return (
             f"{self.stable_prefix()}\n"
             f"{self._summary_block(summary_header, summary)}"
-            f"{self._self_messages_block(self_messages_header, self_messages)}"
+            f"{self._self_messages_block(self_messages_header, self_messages, now)}"
             f"{recent_context}"
             f"{situation_header}\n"
             f"{situation_line}\n"
@@ -576,17 +592,45 @@ class PromptBuilder:
 
     @classmethod
     def _self_messages_block(
-        cls, header: str | None, self_messages: Sequence[str]
+        cls,
+        header: str | None,
+        self_messages: Sequence[SelfMessage | str],
+        now: float | None = None,
     ) -> str:
-        messages = [message for message in self_messages if message.strip()]
-        if header is None or not messages:
+        records = [
+            record
+            for record in (_coerce_self_message(m) for m in self_messages)
+            if record.text.strip()
+        ]
+        if header is None or not records:
             return ""
-        body = "\n".join(f"minnarone: {message}" for message in messages)
+        body = "\n".join(
+            cls._format_self_message_line(record, now) for record in records
+        )
         return (
             f"{header}\n"
             "Usali per tenere continuita' e non ripeterti.\n"
             f"{cls._fence(body)}\n\n"
         )
+
+    @staticmethod
+    def _format_self_message_line(record: SelfMessage, now: float | None) -> str:
+        """Resa di un messaggio proprio: ``-<N>s tu: "<msg>" (rispondevi a: ...)``.
+
+        Il prefisso ``-<N>s`` compare solo se sia ``record.ts`` sia ``now`` sono
+        noti (secondi trascorsi, clamp a 0). Il suffisso ``(rispondevi a: ...)``
+        compare solo se la reason è nota e non vuota. In assenza di questi dati la
+        riga degrada con grazia, senza inventare nulla.
+        """
+        prefix = ""
+        if record.ts is not None and now is not None:
+            seconds = max(0, int(round(now - record.ts)))
+            prefix = f"-{seconds}s "
+        line = f'{prefix}tu: "{record.text}"'
+        reason = record.reason.strip() if record.reason else ""
+        if reason:
+            line = f"{line} (rispondevi a: {reason})"
+        return line
 
     @staticmethod
     def _fence(content: str) -> str:
@@ -605,6 +649,18 @@ class PromptBuilder:
             f"{_DATA_LINE_PREFIX}{line}" for line in content.split("\n")
         )
         return f"{_UNTRUSTED_OPEN}\n{body}\n{_UNTRUSTED_CLOSE}"
+
+
+def _coerce_self_message(message: SelfMessage | str) -> SelfMessage:
+    """Normalizza un self-message a ``SelfMessage``.
+
+    Le stringhe nude (chiamanti legacy, retrocompatibilità) diventano un
+    ``SelfMessage`` senza reason né ts: la resa degrada con grazia (nessun
+    prefisso temporale, nessun suffisso ``(rispondevi a: ...)``).
+    """
+    if isinstance(message, SelfMessage):
+        return message
+    return SelfMessage(text=message)
 
 
 def _sanitize_display_token(token: str | None) -> str | None:

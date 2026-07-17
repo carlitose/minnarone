@@ -199,9 +199,12 @@ def test_fake_original_chat_dry_run_second_end_conv_is_visible_and_closes_window
     stable_prefix = runtime.builder.stable_prefix()
     second_prompt = observations[1].prompt
     assert "bella parata" not in stable_prefix
-    assert "[TUOI MESSAGGI RECENTI]" in second_prompt
-    assert "minnarone: bella parata" in second_prompt
-    assert second_prompt.index("minnarone: bella parata") > len(stable_prefix)
-    assert second_prompt.index("[TUOI MESSAGGI RECENTI]") < second_prompt.index(
+    assert "[I TUOI ULTIMI MESSAGGI]" in second_prompt
+    # Formato divergenza C: `tu: "<msg>" (rispondevi a: <reason RE:>)`. Il
+    # prefisso `-<N>s` dipende dal clock reale del dry-run, quindi si asserisce
+    # sulla parte deterministica (testo + reason).
+    assert 'tu: "bella parata" (rispondevi a: parata clutch)' in second_prompt
+    assert second_prompt.index('tu: "bella parata"') > len(stable_prefix)
+    assert second_prompt.index("[I TUOI ULTIMI MESSAGGI]") < second_prompt.index(
         "[CONVERSAZIONE RECENTE]"
     )
