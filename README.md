@@ -117,6 +117,13 @@ git config core.hooksPath .githooks
 The target runs Ruff, Vulture, Deptry and Pylint limited to `duplicate-code`
 (`R0801`).
 
+For contributors and code agents working on the externalized prompts there is a
+repo-local Claude Code skill in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
+it documents the file map and the non-obvious constraints (required
+placeholders, control tokens, the hard-coded security boundary, byte-invariance
+of the packaged defaults) and prescribes the safe flow — edit →
+`minnarone validate-prompts` → targeted tests → preview render.
+
 ### Runtime prerequisites
 
 - **`OPENROUTER_API_KEY`**: put it in `.env` (or export it into the environment).
