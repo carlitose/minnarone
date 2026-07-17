@@ -32,6 +32,7 @@ GitHub, nessun contenuto inatteso in issue/PR pubbliche.
 - [04-task-security-preflight.md](04-task-security-preflight.md)
 - [06-task-fix-failing-tests-on-main.md](06-task-fix-failing-tests-on-main.md)
 - [07-task-fresh-install-verification.md](07-task-fresh-install-verification.md)
+- [08-task-readme-english.md](08-task-readme-english.md)
 
 ## Frontier
 

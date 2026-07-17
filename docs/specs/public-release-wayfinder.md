@@ -33,20 +33,24 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   `git log --all -- .env`); grep di pattern segreti sui file tracciati trova
   solo placeholder (`oauth:dry_run`). Solo `.env.example` (template vuoto) è
   tracciato.
+- **Screenshot: si tengono tutti** (grilling 02, 2026-07-17). Revisione
+  assistita dei 10 PNG: nessun segreto/credenziale visibile; contengono volti
+  (enkk) e username Twitch di terzi già pubblici nel video di origine. Il
+  "match binario" del grep era un falso positivo (pagina OpenRouter). Uso
+  documentale con credito prominente nel README.
+- **Enkk non è stato interpellato: rischio accettato** (grilling 02,
+  2026-07-17). Assunzione registrata: il video di origine è pubblico, il
+  credito è prominente nel README, l'idea è generalizzata in codice originale.
+  Se enkk dovesse obiettare dopo il flip, si rimuove il materiale su richiesta.
+- **README pubblico in inglese + README.it.md** (grilling 03, 2026-07-17):
+  README principale tradotto in inglese per il pubblico globale, versione
+  italiana conservata come `README.it.md` con link incrociati. → ticket 08.
 
 ## Not Yet Specified
 
-- **Screenshot in `docs/source/screenshots/`** (10 PNG, ~11 MB, tracciati):
-  sono frame del video di enkk. Da chiarire: (a) contengono informazioni
-  sensibili visibili (token, email, chat private)? (b) i diritti sui frame
-  permettono la ripubblicazione? (c) tenerli, rimuoverli o ridurli?
-- **Lingua del README/docs**: tutto in italiano. Per un repo pubblico va bene
-  così o serve una versione inglese (almeno del README)? Decisione utente non
-  ancora presa.
-- **File untracked ambigui**: `wiki/` (clone della wiki?) e `.tokensave/` sono
-  untracked ma non gitignorati — vanno aggiunti a `.gitignore` o gestiti.
-- **Menzione della licenza nel README**: il README non menziona MIT; da
-  aggiungere una riga/sezione.
+- (vuoto — le voci precedenti sono risolte: screenshot → si tengono, lingua
+  README → inglese + README.it.md (ticket 08), gitignore e riga licenza →
+  fatti nel ticket 01 / PR #26.)
 
 ## Out of Scope
 
@@ -61,11 +65,10 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
 
 - **Licenza non ancora su main**: LICENSE + pyproject sono su branch locale non
   committata. Blocca la pubblicazione. → ticket 01.
-- **Screenshot non revisionati**: potrebbero contenere info sensibili o
-  materiale di terzi; vanno guardati da un umano prima che diventino pubblici.
-  → ticket 02 (grilling/human).
-- **Lingua README non decisa**: se serve l'inglese, va fatto prima del flip a
-  pubblico (prima impressione). → ticket 03 (grilling).
+- ~~Screenshot non revisionati~~: risolto (grilling 02 chiuso: si tengono).
+- ~~Lingua README non decisa~~: risolto (grilling 03 chiuso: inglese +
+  README.it.md). La traduzione è ora il ticket 08 e va fatta prima del flip
+  (prima impressione).
 - **Pre-flight finale**: scan history con tool dedicato (es. gitleaks) e check
   file tracciati residui, come rete di sicurezza prima del flip. → ticket 04.
 - **4 test rossi su main** (scoperti 2026-07-17, pre-esistenti al lavoro di
@@ -97,6 +100,8 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
 - 07 — task — Verifica da installazione pulita seguendo SOLO il README (clone
   fresco, venv nuovo, extra, `--check` su tutti gli examples, avvio modalità
   fattibili, smoke CLI, replay) → gap README↔realtà registrati e risolti.
+- 08 — task — Tradurre il README in inglese (README.md) conservando l'italiano
+  come README.it.md con link incrociati → README pubblico in inglese.
 
 ## Next Review
 

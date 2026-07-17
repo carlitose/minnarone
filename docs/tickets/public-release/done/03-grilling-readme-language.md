@@ -44,3 +44,12 @@ Il README è la prima cosa che un visitatore vede: cambiare lingua dopo il flip
 ## Out of Scope
 
 - Traduzione dei docs operativi (`docs/*.md`) e dei docs interni.
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+**Decisione utente: inglese + README.it.md.** README principale tradotto in
+inglese per il pubblico globale; la versione italiana attuale si conserva come
+`README.it.md` con link incrociati in testa. Ticket task derivato:
+[08-task-readme-english.md](08-task-readme-english.md).
