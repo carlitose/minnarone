@@ -470,6 +470,11 @@ Il loader è **fail-fast**: un file mancante, un placeholder mancante o ignoto, 
 token di controllo mancante o una sezione obbligatoria vuota fanno fallire
 l'avvio — un prompt tunabile non può mai degradare a testo vuoto.
 
+Per validare un override senza avviare l'app:
+`minnarone validate-prompts --prompts-dir my-prompts` (oppure `--config
+config.yaml` per leggere `prompts_dir` dalla config): exit 0 se tutto è valido,
+una riga per file rotto altrimenti.
+
 ### Placeholder
 
 La sostituzione usa le doppie graffe `{{nome}}`. I nomi in whitelist sono

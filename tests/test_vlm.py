@@ -8,7 +8,11 @@ import types
 
 import pytest
 
-from minnarone.video import VideoFrame
+# L'extra `vlm` è opzionale: senza `transformers` questi test si SKIPPANO
+# (stesso idioma di test_tui_transitions.py per `textual`).
+pytest.importorskip("transformers")
+
+from minnarone.video import VideoFrame  # noqa: E402
 
 
 class _FakeImage:

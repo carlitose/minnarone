@@ -448,6 +448,91 @@ def _twitch_chat_config(tmp_path):
     return cfg
 
 
+# --- validate-prompts (validazione prompt-set senza avviare l'app) ----------
+
+
+def test_cli_validate_prompts_default_set_ok(capsys):
+    """Senza override i default impacchettati devono validare con exit 0."""
+    code = main(["validate-prompts"])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "ok" in out.lower()
+    # Il riepilogo elenca i file controllati (entrambi i set) con l'origine.
+    assert "situations.md" in out
+    assert "summarizer.md" in out
+    assert "default" in out
+
+
+def test_cli_validate_prompts_reports_override_origin(tmp_path, capsys):
+    """Un file valido nella dir di override è riportato con origine 'override'."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    intro = (files("minnarone.prompts") / "intro.md").read_text(encoding="utf-8")
+    (override / "intro.md").write_text(intro, encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "intro.md" in out
+    assert "override" in out
+
+
+def test_cli_validate_prompts_broken_override_returns_nonzero(tmp_path, capsys):
+    """Un override rotto (senza #end_conv né chiavi) fallisce nominando il file."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "situations.md").write_text(
+        "## idle\nsituazione senza token di fine\n", encoding="utf-8"
+    )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+
+
+def test_cli_validate_prompts_reports_all_broken_files(tmp_path, capsys):
+    """Più file rotti → una riga di errore per ciascuno (non solo il primo)."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "situations.md").write_text("## idle\nsenza token\n", encoding="utf-8")
+    (override / "rules.md").write_text("regole senza canale\n", encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+    assert "rules.md" in err
+
+
+def test_cli_validate_prompts_config_reads_prompts_dir(tmp_path, capsys):
+    """`--config` legge `prompts_dir` dal YAML (risolto rispetto al config)."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "summarizer.md").write_text("## instruction\nsolo una\n", encoding="utf-8")
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("prompts_dir: prompts\n", encoding="utf-8")
+
+    code = main(["validate-prompts", "--config", str(cfg)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "summarizer.md" in err
+
+
+def test_cli_validate_prompts_missing_config_returns_config_error(tmp_path, capsys):
+    code = main(["validate-prompts", "--config", str(tmp_path / "assente.yaml")])
+
+    assert code == 2
+    assert "config" in capsys.readouterr().err.lower()
+
+
 def test_cli_check_reads_twitch_credentials_from_dotenv(
     tmp_path, capsys, monkeypatch
 ):

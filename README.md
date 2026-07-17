@@ -471,6 +471,11 @@ The loader is **fail-fast**: a missing file, a missing/unknown placeholder, a
 missing control token or an empty required section aborts startup — a tunable
 prompt is never allowed to degrade to empty text.
 
+To validate an override without starting the app, run
+`minnarone validate-prompts --prompts-dir my-prompts` (or `--config config.yaml`
+to read `prompts_dir` from the config): exit 0 on success, one line per broken
+file otherwise.
+
 ### Placeholders
 
 Substitution uses double braces `{{name}}`. The whitelisted names are
