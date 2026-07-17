@@ -34,14 +34,22 @@ Questo repository generalizza quell'idea in un framework riusabile: lo stesso mo
 L'app "Minnarone" si avvia da un **file di configurazione** YAML (soul, facts,
 adapter, provider, cadenze, modalità) — senza scrivere codice.
 
+**Prerequisiti**: Python 3.11+ (3.12 consigliato — vedi `.python-version`).
+
+Crea e attiva prima un ambiente virtuale. Con
+[uv](https://docs.astral.sh/uv/) (consigliato):
+
 ```bash
-pip install -e .                 # core
-pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
-pip install -e '.[audio]'        # + runtime audio: faster-whisper + sherpa-onnx (ASR + speaker)
-pip install -e '.[video]'        # + runtime video Twitch: Streamlink Python + PyAV
-pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
-pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: solo Pillow (via llama-server multimodale, niente torch)
-pip install -e '.[os-capture]'   # + cattura audio di sistema (soundcard) e schermo (mss)
+uv venv                             # crea .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+
+uv pip install -e .                 # core
+uv pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
+uv pip install -e '.[audio]'        # + runtime audio: faster-whisper + sherpa-onnx (ASR + speaker)
+uv pip install -e '.[video]'        # + runtime video Twitch: Streamlink Python + PyAV
+uv pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
+uv pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: solo Pillow (via llama-server multimodale, niente torch)
+uv pip install -e '.[os-capture]'   # + cattura audio di sistema (soundcard) e schermo (mss)
 
 # Valida la config e costruisci l'agente (dry-run, niente loop né rete):
 python -m minnarone path/al/config.yaml --check
@@ -56,8 +64,20 @@ python -m minnarone path/al/config.yaml --tui
 python -m minnarone --replay <run_dir_o_perceptions.jsonl>
 ```
 
-Gli extra si possono combinare (es. `pip install -e '.[os-capture,audio,vlm]'`)
+Preferisci `pip`? Crea la venv con la stdlib (`python -m venv .venv`), attivala
+e togli il prefisso `uv` (`pip install -e '.[tui]'`). Nota: una `uv venv` **non**
+include `pip`, quindi con essa usa `uv pip`. I comandi di avvio qui sopra
+assumono la venv attiva (oppure prefissali con `uv run`).
+
+Gli extra si possono combinare (es. `uv pip install -e '.[os-capture,audio,vlm]'`)
 e sono installabili anche con `uv sync --extra <nome>`.
+
+> **Primo `--check`**: gli esempi Twitch/Teams verificano che il setup esista,
+> quindi danno errore appena scaricati. Gli adapter Twitch richiedono
+> `TWITCH_BOT_USERNAME` / `TWITCH_OAUTH_TOKEN` in `.env` (`cp .env.example .env`);
+> gli esempi OS-capture e Teams richiedono un modello ONNX di speaker embedding
+> locale (`speaker_embedding.model_path`) — vedi le sezioni sotto.
+> `examples/llamacpp-local.example.yaml` passa `--check` senza setup extra.
 
 ## Segreti via `.env`
 

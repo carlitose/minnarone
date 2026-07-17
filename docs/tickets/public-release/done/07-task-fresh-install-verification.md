@@ -69,3 +69,36 @@ variabili esportate) che un utente nuovo non ha.
 - Test su piattaforme non disponibili (macOS/Linux se si lavora da Windows):
   registrare come non verificato, non bloccare.
 - Extra `vlm` completo (torch CUDA) se l'hardware/tempo non lo permette.
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+Verifica eseguita su clone pulito della branch `autopilot/security-preflight`
+(stato futuro-pubblico), venv nuovo con `uv`, seguendo il README.
+
+**Positivi**: tutti i link relativi del README risolvono; tutti e 4 gli entry
+point console (`minnarone`, `-twitch-smoke`, `-twitch-chat-smoke`,
+`-oscapture-smoke`) installano e rispondono a `--help`; l'indice torch cu126 su
+Windows si comporta esattamente come documentato (torch 2.13.0+cu126 da
+pytorch-cu126); gli extra risolvono senza conflitti; `--check` esce 2 su errore
+config e `--replay` esce 1 su log assente (comportamento corretto).
+
+**Gap trovati e risolti in questa PR**:
+1. *(blocker)* README non diceva di creare una venv e `pip install -e .` non
+   gira in una `uv venv` (niente pip). → Aggiunto step `uv venv` + attiva,
+   `uv pip install -e` come path primario, fallback pip documentato, nota
+   `uv run`. Su entrambi i README.
+2. *(minor)* prerequisito Python non dichiarato. → Aggiunto "Python 3.11+
+   (3.12 consigliato)".
+3. *(minor)* il primo `--check` degli esempi Twitch/Teams dà errore appena
+   scaricati (creds mancanti / modello ONNX). → Aggiunta nota che spiega i
+   prerequisiti e indica `llamacpp-local.example.yaml` come esempio che passa
+   `--check` senza setup.
+
+**Gap deferito (non bloccante)**: i messaggi CLI a runtime e i commenti dei
+config-example restano in italiano mentre il README è inglese (severità "note"
+del report). → follow-up ticket 09, NON blocca il flip.
+
+`--check` su tutti gli 8 examples: 1 pass pulito (llamacpp-local), 7 "fail"
+tutti setup-gated (creds/modello), nessun bug di config. Nessun link rotto.
