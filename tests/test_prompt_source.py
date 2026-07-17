@@ -177,3 +177,55 @@ def test_keyed_sections_parsed_and_rendered(tmp_path: Path) -> None:
     ps = PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
     assert ps.keys("keyed.md") == frozenset({"a", "b"})
     assert ps.section("keyed.md", "a", nome="mondo") == "ciao mondo"
+
+
+# --- set original-chat completo (ticket 04): rules/intro/situations ---
+
+
+def test_original_chat_set_serves_rules_intro_situations() -> None:
+    ps = load_prompt_set()
+    assert "Sei Minnarone" in ps.text("rules.md", channel="enkk")
+    assert "SITUAZIONE ATTUALE" in ps.text("intro.md", channel="enkk")
+    assert ps.keys("situations.md") == frozenset(
+        {
+            "idle",
+            "chat-mention",
+            "chat-continuation",
+            "streamer-mention",
+            "streamer-continuation",
+            "generic",
+        }
+    )
+
+
+def test_original_chat_rules_missing_channel_placeholder_fails_fast(
+    tmp_path: Path,
+) -> None:
+    # Un override di rules.md senza `{{channel}}` è fail-fast: il canale
+    # obbligatorio non deve poter sparire.
+    (tmp_path / "rules.md").write_text("- Nessun canale qui.\n", encoding="utf-8")
+    with pytest.raises(PromptError, match="channel"):
+        load_prompt_set(tmp_path)
+
+
+def test_original_chat_situations_missing_key_fails_fast(tmp_path: Path) -> None:
+    (tmp_path / "situations.md").write_text(
+        "## idle\nsolo idle MSG: #end_conv\n", encoding="utf-8"
+    )
+    with pytest.raises(PromptError, match="chiave"):
+        load_prompt_set(tmp_path)
+
+
+def test_original_chat_situations_missing_end_conv_fails_fast(
+    tmp_path: Path,
+) -> None:
+    # Tutte le chiavi presenti ma nessun `#end_conv`: fail-fast sul token.
+    (tmp_path / "situations.md").write_text(
+        "## idle\nidle\n\n## chat-mention\n{{user}} {{mention}}\n\n"
+        "## chat-continuation\n{{user}} {{mention}}\n\n"
+        "## streamer-mention\ns\n\n## streamer-continuation\ns\n\n"
+        "## generic\n{{reason}}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(PromptError, match="#end_conv"):
+        load_prompt_set(tmp_path)

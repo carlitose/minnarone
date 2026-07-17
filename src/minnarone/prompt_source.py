@@ -299,18 +299,62 @@ class PromptSet:
 
 # --- contratto concreto del prompt-set "original-chat" ---
 #
-# Cresce man mano che i prompt migrano: il ticket 03 impacchetta e serve SOLO
-# `format.md` (il tracer, accoppiato al parser RE/MSG → token obbligatori). I
-# ticket 04-06 aggiungeranno qui `rules.md` (prosa persona/regole, con
-# `{{channel}}`/`{{language}}`), `situations.md` (le 6 situazioni a chiavi, con
-# `#end_conv`) e i template di stile (`{{language}}`).
+# Cresce man mano che i prompt migrano: il ticket 03 ha impacchettato `format.md`
+# (il tracer, accoppiato al parser RE/MSG → token obbligatori). Il ticket 04
+# aggiunge il testo tunabile della modalità original-chat: `rules.md` (prosa
+# persona/regole, con `{{channel}}`, servita byte-preserving nel prefisso
+# stabile), `intro.md` (banner + riga canale, dinamico) e `situations.md` (le 6
+# situazioni a chiavi, con il token di controllo `#end_conv`). I ticket 05-06
+# aggiungeranno il summarizer e i template di stile (`{{language}}`).
 
 FORMAT_SPEC = PromptSpec(
     filename="format.md",
     required_tokens=("RE:", "MSG:", "#end_conv"),
 )
 
-ORIGINAL_CHAT_SET = PromptSetSpec(specs=(FORMAT_SPEC,))
+# Regole persona/stile original-chat: prosa servita con `.text()` (byte-preserving)
+# nel prefisso stabile. `{{channel}}` è l'unico punto di sostituzione: la fonte è
+# la config/codice (dato fidato), mai contenuto percepito → non è un vettore di
+# injection. Obbligatorio così un override non può "perdere" il canale.
+RULES_SPEC = PromptSpec(
+    filename="rules.md",
+    allowed_placeholders=frozenset({"channel"}),
+    required_placeholders=frozenset({"channel"}),
+)
+
+# Apertura dinamica (banner + canale). Stesso `{{channel}}` delle regole: canale
+# unificato, reso da una sola fonte a runtime.
+INTRO_SPEC = PromptSpec(
+    filename="intro.md",
+    allowed_placeholders=frozenset({"channel"}),
+    required_placeholders=frozenset({"channel"}),
+)
+
+# Le 6 varianti di SITUAZIONE, a chiavi. `#end_conv` è un token di controllo del
+# parser dell'output: deve sopravvivere in almeno una variante (fail-fast se un
+# override lo elimina). `{{user}}`/`{{mention}}` (chat) e `{{reason}}` (fallback)
+# sono i soli punti di sostituzione; i valori vengono neutralizzati a monte
+# (`_sanitize_display_token`) prima di essere iniettati.
+SITUATIONS_SPEC = PromptSpec(
+    filename="situations.md",
+    allowed_placeholders=frozenset({"user", "mention", "reason"}),
+    required_tokens=("#end_conv",),
+    keyed=True,
+    required_keys=frozenset(
+        {
+            "idle",
+            "chat-mention",
+            "chat-continuation",
+            "streamer-mention",
+            "streamer-continuation",
+            "generic",
+        }
+    ),
+)
+
+ORIGINAL_CHAT_SET = PromptSetSpec(
+    specs=(FORMAT_SPEC, RULES_SPEC, INTRO_SPEC, SITUATIONS_SPEC)
+)
 
 
 def load_prompt_set(prompts_dir: str | Path | None = None) -> PromptSet:

@@ -1612,3 +1612,106 @@ def test_situazione_attuale_banner_only_in_original_chat():
             recent=[], trigger=_trigger()
         )
         assert "SITUAZIONE ATTUALE" not in prompt
+
+
+# --- Ticket 04: testo tunabile original-chat servito da file ------------------
+
+
+def test_original_chat_rules_served_from_loader_byte_identical():
+    # Le REGOLE original-chat sono servite da `rules.md` via il loader e restano
+    # byte-identiche al vecchio testo inline (canale reso da UNA fonte -> "enkk").
+    prefix = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT
+    ).stable_prefix()
+    assert (
+        "[REGOLE]\n" in prefix
+        and "- Sei Minnarone: un utente della chat Twitch chiamato minnarone / "
+        "@minnarone nel canale di enkk.\n" in prefix
+    )
+    # il corpo delle regole termina con `...vedi in chat.\n` seguito dalla riga
+    # vuota che separa da [MEMORIA PERMANENTE]: byte-invarianza del confine.
+    assert "le emote che vedi in chat.\n\n[MEMORIA PERMANENTE]" in prefix
+
+
+def test_original_chat_rules_honor_prompt_set_override(tmp_path):
+    # Un override in prompts_dir cambia le REGOLE servite: prova l'intero
+    # percorso file->prompt (non più la costante inline).
+    from minnarone.prompt_source import load_prompt_set
+
+    (tmp_path / "rules.md").write_text(
+        "- Regola personalizzata nel canale di {{channel}}.\n", encoding="utf-8"
+    )
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        prompt_set=load_prompt_set(tmp_path),
+    ).stable_prefix()
+    assert "Regola personalizzata nel canale di enkk." in prefix
+
+
+def test_original_chat_intro_served_from_loader_byte_identical():
+    # Il banner di apertura è servito da `intro.md`, byte-identico al vecchio.
+    prompt = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT
+    ).build(recent=[], trigger=_idle_trigger())
+    assert "====== SITUAZIONE ATTUALE ======\nTi trovi nel canale di enkk.\n" in prompt
+
+
+def test_original_chat_channel_param_unifies_rules_and_intro():
+    # Canale unificato: un solo parametro pilota SIA le regole SIA il banner.
+    builder = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        channel="altrocanale",
+    )
+    prompt = builder.build(recent=[], trigger=_idle_trigger())
+    assert "@minnarone nel canale di altrocanale." in prompt  # regole
+    assert "Ti trovi nel canale di altrocanale." in prompt  # banner
+    # Nel testo delle REGOLE (non nei fatti, che citano enkk) il canale è quello
+    # nuovo: il vecchio "canale di enkk" cablato è sparito.
+    assert "canale di enkk" not in prompt
+
+
+def test_original_chat_situations_served_from_loader_override(tmp_path):
+    # Le 6 varianti di SITUAZIONE sono servite da `situations.md`: un override
+    # cambia il testo reso, provando il percorso file->sezione per ogni variante.
+    from minnarone.prompt_source import load_prompt_set
+
+    (tmp_path / "situations.md").write_text(
+        "## idle\nIDLE-OVR MSG: #end_conv\n\n"
+        "## chat-mention\nMENTION-OVR {{user}} {{mention}} MSG: #end_conv\n\n"
+        "## chat-continuation\nCONT-OVR {{user}} {{mention}} MSG: #end_conv\n\n"
+        "## streamer-mention\nSTREAMER-MENTION-OVR\n\n"
+        "## streamer-continuation\nSTREAMER-CONT-OVR MSG: #end_conv\n\n"
+        "## generic\nGENERIC-OVR {{reason}}\n",
+        encoding="utf-8",
+    )
+    builder = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        prompt_set=load_prompt_set(tmp_path),
+    )
+
+    idle = builder.build(recent=[], trigger=_idle_trigger())
+    assert idle.rstrip().endswith("IDLE-OVR MSG: #end_conv")
+
+    mention = builder.build(
+        recent=[],
+        trigger=Trigger(
+            reason="mention",
+            perception=_msg(4.0, "ciao", speaker="alice"),
+            kind="mention",
+            interlocutor="alice",
+        ),
+    )
+    assert "MENTION-OVR alice @alice MSG: #end_conv" in mention
+
+    generic = builder.build(
+        recent=[],
+        trigger=Trigger(
+            reason="video_react",
+            perception=_caption(4.0, "roba a schermo"),
+            kind="mention",
+        ),
+    )
+    assert "GENERIC-OVR video_react" in generic
