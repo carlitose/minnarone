@@ -54,6 +54,7 @@ os-capture = [
 ]
 # bitsandbytes serve solo per vlm.quantization 4bit/8bit (richiede GPU CUDA);
 # transformers lo importa lazy. Escluso su macOS: non pubblica wheel darwin.
+# Extra per il backend `vlm.backend: qwen` (Qwen2-VL torch locale).
 vlm = [
     "accelerate>=0.26",
     "bitsandbytes>=0.46.1; sys_platform != 'darwin'",
@@ -62,6 +63,10 @@ vlm = [
     "torchvision>=0.20",
     "transformers>=4.57",
 ]
+# Extra per il backend `vlm.backend: llamacpp` (captioning via llama-server
+# multimodale): solo Pillow (downscale + JPEG); il trasporto è urllib stdlib.
+# NON tira torch/transformers — installazione leggera per chi usa solo llama.cpp.
+vlm-llamacpp = ["pillow>=10"]
 # Dashboard di osservabilità (TUI). Opzionale: il modello di snapshot
 # (minnarone.dashboard) funziona senza textual; solo la vista live lo richiede.
 tui = ["textual>=0.50"]

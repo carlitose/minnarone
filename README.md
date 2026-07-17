@@ -30,7 +30,8 @@ pip install -e .                 # core
 pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
 pip install -e '.[audio]'        # + runtime audio: faster-whisper + sherpa-onnx (ASR + speaker)
 pip install -e '.[video]'        # + runtime video Twitch: Streamlink Python + PyAV
-pip install -e '.[vlm]'          # + captioning video locale: transformers + torch/torchvision + Pillow
+pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
+pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: solo Pillow (via llama-server multimodale, niente torch)
 pip install -e '.[os-capture]'   # + cattura audio di sistema (soundcard) e schermo (mss)
 
 # Valida la config e costruisci l'agente (dry-run, niente loop né rete):
@@ -104,9 +105,10 @@ suo canale (`chat`/`audio`/`video`) → store.
 - Il canale **audio** usa VAD locale + faster-whisper + speaker embedding
   `sherpa-onnx` quando `twitch.audio: true` (o `os_capture.audio: true`) e i
   backend locali sono installati/configurati.
-- Il canale **video** usa Streamlink + PyAV + un backend locale Qwen2-VL quando
-  `twitch.video: true`, `vlm.model` è configurato e gli extra `video`/`vlm` sono
-  installati.
+- Il canale **video** usa Streamlink + PyAV + un backend di captioning locale
+  quando `twitch.video: true` e l'extra `video` è installato. Il backend è scelto
+  da `vlm.backend`: `qwen` (Qwen2-VL torch, richiede `vlm.model` + extra `vlm`) o
+  `llamacpp` (llama-server multimodale, extra leggero `vlm-llamacpp`).
 - L'adapter **`os_capture`** (mic + audio di sistema loopback + registrazione
   schermo) osserva la macchina locale invece di uno stream remoto.
 
@@ -365,7 +367,8 @@ video:
   dedup_change_threshold: 0.0  # 0 = salta solo frame byte-identici
 
 vlm:
-  model: null                  # percorso/id locale Qwen2-VL-compatible
+  backend: qwen                # qwen (torch locale) | llamacpp (llama-server multimodale)
+  model: null                  # percorso/id locale Qwen2-VL-compatible (solo backend qwen)
   device: auto
   device_map: auto
   torch_dtype: auto
@@ -422,6 +425,50 @@ Note:
 - `--check` resta un dry-run senza rete: valida solo la forma di `base_url`.
   Se all'avvio live il server è giù o sta ancora caricando il modello (503),
   la CLI esce con un errore che include il comando qui sopra.
+
+### Captioning video locale via llama.cpp (`vlm.backend: llamacpp`)
+
+Il canale video può descrivere i frame usando un `llama-server` **multimodale**
+(modello + proiettore `--mmproj`, es. Gemma multimodale) invece del backend
+torch Qwen2-VL. Vantaggio decisivo su GPU piccole (~4 GB): **una sola istanza
+`llama-server` multimodale serve sia le reazioni testo (`llm_provider:
+llamacpp`) sia il captioning**, evitando la doppia residenza in VRAM di
+torch-VLM + LLM. Nessuna dipendenza runtime nuova (transformers/torch non
+servono con questo backend): il trasporto è lo stesso urllib del provider LLM
+locale.
+
+Avvia l'istanza multimodale a mano, aggiungendo il proiettore `--mmproj` e
+`--parallel 2` (così testo e visione girano in concorrenza sulla stessa
+istanza, costo ~10 MiB VRAM):
+
+```bash
+llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 4096 --reasoning off --parallel 2
+```
+
+Config: il backend riusa `llamacpp.base_url` (stessa istanza del provider LLM),
+mentre `prompt`/`language`/`max_new_tokens`/downscale/`max_caption_chars`
+restano nel blocco `vlm:`:
+
+```yaml
+vlm:
+  backend: llamacpp     # captiona i frame via l'istanza llama-server multimodale
+llamacpp:
+  base_url: http://127.0.0.1:8080   # condiviso col provider LLM locale
+```
+
+Note:
+
+- All'avvio del loop live (mai in `--check`) la CLI verifica via `GET /props`
+  che l'istanza esponga la visione (`modalities.vision == true`). Se manca il
+  proiettore, esce con un errore azionabile che ricorda `--mmproj`. Il check
+  gira anche con `llm_provider` cloud (il captioner usa comunque
+  `llamacpp.base_url`).
+- Contratto best-effort: su errore di trasporto/HTTP a runtime il captioner
+  ritorna una caption vuota (salta il frame) e logga l'evento, senza uccidere
+  il canale video. Il backend `qwen` resta invariato per chi lo seleziona.
+- **Installazione leggera**: questo backend richiede solo l'extra
+  `vlm-llamacpp` (`pip install -e '.[vlm-llamacpp]'` → solo Pillow), non l'extra
+  `vlm` pesante (torch/transformers), che serve solo al backend `qwen`.
 
 ## Smoke Twitch capture-only
 

@@ -35,10 +35,17 @@ class QwenVlCaptionError(RuntimeError):
     """Local VLM setup or inference failed."""
 
 
+#: Backend di captioning ammessi nel blocco `vlm:`. `qwen` = runtime torch
+#: locale (`Qwen2VlCaptioner`); `llamacpp` = istanza multimodale `llama-server`
+#: condivisa (`LlamaCppCaptioner`, in `vlm_llamacpp.py`).
+VLM_BACKENDS = ("qwen", "llamacpp")
+
+
 @dataclass(frozen=True, slots=True)
 class QwenVlConfig:
     """Runtime settings for the local Qwen2-VL-compatible caption backend."""
 
+    backend: str = "qwen"
     model: str | Path | None = None
     device: str = "auto"
     device_map: str | None = "auto"
@@ -54,6 +61,13 @@ class QwenVlConfig:
     max_image_pixels: int = 500_000
 
     def __post_init__(self) -> None:
+        backend = _non_empty_str(self.backend, "backend")
+        if backend not in VLM_BACKENDS:
+            raise QwenVlConfigError(
+                "backend deve essere 'qwen' o 'llamacpp' (non "
+                f"{self.backend!r})"
+            )
+        object.__setattr__(self, "backend", backend)
         object.__setattr__(
             self,
             "model",

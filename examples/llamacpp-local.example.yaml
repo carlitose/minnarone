@@ -17,12 +17,21 @@ llamacpp:
 
 # Percezione: qui solo lo schermo, così il config passa `--check` senza altri
 # modelli. Il captioner VLM resta SPENTO (nessun `vlm.model`): su GPU piccole
-# conviene non affiancarlo a llama-server. Per l'audio servono anche VAD/ASR e
-# `speaker_embedding.model_path` (vedi minnarone.example.yaml).
+# conviene non affiancare il backend torch Qwen2-VL a llama-server. Per l'audio
+# servono anche VAD/ASR e `speaker_embedding.model_path` (vedi
+# minnarone.example.yaml).
 os_capture:
   audio: false
   video: true
   video_fps: 1.0
+
+# Captioning video sulla STESSA istanza llama-server (multimodale): decommenta
+# il blocco `vlm` sotto e riavvia il server con `--mmproj <mmproj.gguf>` e
+# `--parallel 2`. Il backend riusa `llamacpp.base_url` qui sopra: niente doppia
+# residenza torch-VLM + LLM in VRAM. All'avvio live la CLI verifica la visione
+# via GET /props (errore azionabile se manca --mmproj).
+# vlm:
+#   backend: llamacpp
 
 senser_interval: 0.5
 idle_interval: 150.0

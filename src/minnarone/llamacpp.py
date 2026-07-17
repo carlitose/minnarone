@@ -75,6 +75,15 @@ LLAMA_SERVER_COMMAND = (
     "--reasoning off --parallel 1"
 )
 
+#: Comando di riferimento per il server MULTIMODALE (captioner `vlm.backend:
+#: llamacpp`): oltre al modello serve il proiettore `--mmproj`; `--parallel 2`
+#: per servire testo e visione in concorrenza (decisione del grilling, ticket
+#: 02/03). Incluso nei messaggi d'errore del health-check vision.
+LLAMA_SERVER_MULTIMODAL_COMMAND = (
+    "llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port <porta> "
+    "-ngl 99 -c 4096 --reasoning off --parallel 2"
+)
+
 #: Timeout (secondi) della probe di readiness: locale, deve rispondere subito.
 _HEALTH_TIMEOUT = 5.0
 
@@ -195,17 +204,91 @@ def check_server_ready(
         )
 
 
+#: Firma della probe di `/props`: `probe(url, timeout) -> props JSON parsato`.
+#: Può sollevare `OSError`/`HTTPException` (server giù, non-HTTP, ...) o
+#: `HTTPError` (status di errore). Iniettabile nei test; il default è la probe
+#: urllib reale.
+VisionProbe = Callable[[str, float], object]
+
+
+def _urllib_vision_probe(url: str, timeout: float) -> object:
+    """Probe reale di `GET /props` con stdlib urllib (nessuna dipendenza).
+
+    Ritorna il JSON parsato di `/props`. Usa l'opener locale (no proxy, no
+    redirect), coerente con readiness e transport di completamento.
+    """
+    req = urllib.request.Request(url, method="GET")
+    with _local_opener.open(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _props_report_vision(props: object) -> bool:
+    """True se `/props` dichiara `modalities.vision == true`.
+
+    Difensivo su shape inattese: un server non multimodale (senza `--mmproj`)
+    espone `modalities.vision == false` o non espone affatto `modalities`.
+    """
+    if not isinstance(props, Mapping):
+        return False
+    modalities = props.get("modalities")
+    if not isinstance(modalities, Mapping):
+        return False
+    return modalities.get("vision") is True
+
+
+def check_vision_ready(
+    base_url: str,
+    *,
+    probe: VisionProbe | None = None,
+    timeout: float = _HEALTH_TIMEOUT,
+) -> None:
+    """Verifica che il `llama-server` esponga la visione (`GET /props`).
+
+    Richiesto dal backend di captioning `vlm.backend: llamacpp`: l'istanza deve
+    essere stata avviata con `--mmproj`, altrimenti `modalities.vision` è falso
+    (o assente) e i frame non verrebbero mai descritti. Solleva
+    `LlamaCppServerNotReady` con un messaggio azionabile in italiano che ricorda
+    `--mmproj` nel comando di `llama-server`.
+    """
+    url = f"{base_url.rstrip('/')}/props"
+    probe = probe or _urllib_vision_probe
+    try:
+        props = probe(url, timeout)
+    except (OSError, http.client.HTTPException) as exc:
+        # HTTPError (status di errore) è sottoclasse di OSError: un 503 in
+        # caricamento o un 404 finiscono qui come "non raggiungibile".
+        raise LlamaCppServerNotReady(
+            f"llama-server non raggiungibile su {base_url} per il check vision "
+            f"(GET /props): avvia l'istanza multimodale a mano, ad esempio con:\n"
+            f"  {LLAMA_SERVER_MULTIMODAL_COMMAND}"
+        ) from exc
+    if not _props_report_vision(props):
+        raise LlamaCppServerNotReady(
+            f"llama-server su {base_url} non espone la visione "
+            f"(modalities.vision != true): il modello è stato caricato senza "
+            f"proiettore multimodale. Riavvialo aggiungendo --mmproj <mmproj.gguf>, "
+            f"ad esempio:\n  {LLAMA_SERVER_MULTIMODAL_COMMAND}"
+        )
+
+
 def ensure_llamacpp_ready(
     config: "Config",
     *,
     probe: HealthProbe | None = None,
+    vision_probe: VisionProbe | None = None,
 ) -> None:
     """Health-check d'avvio del loop live: no-op per i provider cloud.
 
     Chiamato dalla CLI SOLO sul percorso live (mai in `--check`, che resta un
     dry-run senza rete). Solleva `LlamaCppServerNotReady` se il server locale
     non è pronto, con istruzioni per avviarlo.
+
+    Due controlli indipendenti sulla stessa istanza `llama-server` locale:
+    - `llm_provider: llamacpp` → readiness testo (`GET /health`);
+    - `vlm.backend: llamacpp` → capacità vision (`GET /props`), anche con LLM
+      cloud (il captioner riusa comunque `llamacpp.base_url`).
     """
-    if config.llm_provider != "llamacpp":
-        return
-    check_server_ready(config.llamacpp.base_url, probe=probe)
+    if config.llm_provider == "llamacpp":
+        check_server_ready(config.llamacpp.base_url, probe=probe)
+    if config.vlm.backend == "llamacpp":
+        check_vision_ready(config.llamacpp.base_url, probe=vision_probe)

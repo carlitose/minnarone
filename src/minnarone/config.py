@@ -748,6 +748,7 @@ def _video_config_from_dict(data: dict[str, object]) -> VideoPerceptionConfig:
 
 def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
     allowed = {
+        "backend",
         "model",
         "device",
         "device_map",
@@ -769,6 +770,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
         )
     try:
         return QwenVlConfig(
+            backend=data.get("backend", "qwen"),  # type: ignore[arg-type]
             model=data.get("model"),  # type: ignore[arg-type]
             device=data.get("device", "auto"),  # type: ignore[arg-type]
             device_map=data.get("device_map", "auto"),  # type: ignore[arg-type]
