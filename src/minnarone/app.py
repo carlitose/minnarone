@@ -78,6 +78,7 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
+from .prompt_source import load_prompt_set
 from .public_send import PublicSendPolicy
 from .reactor import Reactor
 from .run_artifacts import RunSession
@@ -815,6 +816,11 @@ def build_agent(
     memory = FileMemory(soul_path=config.soul_path, facts_dir=config.facts_dir)
     blocks = memory.load()
 
+    # Prompt-source (ticket 03): un unico set caricato+validato all'avvio
+    # (fail-fast), condiviso da tutti i PromptBuilder. Con `config.prompts_dir`
+    # gli override per-file vincono sui default impacchettati.
+    prompt_set = load_prompt_set(config.prompts_dir)
+
     prompt_recorder = PromptObservationRecorder(
         debug_dir=run_session.debug_dir if run_session is not None else None
     )
@@ -968,6 +974,7 @@ def build_agent(
             announce_ai=config.disclosure.announce_ai,
             commentator_language=config.commentator.language,
             commentator_style=style,
+            prompt_set=prompt_set,
         )
 
         style_router = _per_profile_routers.get(style, out_router)
@@ -1006,6 +1013,7 @@ def build_agent(
             announce_ai=config.disclosure.announce_ai,
             commentator_language=config.commentator.language,
             commentator_style=None,
+            prompt_set=prompt_set,
         )
     first_reactor: Reactor
     if reactors:

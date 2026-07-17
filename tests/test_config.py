@@ -110,6 +110,35 @@ def test_load_resolves_memory_paths_relative_to_config_file(tmp_path):
     assert cfg.facts_dir == str(cfg_dir / "facts")
 
 
+def test_prompts_dir_absent_defaults_to_none(tmp_path):
+    # Assente in config → None: si usano SOLO i default impacchettati.
+    cfg = Config.load(_write(tmp_path, MINIMAL_YAML))
+    assert cfg.prompts_dir is None
+
+
+def test_prompts_dir_parsed_and_resolved_relative_to_config_file(tmp_path):
+    cfg_dir = tmp_path / "configs"
+    cfg_dir.mkdir()
+    content = MINIMAL_YAML + "prompts_dir: prompts_it\n"
+
+    cfg = Config.load(_write(cfg_dir, content))
+
+    # Risolto rispetto alla dir del file di config, come soul_path/facts_dir.
+    assert cfg.prompts_dir == str(cfg_dir / "prompts_it")
+
+
+def test_prompts_dir_empty_string_is_rejected():
+    with pytest.raises(ConfigError, match="prompts_dir"):
+        Config(
+            OutputMode.PUBLIC,
+            "soul.md",
+            "facts",
+            "none",
+            "grok",
+            prompts_dir="",
+        )
+
+
 def test_config_positional_constructor_contract_is_preserved():
     # Adapter neutro (né twitch né os_capture) così il contratto posizionale è
     # verificabile senza fornire una sezione sorgente obbligatoria.

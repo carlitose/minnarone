@@ -73,6 +73,10 @@ tui = ["textual>=0.50"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minnarone"]
+# I prompt default (.md) sono DATI di package: vanno spediti nel wheel così il
+# fresh install funziona senza override da `prompts_dir` (ticket 03). Reso
+# esplicito qui per non dipendere solo dall'inclusione implicita del package.
+artifacts = ["src/minnarone/prompts/**/*.md"]
 
 # Su Windows il torch di PyPI è CPU-only: per usare CUDA (es. quantizzazione
 # bitsandbytes del VLM) torch/torchvision arrivano dall'indice PyTorch cu126.

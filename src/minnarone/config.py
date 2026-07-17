@@ -842,6 +842,13 @@ class Config:
     # restano valide. È il nome che l'agente riconosce come rivolto a sé.
     agent_name: str = "minnarone"
     llm_params: dict[str, object] = field(default_factory=dict)
+    # Directory di override dei prompt tunabili (ticket 03), gemella opzionale di
+    # soul_path/facts_dir. Se assente → SOLO i default impacchettati nel wheel.
+    # Se relativa, risolta rispetto alla dir del file di config (come le memory
+    # path). Punta a un set `.md` (anche parziale, anche in un'altra lingua):
+    # abilita lo swap-lingua senza toccare il codice. Collocata DOPO llm_params
+    # per preservare il contratto posizionale del costruttore (test).
+    prompts_dir: str | None = None
     senser_interval: float = 0.5
     idle_interval: float = 150.0
     # Cadenza del loop del Summarizer (memoria a breve termine): ogni quanti
@@ -879,6 +886,11 @@ class Config:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
+        # prompts_dir è opzionale: se dato deve essere una stringa non vuota.
+        if self.prompts_dir is not None and (
+            not isinstance(self.prompts_dir, str) or not self.prompts_dir
+        ):
+            raise ConfigError("prompts_dir deve essere una stringa non vuota")
         if self.twitch is not None and not isinstance(self.twitch, TwitchConfig):
             raise ConfigError("twitch deve essere una TwitchConfig")
         if self.os_capture is not None and not isinstance(
@@ -1031,6 +1043,7 @@ class Config:
                 twitch=twitch,
                 os_capture=os_capture,
                 agent_name=str(data.get("agent_name", "minnarone")),
+                prompts_dir=data.get("prompts_dir"),  # type: ignore[arg-type]
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]
                 senser_interval=float(data.get("senser_interval", 0.5)),
                 idle_interval=float(data.get("idle_interval", 150.0)),
@@ -1097,7 +1110,7 @@ class Config:
         config_dir: Path,
     ) -> dict[str, object]:
         resolved = dict(data)
-        for field_name in ("soul_path", "facts_dir"):
+        for field_name in ("soul_path", "facts_dir", "prompts_dir"):
             value = resolved.get(field_name)
             if not isinstance(value, str) or not value:
                 continue

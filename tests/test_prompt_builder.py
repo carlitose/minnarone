@@ -430,6 +430,39 @@ def test_original_chat_stable_prefix_requires_exact_re_msg_response_contract():
     assert "MSG: <il messaggio di chat> oppure #end_conv" in prefix
 
 
+def test_original_chat_format_block_served_from_loader_byte_identical():
+    # Tracer (ticket 03): il blocco [FORMATO RISPOSTA] è servito dal file
+    # impacchettato `format.md` via il loader, byte-identico al vecchio testo
+    # inline (byte-invarianza del prefisso stabile con i default fissi).
+    prefix = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT
+    ).stable_prefix()
+
+    assert (
+        "[FORMATO RISPOSTA]\n"
+        "Rispondi in ESATTAMENTE due righe:\n"
+        "RE: <a cosa stai rispondendo, 3-6 parole>\n"
+        "MSG: <il messaggio di chat> oppure #end_conv\n"
+    ) in prefix
+
+
+def test_original_chat_format_block_honors_prompt_set_override(tmp_path):
+    # Il tracer passa da un file: un override in prompts_dir cambia il blocco
+    # servito, provando l'intero percorso file→prompt (non più la costante).
+    from minnarone.prompt_source import load_prompt_set
+
+    (tmp_path / "format.md").write_text(
+        "RE: x\nMSG: y oppure #end_conv\nFORMATO PERSONALIZZATO\n", encoding="utf-8"
+    )
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        prompt_set=load_prompt_set(tmp_path),
+    ).stable_prefix()
+
+    assert "FORMATO PERSONALIZZATO" in prefix
+
+
 def test_original_chat_summary_rendered_under_memoria_header():
     # Nel prompt original-chat il riassunto va sotto [MEMORIA] (non [RIASSUNTO]).
     prompt = PromptBuilder(

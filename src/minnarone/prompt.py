@@ -35,6 +35,7 @@ from .perception import (
     format_perception_line,
     format_recent_line,
 )
+from .prompt_source import PromptSet, load_prompt_set
 from .senser import Trigger
 
 # Delimitatori del blocco di DATI non fidati: tutto ciò che è percepito
@@ -189,11 +190,17 @@ class PromptBuilder:
         announce_ai: bool = False,
         commentator_language: str = "it",
         commentator_style: CommentatorStyle | None = None,
+        prompt_set: PromptSet | None = None,
     ) -> None:
         self._blocks = blocks
         self._announce_ai = announce_ai
         self._commentator_language = commentator_language
         self._commentator_style = commentator_style
+        # Prompt-source per il testo tunabile (ticket 03). Se non iniettato, usa
+        # i default impacchettati (nessun override): fail-fast se il set default
+        # è malformato/mancante. L'app inietta un set costruito con
+        # `config.prompts_dir` per abilitare gli override e lo swap-lingua.
+        self._prompts = prompt_set if prompt_set is not None else load_prompt_set()
 
     @property
     def commentator_style(self) -> CommentatorStyle | None:
@@ -251,10 +258,12 @@ class PromptBuilder:
             "COSA SAI SU @enkk (lo streamer):\n"
             f"{facts}"
             "\n"
+            # [FORMATO RISPOSTA] è il TRACER del ticket 03: il corpo (contratto
+            # RE:/MSG:/#end_conv) è servito dal file impacchettato `format.md`
+            # via il prompt-source, non più da una costante inline. L'header è
+            # un'ancora strutturale cablata (esternalizzazione rimandata a 04).
             "[FORMATO RISPOSTA]\n"
-            "Rispondi in ESATTAMENTE due righe:\n"
-            "RE: <a cosa stai rispondendo, 3-6 parole>\n"
-            "MSG: <il messaggio di chat> oppure #end_conv\n"
+            f"{self._prompts.text('format.md')}"
         )
 
     def build(
