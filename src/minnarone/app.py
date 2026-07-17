@@ -78,7 +78,7 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
-from .prompt_source import load_prompt_set
+from .prompt_source import load_prompt_set, load_summarizer_prompt_set
 from .public_send import PublicSendPolicy
 from .reactor import Reactor
 from .run_artifacts import RunSession
@@ -840,7 +840,12 @@ def build_agent(
     ):
         bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
 
-    summarizer = Summarizer(llm=llm, store=store)
+    # Prompt-set del summarizer (ticket 05): set SEPARATO da quello original-chat
+    # (preoccupazione distinta, NON nel prefisso stabile in cache), caricato e
+    # validato all'avvio (fail-fast) con gli stessi override per-file da
+    # `config.prompts_dir`.
+    summarizer_prompt_set = load_summarizer_prompt_set(config.prompts_dir)
+    summarizer = Summarizer(llm=llm, store=store, prompt_set=summarizer_prompt_set)
     human = HumanLikeness()
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None

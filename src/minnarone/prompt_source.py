@@ -369,3 +369,52 @@ def load_prompt_set(prompts_dir: str | Path | None = None) -> PromptSet:
         default_pkg=DEFAULT_PROMPTS_PKG,
         override_dir=prompts_dir,
     )
+
+
+# --- contratto concreto del prompt-set "summarizer" (ticket 05) ---
+#
+# Testo tunabile della memoria a breve termine, esternalizzato dal `summarizer.py`
+# hard-coded. Set a-chiavi in UN solo file (`summarizer.md`): l'istruzione rolling,
+# il placeholder del primo giro, le tre etichette di gruppo per fonte
+# (STREAMER/SCHERMO/CHAT) e le intestazioni di scaffolding del prompt. NON ha
+# placeholder `{{...}}` né token di controllo del parser (il summarizer non passa
+# per il contratto RE/MSG dell'output). La mappa fonte→etichetta resta in codice
+# (`summarizer._SOURCE_LABEL_KEYS`); qui si esternalizza solo il TESTO.
+#
+# Set SEPARATO da `ORIGINAL_CHAT_SET` di proposito: il prompt del summarizer è una
+# preoccupazione distinta (NON fa parte del prefisso stabile in cache) e mantiene
+# il `Summarizer` disaccoppiato dal contratto original-chat — gli serve solo
+# `summarizer.md`. Stessa meccanica del factory `load_prompt_set`: default
+# impacchettati + override per-file da `prompts_dir`.
+SUMMARIZER_SPEC = PromptSpec(
+    filename="summarizer.md",
+    keyed=True,
+    required_keys=frozenset(
+        {
+            "instruction",
+            "empty_placeholder",
+            "label_streamer",
+            "label_schermo",
+            "label_chat",
+            "current_summary_header",
+            "recent_events_header",
+            "update_instruction",
+        }
+    ),
+)
+
+SUMMARIZER_SET = PromptSetSpec(specs=(SUMMARIZER_SPEC,))
+
+
+def load_summarizer_prompt_set(prompts_dir: str | Path | None = None) -> PromptSet:
+    """Costruisce il prompt-set del summarizer: default impacchettati + override.
+
+    Gemello di `load_prompt_set`, ma per il set `SUMMARIZER_SET`. `prompts_dir`
+    è la directory di override (da `Config.prompts_dir`): un `summarizer.md` lì
+    vince sull'impacchettato. Assente → SOLO il default nel wheel.
+    """
+    return PromptSet(
+        SUMMARIZER_SET,
+        default_pkg=DEFAULT_PROMPTS_PKG,
+        override_dir=prompts_dir,
+    )
