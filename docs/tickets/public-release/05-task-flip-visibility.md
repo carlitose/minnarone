@@ -30,6 +30,7 @@ GitHub, nessun contenuto inatteso in issue/PR pubbliche.
 - [02-grilling-screenshots-review.md](02-grilling-screenshots-review.md)
 - [03-grilling-readme-language.md](03-grilling-readme-language.md)
 - [04-task-security-preflight.md](04-task-security-preflight.md)
+- [06-task-fix-failing-tests-on-main.md](06-task-fix-failing-tests-on-main.md)
 
 ## Frontier
 

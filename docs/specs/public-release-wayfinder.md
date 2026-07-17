@@ -68,8 +68,12 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   pubblico (prima impressione). → ticket 03 (grilling).
 - **Pre-flight finale**: scan history con tool dedicato (es. gitleaks) e check
   file tracciati residui, come rete di sicurezza prima del flip. → ticket 04.
+- **4 test rossi su main** (scoperti 2026-07-17, pre-esistenti al lavoro di
+  release): chi clona il repo pubblico e lancia `pytest` vede subito 4 failure.
+  Uno è un test docs stantio dal refresh README (PR #24), gli altri 3 sono da
+  diagnosticare. → ticket 06.
 - **Flip a pubblico**: azione GitHub irreversibile di fatto (issue/PR diventano
-  pubblici). Va fatta per ultima, dopo che 01–04 sono chiusi. → ticket 05.
+  pubblici). Va fatta per ultima, dopo che 01–04 e 06 sono chiusi. → ticket 05.
 
 ## Ticket Plan
 
@@ -85,6 +89,8 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   allegato/riassunto nella mappa.
 - 05 — task — Flip visibilità GitHub a public + verifica post-flip (clone
   anonimo, link README funzionanti, pagina repo) → repo pubblico verificato.
+- 06 — task — Sistemare i 4 test falliti su main (1 test docs stantio da
+  PR #24 + 3 da diagnosticare) → `pytest` verde su main.
 
 ## Next Review
 
