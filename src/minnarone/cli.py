@@ -279,6 +279,17 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
     print(f"ok: {len(checked)} file di prompt validati ({where})")
     for set_name, filename, origin in checked:
         print(f"  [{set_name}] {filename}: {origin}")
+    # Decisione FU-02 (niente strict-set bloccante): il fallback per-file resta,
+    # ma un override PARZIALE va reso visibile — un set inglese a metà (corpi
+    # override + resto default italiano) è legittimo solo se intenzionale.
+    n_override = sum(1 for _, _, origin in checked if origin == "override")
+    n_default = len(checked) - n_override
+    if override_dir is not None and 0 < n_override < len(checked):
+        print(
+            f"nota: override parziale — {n_override} file da override, "
+            f"{n_default} dal default impacchettato (possibile mix di lingue: "
+            "verifica che sia voluto)"
+        )
     return 0
 
 

@@ -28,6 +28,7 @@ Contratto (locked dal ticket 02):
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -56,6 +57,29 @@ _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
+class KeySpec:
+    """Vincoli di validazione di UNA sezione `## <chiave>` di un file a-chiavi.
+
+    Rispecchia i vincoli file-wide di `PromptSpec` ma applicati al solo corpo
+    della sezione: così un override che rompe una singola sezione (token di
+    controllo rimosso, placeholder che il percorso di render di QUELLA sezione
+    non fornisce) fallisce all'avvio nominando file e sezione, non a runtime al
+    primo trigger sfortunato.
+
+    - `allowed_placeholders`: i `{{nome}}` ammessi NEL corpo della sezione. Un
+      `KeySpec()` vuoto significa "nessun placeholder ammesso qui" — il vincolo
+      giusto per le sezioni il cui render non fornisce valori.
+    - `required_placeholders`: devono comparire nel corpo (implicitamente
+      ammessi, come nel file-wide).
+    - `required_tokens`: stringhe letterali che il corpo DEVE contenere.
+    """
+
+    allowed_placeholders: frozenset[str] = frozenset()
+    required_placeholders: frozenset[str] = frozenset()
+    required_tokens: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PromptSpec:
     """Descrive un file del prompt-set e i suoi vincoli di validazione.
 
@@ -68,6 +92,10 @@ class PromptSpec:
       controllo su cui dipende il parser: `#end_conv`, `#nothing`, `RE:`, `MSG:`).
     - `keyed`: se True il file è parsato in sezioni `## <chiave>`.
     - `required_keys`: chiavi che il file a-chiavi DEVE contenere.
+    - `key_specs`: vincoli PER-SEZIONE (`chiave → KeySpec`) dei file a-chiavi.
+      Una chiave con `KeySpec` è implicitamente obbligatoria. I vincoli
+      file-wide restano validi in aggiunta (utili per le sezioni extra non
+      censite e per i file di prosa, che non hanno sezioni).
     """
 
     filename: str
@@ -76,6 +104,7 @@ class PromptSpec:
     required_tokens: tuple[str, ...] = ()
     keyed: bool = False
     required_keys: frozenset[str] = frozenset()
+    key_specs: Mapping[str, KeySpec] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -216,18 +245,48 @@ class PromptSet:
             text, _origin = self._read_source(spec.filename)
             self._loaded[spec.filename] = self._validate(spec, text)
 
-    @staticmethod
-    def _validate(spec: PromptSpec, text: str) -> LoadedPrompt:
+    @classmethod
+    def _validate(cls, spec: PromptSpec, text: str) -> LoadedPrompt:
         if not text.strip():
             raise PromptError(
                 f"contenuto obbligatorio vuoto: '{spec.filename}' "
                 "(mai vuoto silenzioso per un prompt richiesto)"
             )
 
+        # I file a-chiavi si validano PRIMA per-sezione: gli errori dentro una
+        # sezione censita nominano file E sezione (azionabile per un operatore
+        # o un agente); i vincoli file-wide dopo coprono il resto (preambolo,
+        # sezioni extra non censite) e i file di prosa.
+        sections: dict[str, str] = {}
+        if spec.keyed:
+            sections = _split_sections(text)
+            # Una chiave con KeySpec è implicitamente obbligatoria: un vincolo
+            # per-sezione su una sezione assente sarebbe un contratto morto.
+            required_keys = spec.required_keys | frozenset(spec.key_specs)
+            missing_keys = required_keys - sections.keys()
+            if missing_keys:
+                raise PromptError(
+                    f"sezioni chiave mancanti in '{spec.filename}': "
+                    f"{sorted(missing_keys)}"
+                )
+            for key, body in sections.items():
+                if not body.strip():
+                    raise PromptError(
+                        f"sezione '## {key}' vuota in '{spec.filename}'"
+                    )
+            cls._validate_key_specs(spec, sections)
+
         found = find_placeholders(text)
         # I placeholder obbligatori sono implicitamente ammessi: evita di doverli
-        # dichiarare due volte (footgun per chi aggiunge prompt in 04-06).
+        # dichiarare due volte (footgun per chi aggiunge prompt in 04-06). Lo
+        # stesso vale per i placeholder ammessi dai `key_specs`: la whitelist
+        # per-sezione è l'unica fonte di verità, il check file-wide ammette
+        # l'unione (il posizionamento fine lo fa già `_validate_key_specs`).
         allowed = spec.allowed_placeholders | spec.required_placeholders
+        for key_spec in spec.key_specs.values():
+            allowed |= (
+                key_spec.allowed_placeholders | key_spec.required_placeholders
+            )
         unknown = found - allowed
         if unknown:
             raise PromptError(
@@ -248,22 +307,44 @@ class PromptSet:
                     f"{token!r} (il parser dell'output ne dipende)"
                 )
 
-        sections: dict[str, str] = {}
-        if spec.keyed:
-            sections = _split_sections(text)
-            missing_keys = spec.required_keys - sections.keys()
-            if missing_keys:
-                raise PromptError(
-                    f"sezioni chiave mancanti in '{spec.filename}': "
-                    f"{sorted(missing_keys)}"
-                )
-            for key, body in sections.items():
-                if not body.strip():
-                    raise PromptError(
-                        f"sezione '## {key}' vuota in '{spec.filename}'"
-                    )
-
         return LoadedPrompt(spec.filename, text, sections)
+
+    @staticmethod
+    def _validate_key_specs(spec: PromptSpec, sections: dict[str, str]) -> None:
+        """Applica i vincoli per-sezione (`PromptSpec.key_specs`) ai corpi.
+
+        Fail-fast al primo problema, con messaggio che nomina FILE e SEZIONE:
+        un `#end_conv` rimosso da una sola variante o un `{{user}}` in una
+        sezione il cui render non fornisce valori deve fallire all'avvio, non
+        esplodere a runtime quando quel trigger scatta. Iterazione ordinata per
+        errori deterministici.
+        """
+        for key in sorted(spec.key_specs):
+            key_spec = spec.key_specs[key]
+            body = sections[key]  # presenza garantita dal check delle chiavi
+            found = find_placeholders(body)
+            allowed = (
+                key_spec.allowed_placeholders | key_spec.required_placeholders
+            )
+            unknown = found - allowed
+            if unknown:
+                raise PromptError(
+                    f"placeholder ignoti in '{spec.filename}' sezione '{key}': "
+                    f"{sorted(unknown)} (ammessi: {sorted(allowed)})"
+                )
+            missing_ph = key_spec.required_placeholders - found
+            if missing_ph:
+                raise PromptError(
+                    f"placeholder obbligatori mancanti in '{spec.filename}' "
+                    f"sezione '{key}': {sorted(missing_ph)}"
+                )
+            for token in key_spec.required_tokens:
+                if token not in body:
+                    raise PromptError(
+                        f"token di controllo mancante in '{spec.filename}' "
+                        f"sezione '{key}': {token!r} "
+                        "(il parser dell'output ne dipende)"
+                    )
 
     # --- accesso (a runtime: rendering) ---
 
@@ -331,15 +412,28 @@ INTRO_SPEC = PromptSpec(
     required_placeholders=frozenset({"channel"}),
 )
 
-# Le 6 varianti di SITUAZIONE, a chiavi. `#end_conv` è un token di controllo del
-# parser dell'output: deve sopravvivere in almeno una variante (fail-fast se un
-# override lo elimina). `{{user}}`/`{{mention}}` (chat) e `{{reason}}` (fallback)
-# sono i soli punti di sostituzione; i valori vengono neutralizzati a monte
-# (`_sanitize_display_token`) prima di essere iniettati.
+# Le 6 varianti di SITUAZIONE, a chiavi, con vincoli PER-SEZIONE (FU-02) che
+# rispecchiano i percorsi di render di `prompt._original_chat_situation`:
+#
+# - `#end_conv` è un token di controllo del parser dell'output: è richiesto in
+#   OGNI variante che nel default lo usa (idle, chat-*, streamer-continuation).
+#   `streamer-mention` e `generic` NON lo hanno nel default (lì la risposta è
+#   sempre attesa) → non lo si richiede, i default passano invariati.
+# - `{{user}}`/`{{mention}}` sono forniti SOLO dal render delle sezioni chat;
+#   `{{reason}}` SOLO da `generic`. Un placeholder in una sezione il cui render
+#   non fornisce valori esploderebbe a runtime → fail-fast al load, per sezione.
+#   I valori vengono neutralizzati a monte (`_sanitize_display_token`) prima di
+#   essere iniettati.
+# - Niente whitelist file-wide esplicita: i `key_specs` sono l'unica fonte di
+#   verità (il check file-wide ammette la loro unione per il testo fuori
+#   sezione e per eventuali sezioni extra non censite).
+_CHAT_SITUATION_KEY_SPEC = KeySpec(
+    allowed_placeholders=frozenset({"user", "mention"}),
+    required_tokens=("#end_conv",),
+)
+
 SITUATIONS_SPEC = PromptSpec(
     filename="situations.md",
-    allowed_placeholders=frozenset({"user", "mention", "reason"}),
-    required_tokens=("#end_conv",),
     keyed=True,
     required_keys=frozenset(
         {
@@ -351,6 +445,14 @@ SITUATIONS_SPEC = PromptSpec(
             "generic",
         }
     ),
+    key_specs={
+        "idle": KeySpec(required_tokens=("#end_conv",)),
+        "chat-mention": _CHAT_SITUATION_KEY_SPEC,
+        "chat-continuation": _CHAT_SITUATION_KEY_SPEC,
+        "streamer-mention": KeySpec(),
+        "streamer-continuation": KeySpec(required_tokens=("#end_conv",)),
+        "generic": KeySpec(allowed_placeholders=frozenset({"reason"})),
+    },
 )
 
 # Regole per-stile delle modalità non-original-chat (ticket 06). Prosa servita
@@ -424,21 +526,27 @@ def load_prompt_set(prompts_dir: str | Path | None = None) -> PromptSet:
 # il `Summarizer` disaccoppiato dal contratto original-chat — gli serve solo
 # `summarizer.md`. Stessa meccanica del factory `load_prompt_set`: default
 # impacchettati + override per-file da `prompts_dir`.
+# Vincoli per-sezione (FU-02): il summarizer non fornisce MAI valori di render
+# (`.section()` senza kwargs) e il suo output non passa per il contratto RE/MSG
+# → nessun placeholder ammesso e nessun token di controllo in NESSUNA sezione.
+# `KeySpec()` vuoto per ogni chiave: un `{{x}}` in un override fallisce al load
+# nominando la sezione, invece di esplodere al primo giro di riassunto.
+_SUMMARIZER_KEYS = (
+    "instruction",
+    "empty_placeholder",
+    "label_streamer",
+    "label_schermo",
+    "label_chat",
+    "current_summary_header",
+    "recent_events_header",
+    "update_instruction",
+)
+
 SUMMARIZER_SPEC = PromptSpec(
     filename="summarizer.md",
     keyed=True,
-    required_keys=frozenset(
-        {
-            "instruction",
-            "empty_placeholder",
-            "label_streamer",
-            "label_schermo",
-            "label_chat",
-            "current_summary_header",
-            "recent_events_header",
-            "update_instruction",
-        }
-    ),
+    required_keys=frozenset(_SUMMARIZER_KEYS),
+    key_specs={key: KeySpec() for key in _SUMMARIZER_KEYS},
 )
 
 SUMMARIZER_SET = PromptSetSpec(specs=(SUMMARIZER_SPEC,))

@@ -12,6 +12,7 @@ import pytest
 from minnarone.prompt_source import (
     DEFAULT_PROMPTS_PKG,
     ORIGINAL_CHAT_SET,
+    KeySpec,
     PromptError,
     PromptSet,
     PromptSetSpec,
@@ -19,6 +20,7 @@ from minnarone.prompt_source import (
     find_placeholders,
     language_name,
     load_prompt_set,
+    load_summarizer_prompt_set,
     render,
 )
 
@@ -179,6 +181,91 @@ def test_keyed_sections_parsed_and_rendered(tmp_path: Path) -> None:
     assert ps.section("keyed.md", "a", nome="mondo") == "ciao mondo"
 
 
+# --- validazione per-sezione (ticket FU-02): meccanismo `key_specs` ---
+
+
+def _keyed_spec(**key_specs: KeySpec) -> PromptSetSpec:
+    """Spec sintetica di un file a-chiavi con vincoli per-sezione."""
+    return PromptSetSpec(
+        specs=(
+            PromptSpec(
+                filename="keyed.md",
+                keyed=True,
+                required_keys=frozenset(key_specs),
+                key_specs=key_specs,
+            ),
+        )
+    )
+
+
+def test_key_spec_missing_token_names_file_and_section(tmp_path: Path) -> None:
+    # Il token manca SOLO nella sezione 'b': l'errore nomina file E sezione.
+    (tmp_path / "keyed.md").write_text(
+        "## a\ncorpo con #tok\n\n## b\ncorpo senza token\n", encoding="utf-8"
+    )
+    spec = _keyed_spec(
+        a=KeySpec(required_tokens=("#tok",)),
+        b=KeySpec(required_tokens=("#tok",)),
+    )
+    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'b'.*#tok"):
+        PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
+
+
+def test_key_spec_foreign_placeholder_names_file_and_section(tmp_path: Path) -> None:
+    # `{{user}}` in una sezione che non lo ammette: errore con file e sezione
+    # (a livello di file intero sarebbe passato, perché ammesso in 'a').
+    (tmp_path / "keyed.md").write_text(
+        "## a\nciao {{user}}\n\n## b\nanche qui {{user}}\n", encoding="utf-8"
+    )
+    spec = _keyed_spec(
+        a=KeySpec(allowed_placeholders=frozenset({"user"})),
+        b=KeySpec(),
+    )
+    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'b'.*user"):
+        PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
+
+
+def test_key_spec_missing_required_placeholder_names_section(tmp_path: Path) -> None:
+    (tmp_path / "keyed.md").write_text(
+        "## a\nsenza placeholder\n", encoding="utf-8"
+    )
+    spec = _keyed_spec(a=KeySpec(required_placeholders=frozenset({"user"})))
+    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'a'.*user"):
+        PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
+
+
+def test_key_spec_key_is_implicitly_required(tmp_path: Path) -> None:
+    # Una chiave con KeySpec ma assente dal file è un errore anche se non è
+    # elencata in `required_keys` (il vincolo per-sezione la rende obbligatoria).
+    (tmp_path / "keyed.md").write_text("## a\ncorpo\n", encoding="utf-8")
+    spec = PromptSetSpec(
+        specs=(
+            PromptSpec(
+                filename="keyed.md",
+                keyed=True,
+                key_specs={"b": KeySpec(required_tokens=("#tok",))},
+            ),
+        )
+    )
+    with pytest.raises(PromptError, match="chiave"):
+        PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
+
+
+def test_key_spec_valid_file_passes(tmp_path: Path) -> None:
+    (tmp_path / "keyed.md").write_text(
+        "## a\nciao {{user}} #tok\n\n## b\nsolo testo\n", encoding="utf-8"
+    )
+    spec = _keyed_spec(
+        a=KeySpec(
+            allowed_placeholders=frozenset({"user"}),
+            required_tokens=("#tok",),
+        ),
+        b=KeySpec(),
+    )
+    ps = PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
+    assert ps.section("keyed.md", "a", user="mondo") == "ciao mondo #tok"
+
+
 # --- set original-chat completo (ticket 04): rules/intro/situations ---
 
 
@@ -229,3 +316,91 @@ def test_original_chat_situations_missing_end_conv_fails_fast(
     )
     with pytest.raises(PromptError, match="#end_conv"):
         load_prompt_set(tmp_path)
+
+
+# --- vincoli per-sezione dei set reali (situations.md / summarizer.md) ---
+
+# Override di `situations.md` conforme ai percorsi di render reali: `#end_conv`
+# dove il default lo ha (idle, chat-*, streamer-continuation), placeholder solo
+# dove il render li fornisce. Base dei test che rompono UNA sezione alla volta.
+_VALID_SITUATIONS = {
+    "idle": "idle, se nulla MSG: #end_conv",
+    "chat-mention": "{{user}} scrive ({{mention}}); se nulla MSG: #end_conv",
+    "chat-continuation": "{{user}} continua ({{mention}}); se no MSG: #end_conv",
+    "streamer-mention": "lo streamer ti parla, rispondi",
+    "streamer-continuation": "forse continua; se no MSG: #end_conv",
+    "generic": "reagisci a {{reason}}:",
+}
+
+
+def _write_situations(tmp_path: Path, overrides: dict[str, str]) -> None:
+    sections = {**_VALID_SITUATIONS, **overrides}
+    text = "\n\n".join(f"## {key}\n{body}" for key, body in sections.items())
+    (tmp_path / "situations.md").write_text(text + "\n", encoding="utf-8")
+
+
+def test_situations_valid_per_key_override_passes(tmp_path: Path) -> None:
+    # Il layout conforme (senza #end_conv in streamer-mention/generic, come il
+    # default impacchettato) DEVE passare: quelle sezioni non lo richiedono.
+    _write_situations(tmp_path, {})
+    ps = load_prompt_set(tmp_path)
+    assert "rispondi" in ps.section("situations.md", "streamer-mention")
+
+
+def test_situations_end_conv_missing_in_one_section_names_it(
+    tmp_path: Path,
+) -> None:
+    # `#end_conv` sparisce SOLO da chat-mention: a livello di file intero
+    # passerebbe (c'è altrove); il vincolo per-sezione nomina file e sezione.
+    _write_situations(tmp_path, {"chat-mention": "{{user}} scrive, rispondi"})
+    with pytest.raises(
+        PromptError,
+        match=r"'situations\.md' sezione 'chat-mention'.*#end_conv",
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_situations_placeholder_in_wrong_section_names_it(tmp_path: Path) -> None:
+    # `{{user}}` in streamer-mention: il render di quella sezione non fornisce
+    # valori → oggi esploderebbe a runtime. Deve fallire al load, con sezione.
+    _write_situations(
+        tmp_path, {"streamer-mention": "lo streamer parla a {{user}}"}
+    )
+    with pytest.raises(
+        PromptError,
+        match=r"'situations\.md' sezione 'streamer-mention'.*user",
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_situations_reason_only_allowed_in_generic(tmp_path: Path) -> None:
+    # `{{reason}}` è fornito solo dal render di `generic`: altrove è un errore.
+    _write_situations(tmp_path, {"idle": "idle {{reason}} MSG: #end_conv"})
+    with pytest.raises(
+        PromptError, match=r"'situations\.md' sezione 'idle'.*reason"
+    ):
+        load_prompt_set(tmp_path)
+
+
+def test_summarizer_placeholder_in_section_names_it(tmp_path: Path) -> None:
+    # Il summarizer non fornisce MAI valori: un `{{user}}` in una sezione deve
+    # fallire al load nominando file e sezione (non a runtime al primo giro).
+    (tmp_path / "summarizer.md").write_text(
+        "## instruction\nsintetizza\n\n## empty_placeholder\n(niente)\n\n"
+        "## label_streamer\nSTREAMER:\n\n## label_schermo\nSCHERMO:\n\n"
+        "## label_chat\nCHAT di {{user}}:\n\n"
+        "## current_summary_header\nRiassunto:\n\n"
+        "## recent_events_header\nEventi:\n\n"
+        "## update_instruction\nAggiorna.\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        PromptError, match=r"'summarizer\.md' sezione 'label_chat'.*user"
+    ):
+        load_summarizer_prompt_set(tmp_path)
+
+
+def test_default_sets_pass_per_key_validation() -> None:
+    # I default impacchettati passano invariati con i vincoli per-sezione.
+    load_prompt_set()
+    load_summarizer_prompt_set()

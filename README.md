@@ -446,7 +446,7 @@ files, not in Python. They ship packaged with the wheel under
 |------|-----------|
 | `rules.md` | Original-chat persona/style rules. Uses `{{channel}}`. |
 | `intro.md` | "Current situation" banner + channel line. Uses `{{channel}}`. |
-| `situations.md` | The 6 situation variants (keyed by `## <key>`). Uses `{{user}}`, `{{mention}}`, `{{reason}}`; must keep the `#end_conv` control token. |
+| `situations.md` | The 6 situation variants (keyed by `## <key>`). Validated **per section**: `{{user}}`/`{{mention}}` only in `chat-mention`/`chat-continuation`, `{{reason}}` only in `generic`; `#end_conv` required in `idle`, `chat-mention`, `chat-continuation` and `streamer-continuation`. |
 | `format.md` | The `RE:`/`MSG:` response contract. Must keep `RE:`, `MSG:`, `#end_conv`. |
 | `operator.md` | Local-commentator rules. Uses `{{language}}`. |
 | `meeting_synthesizer.md` | Meeting-notes rules. Uses `{{language}}`. |
@@ -469,12 +469,18 @@ packaged defaults are used, so a fresh install works with no configuration.
 
 The loader is **fail-fast**: a missing file, a missing/unknown placeholder, a
 missing control token or an empty required section aborts startup — a tunable
-prompt is never allowed to degrade to empty text.
+prompt is never allowed to degrade to empty text. For keyed files
+(`situations.md`, `summarizer.md`) the constraints are enforced **per section**:
+removing `#end_conv` from a single situation, or using a placeholder in a
+section whose render path never supplies it, fails at startup with an error
+naming the file and the section (not at runtime on the first unlucky trigger).
 
 To validate an override without starting the app, run
 `minnarone validate-prompts --prompts-dir my-prompts` (or `--config config.yaml`
 to read `prompts_dir` from the config): exit 0 on success, one line per broken
-file otherwise.
+file otherwise. The summary lists each file's origin (override vs default) and
+prints an explicit notice when the override is partial — per-file fallback is a
+feature, but a half-translated set should be intentional, not silent.
 
 ### Placeholders
 

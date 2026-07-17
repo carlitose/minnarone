@@ -481,6 +481,86 @@ def test_cli_validate_prompts_reports_override_origin(tmp_path, capsys):
     assert "override" in out
 
 
+def test_cli_validate_prompts_partial_override_notice(tmp_path, capsys):
+    """Un override PARZIALE è segnalato esplicitamente (decisione FU-02).
+
+    Niente strict-set bloccante: il fallback per-file resta, ma il riepilogo
+    rende visibile il mix override/default (es. set inglese a metà).
+    """
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    intro = (files("minnarone.prompts") / "intro.md").read_text(encoding="utf-8")
+    (override / "intro.md").write_text(intro, encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "override parziale" in out
+    assert "1 file da override, 7 dal default" in out
+
+
+def test_cli_validate_prompts_full_override_has_no_partial_notice(
+    tmp_path, capsys
+):
+    """Se TUTTI i file vengono dall'override la nota di parzialità non appare."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    pkg = files("minnarone.prompts")
+    for name in (
+        "format.md",
+        "rules.md",
+        "intro.md",
+        "situations.md",
+        "operator.md",
+        "meeting_synthesizer.md",
+        "suggester.md",
+        "summarizer.md",
+    ):
+        (override / name).write_text(
+            (pkg / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "override parziale" not in out
+
+
+def test_cli_validate_prompts_broken_section_names_file_and_section(
+    tmp_path, capsys
+):
+    """`#end_conv` mancante in UNA sezione: l'errore nomina file E sezione."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    default = (files("minnarone.prompts") / "situations.md").read_text(
+        encoding="utf-8"
+    )
+    (override / "situations.md").write_text(
+        default.replace(
+            "## idle",
+            "## idle\nSe non hai nulla da dire taci.\n\n## _idle_originale",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+    assert "sezione 'idle'" in err
+    assert "#end_conv" in err
+
+
 def test_cli_validate_prompts_broken_override_returns_nonzero(tmp_path, capsys):
     """Un override rotto (senza #end_conv né chiavi) fallisce nominando il file."""
     override = tmp_path / "prompts"
