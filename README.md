@@ -1,226 +1,257 @@
+> 🇮🇹 [Versione italiana](README.it.md)
+
 # Minnarone Framework
 
-Framework riusabile per costruire agenti AI che **percepiscono un contesto live multimodale** (audio, video/schermo, chat, eventi di piattaforma) e **reagiscono proattivamente** — sia come partecipante pubblico (co-host streamer, commentatore di gruppo) sia come assistente privato (suggerimenti per venditori, presentatori, partecipanti a riunioni).
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=EkunaRO0uKg">
+    <img src="docs/source/minnarone-cover.jpg" alt="Minnarone — I see and hear everything" width="640">
+  </a>
+</p>
+<p align="center"><em>Cover of <a href="https://www.youtube.com/watch?v=EkunaRO0uKg">enkk's origin video</a>.</em></p>
 
-Nasce dalla generalizzazione di **Minnarone**, un bot che osservava live stream Twitch e interagiva in chat in modo indistinguibile da un umano.
+A reusable framework for building AI agents that **perceive a live multimodal context** (audio, video/screen, chat, platform events) and **react proactively** — both as a public participant (streamer co-host, group commentator) and as a private assistant (suggestions for sellers, presenters, meeting participants).
 
-## Origine e crediti
+It grew out of the generalization of **Minnarone**, a bot that watched Twitch live streams and interacted in chat in a way indistinguishable from a human.
 
-Minnarone è stato ideato e costruito da **enkk**, che ne è l'autore e designer originale: un bot capace di ascoltare e vedere una live stream Twitch e di interagire in chat con gli altri utenti e con lo streamer senza che nessuno si accorgesse di parlare con un'intelligenza artificiale (una specie di test di Turing applicato alla chat).
+## Origin and credits
 
-- **Video di origine**: <https://www.youtube.com/watch?v=EkunaRO0uKg>
-- **Transcript**: [`docs/source/transcript.md`](docs/source/transcript.md) — la trascrizione del video di enkk da cui è stata derivata la specifica di questo framework.
+Minnarone was conceived and built by **enkk**, its original author and designer: a bot able to listen to and watch a Twitch live stream and to interact in chat with other users and with the streamer without anyone realizing they were talking to an artificial intelligence (a kind of Turing test applied to chat).
 
-Questo repository generalizza quell'idea in un framework riusabile: lo stesso motore di percezione + reazione serve casi d'uso diversi (Twitch, riunioni Teams) cambiando solo la configurazione.
+- **Origin video**: <https://www.youtube.com/watch?v=EkunaRO0uKg>
+- **Transcript**: [`docs/source/transcript.md`](docs/source/transcript.md) — the transcript of enkk's video from which the specification of this framework was derived.
 
-## Documentazione
+This repository generalizes that idea into a reusable framework: the same perception + reaction engine serves different use cases (Twitch, Teams meetings) by changing only the configuration.
 
-- **[Specifica di progetto](docs/SPECIFICATION.md)** — requisiti, user stories, use case, edge case, system design e roadmap.
-- **[Guida operatore Twitch](docs/twitch-operator.md)** — smoke di cattura, diagnostica VAD, runtime `adapter: twitch` e abilitazione dell'invio pubblico (shadow/live).
-- **[Guida assistente meeting](docs/meeting-assistant-operator.md)** — profili sintetizzatore e suggeritore su Teams via `adapter: os_capture`.
-- **[Materiale sorgente](docs/source/)** — transcript e screenshot da cui è stata derivata la specifica.
+## Documentation
 
-## Avvio dell'app di riferimento
+- **[Project specification](docs/SPECIFICATION.md)** — requirements, user stories, use cases, edge cases, system design and roadmap.
+- **[Twitch operator guide](docs/twitch-operator.md)** — capture smoke, VAD diagnostics, `adapter: twitch` runtime and enabling public send (shadow/live).
+- **[Meeting assistant guide](docs/meeting-assistant-operator.md)** — synthesizer and suggester profiles on Teams via `adapter: os_capture`.
+- **[Source material](docs/source/)** — transcript and screenshots from which the specification was derived.
 
-L'app "Minnarone" si avvia da un **file di configurazione** YAML (soul, facts,
-adapter, provider, cadenze, modalità) — senza scrivere codice.
+## Running the reference app
+
+The "Minnarone" app starts from a YAML **configuration file** (soul, facts,
+adapter, provider, cadences, mode) — without writing code.
+
+**Prerequisites**: Python 3.11+ (3.12 recommended — see `.python-version`).
+
+First create and activate a virtual environment. With
+[uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
-pip install -e .                 # core
-pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
-pip install -e '.[audio]'        # + runtime audio: faster-whisper + sherpa-onnx (ASR + speaker)
-pip install -e '.[video]'        # + runtime video Twitch: Streamlink Python + PyAV
-pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
-pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: solo Pillow (via llama-server multimodale, niente torch)
-pip install -e '.[os-capture]'   # + cattura audio di sistema (soundcard) e schermo (mss)
+uv venv                             # create .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
 
-# Valida la config e costruisci l'agente (dry-run, niente loop né rete):
-python -m minnarone path/al/config.yaml --check
+uv pip install -e .                 # core
+uv pip install -e '.[tui]'          # + observability dashboard (textual)
+uv pip install -e '.[audio]'        # + Twitch audio runtime: faster-whisper + sherpa-onnx (ASR + speaker)
+uv pip install -e '.[video]'        # + Twitch video runtime: Streamlink Python + PyAV
+uv pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
+uv pip install -e '.[vlm-llamacpp]' # + captioning `vlm.backend: llamacpp`: Pillow only (via multimodal llama-server, no torch)
+uv pip install -e '.[os-capture]'   # + system audio capture (soundcard) and screen capture (mss)
 
-# Avvia il loop di reazione live:
-python -m minnarone path/al/config.yaml
+# Validate the config and build the agent (dry-run, no loop, no network):
+python -m minnarone path/to/config.yaml --check
 
-# Avvia con la dashboard TUI di osservabilità (richiede l'extra `tui`):
-python -m minnarone path/al/config.yaml --tui
+# Start the live reaction loop:
+python -m minnarone path/to/config.yaml
 
-# Rivedi offline una run passata o un perceptions.jsonl (dashboard replay):
-python -m minnarone --replay <run_dir_o_perceptions.jsonl>
+# Start with the observability TUI dashboard (requires the `tui` extra):
+python -m minnarone path/to/config.yaml --tui
+
+# Replay a past run or a perceptions.jsonl offline (replay dashboard):
+python -m minnarone --replay <run_dir_or_perceptions.jsonl>
 ```
 
-Gli extra si possono combinare (es. `pip install -e '.[os-capture,audio,vlm]'`)
-e sono installabili anche con `uv sync --extra <nome>`.
+Prefer plain `pip`? Create the venv with the stdlib
+(`python -m venv .venv`), activate it, then drop the `uv` prefix
+(`pip install -e '.[tui]'`). Note: a `uv venv` does **not** ship `pip`, so use
+`uv pip` with it. The run commands above assume the venv is activated (or
+prefix them with `uv run`).
 
-## Segreti via `.env`
+The extras can be combined (e.g. `uv pip install -e '.[os-capture,audio,vlm]'`)
+and can also be installed with `uv sync --extra <name>`.
 
-La CLI carica un file `.env` **all'avvio**, prima di leggere i segreti: prima
-accanto al file di config, poi nel `cwd`. Le variabili già esportate nel
-terminale hanno la precedenza sul file (semantica dotenv standard). Il loader è
-minimale e a zero dipendenze; `.env` è gitignored — non committare mai valori
-reali. Il template è [`.env.example`](.env.example) (`cp .env.example .env`).
+> **First `--check`**: the Twitch/Teams examples validate that setup exists, so
+> they error out of the box. Twitch adapters need `TWITCH_BOT_USERNAME` /
+> `TWITCH_OAUTH_TOKEN` in `.env` (`cp .env.example .env`); the OS-capture and
+> Teams examples need a local speaker-embedding ONNX model
+> (`speaker_embedding.model_path`) — see the sections below.
+> `examples/llamacpp-local.example.yaml` passes `--check` with no extra setup.
 
-| Variabile | Quando serve |
+## Secrets via `.env`
+
+The CLI loads a `.env` file **at startup**, before reading the secrets: first
+next to the config file, then in the `cwd`. Variables already exported in the
+terminal take precedence over the file (standard dotenv semantics). The loader is
+minimal and zero-dependency; `.env` is gitignored — never commit real
+values. The template is [`.env.example`](.env.example) (`cp .env.example .env`).
+
+| Variable | When it is needed |
 |-----------|--------------|
-| `OPENROUTER_API_KEY` | Con `llm_provider: grok`/`deepseek` (OpenRouter). NON serve con `llm_provider: llamacpp` (LLM locale). |
-| `TWITCH_BOT_USERNAME` | Con `adapter: twitch` + `twitch.chat: true` (ingestione IRC in lettura). |
-| `TWITCH_OAUTH_TOKEN` | Con `adapter: twitch` + `twitch.chat: true` — token di **lettura** (`chat:read chat:edit`). |
-| `TWITCH_SEND_OAUTH_TOKEN` | **Solo** per `twitch.send.mode: live` — token di **scrittura** di un account bot dedicato. |
+| `OPENROUTER_API_KEY` | With `llm_provider: grok`/`deepseek` (OpenRouter). NOT needed with `llm_provider: llamacpp` (local LLM). |
+| `TWITCH_BOT_USERNAME` | With `adapter: twitch` + `twitch.chat: true` (read-side IRC ingestion). |
+| `TWITCH_OAUTH_TOKEN` | With `adapter: twitch` + `twitch.chat: true` — **read** token (`chat:read chat:edit`). |
+| `TWITCH_SEND_OAUTH_TOKEN` | **Only** for `twitch.send.mode: live` — **write** token of a dedicated bot account. |
 
-Il token di lettura e quello di scrittura sono deliberatamente distinti: una
-config read-only non deve mai avere il potere di inviare messaggi. La presenza
-del token di scrittura è verificata al build dell'agente; il valore non entra
-mai in log, errori o artefatti.
+The read token and the write token are deliberately distinct: a read-only
+config must never have the power to send messages. The presence of the write
+token is verified when the agent is built; the value never enters logs, errors
+or artifacts.
 
-## Controllo qualità
+## Quality checks
 
 ```bash
 uv sync --extra dev
 make quality
 
-# abilita l'hook git pre-commit tracciato nel repo
+# enable the pre-commit git hook tracked in the repo
 git config core.hooksPath .githooks
 ```
 
-Il target esegue Ruff, Vulture, Deptry e Pylint limitato a `duplicate-code`
+The target runs Ruff, Vulture, Deptry and Pylint limited to `duplicate-code`
 (`R0801`).
 
-### Prerequisiti runtime
+### Runtime prerequisites
 
-- **`OPENROUTER_API_KEY`**: mettila in `.env` (o esportala nell'ambiente).
-  Non serve con `llm_provider: llamacpp` (vedi [LLM locale](#llm-locale-llamacpp)).
-- **Permessi macOS**: la cattura di percezione richiede di autorizzare il
-  processo (es. il terminale) in *Impostazioni di sistema → Privacy e sicurezza*
-  per **Microfono** (audio) e **Registrazione schermo** (video/schermo). L'audio
-  di sistema può richiedere tooling aggiuntivo (loopback). Senza i permessi il
-  loop di reazione gira ma non riceve percezioni.
+- **`OPENROUTER_API_KEY`**: put it in `.env` (or export it into the environment).
+  Not needed with `llm_provider: llamacpp` (see [local LLM](#local-llm-llamacpp)).
+- **macOS permissions**: perception capture requires authorizing the
+  process (e.g. the terminal) in *System Settings → Privacy & Security*
+  for **Microphone** (audio) and **Screen Recording** (video/screen). System
+  audio may require additional tooling (loopback). Without the permissions the
+  reaction loop runs but receives no perceptions.
 
-### Loop di percezione live (adapter)
+### Live perception loop (adapter)
 
-`Agent.run()` fa girare CONCORRENTEMENTE tre cose: il loop di reazione, il loop
-del Summarizer (memoria a breve termine, cadenza `summarizer_interval`) e la
-*pompa di percezione*, che instrada ogni `RawEvent` dell'adapter al perceiver del
-suo canale (`chat`/`audio`/`video`) → store.
+`Agent.run()` runs three things CONCURRENTLY: the reaction loop, the Summarizer
+loop (short-term memory, `summarizer_interval` cadence) and the
+*perception pump*, which routes every adapter `RawEvent` to the perceiver of
+its channel (`chat`/`audio`/`video`) → store.
 
-- Il canale **chat** è cablato sempre (nessun modello): `adapter: twitch`
-  costruisce il runtime Twitch dalla config e dalle credenziali in ambiente.
-- Il canale **audio** usa VAD locale + faster-whisper + speaker embedding
-  `sherpa-onnx` quando `twitch.audio: true` (o `os_capture.audio: true`) e i
-  backend locali sono installati/configurati.
-- Il canale **video** usa Streamlink + PyAV + un backend di captioning locale
-  quando `twitch.video: true` e l'extra `video` è installato. Il backend è scelto
-  da `vlm.backend`: `qwen` (Qwen2-VL torch, richiede `vlm.model` + extra `vlm`) o
-  `llamacpp` (llama-server multimodale, extra leggero `vlm-llamacpp`).
-- L'adapter **`os_capture`** (mic + audio di sistema loopback + registrazione
-  schermo) osserva la macchina locale invece di uno stream remoto.
+- The **chat** channel is always wired (no model): `adapter: twitch`
+  builds the Twitch runtime from the config and the credentials in the
+  environment.
+- The **audio** channel uses local VAD + faster-whisper + `sherpa-onnx` speaker
+  embedding when `twitch.audio: true` (or `os_capture.audio: true`) and the
+  local backends are installed/configured.
+- The **video** channel uses Streamlink + PyAV + a local captioning backend
+  when `twitch.video: true` and the `video` extra is installed. The backend is chosen
+  by `vlm.backend`: `qwen` (Qwen2-VL torch, requires `vlm.model` + the `vlm` extra) or
+  `llamacpp` (multimodal llama-server, lightweight `vlm-llamacpp` extra).
+- The **`os_capture`** adapter (mic + system loopback audio + screen
+  recording) observes the local machine instead of a remote stream.
 
-## Modalità di output e commentatore
+## Output mode and commentator
 
-Lo **switch `mode`** è solo configurazione (stesso motore):
+The **`mode` switch** is only configuration (same engine):
 
-- `public` instrada l'output sul canale pubblico (console e, se abilitato,
-  `twitch.send`). Su Twitch in modalità public la persona è **sempre**
-  `original_chat` (vedi sotto).
-- `private` mantiene l'output sulla sola **console locale** (`[PRIVATE]`): nessun
-  messaggio pubblico viene mai inviato, indipendentemente da `twitch.send`.
+- `public` routes the output to the public channel (console and, if enabled,
+  `twitch.send`). On Twitch in public mode the persona is **always**
+  `original_chat` (see below).
+- `private` keeps the output on only the **local console** (`[PRIVATE]`):
+  no public message is ever sent, regardless of `twitch.send`.
 
-Il commentatore locale si configura con `commentator.profiles`: un dizionario di
-**profili** indicizzati per stile. Un profilo presente attiva il reattore
-corrispondente; un dizionario di profili vuoto = commentatore spento. Non esiste
-più il vecchio flag `commentator.enabled`.
+The local commentator is configured with `commentator.profiles`: a dictionary of
+**profiles** indexed by style. A present profile activates the corresponding
+reactor; an empty profiles dictionary = commentator off. The old
+`commentator.enabled` flag no longer exists.
 
-| Stile (`commentator.profiles.<stile>`) | Cosa fa | Modalità |
+| Style (`commentator.profiles.<style>`) | What it does | Mode |
 |----------------------------------------|---------|----------|
-| `operator` | Telecronaca/commento locale privato per l'operatore. | `private` |
-| `original_chat` | Persona pubblica per la chat Twitch (contratto `RE:`/`MSG:`). | `public` (Twitch) o `private` (dry-run locale) |
-| `meeting_synthesizer` | Riassunti strutturati periodici di una riunione. | `private` |
-| `suggester` | Suggerimenti contestuali su ogni percezione. | `private` |
+| `operator` | Private local play-by-play/commentary for the operator. | `private` |
+| `original_chat` | Public persona for Twitch chat (`RE:`/`MSG:` contract). | `public` (Twitch) or `private` (local dry-run) |
+| `meeting_synthesizer` | Periodic structured summaries of a meeting. | `private` |
+| `suggester` | Contextual suggestions on every perception. | `private` |
 
-`meeting_synthesizer` e `suggester` richiedono `mode: private` (validato al
-`--check`). Su `adapter: twitch` + `mode: public` è ammesso solo `original_chat`:
-un profilo diverso viene rifiutato con un errore chiaro.
+`meeting_synthesizer` and `suggester` require `mode: private` (validated at
+`--check`). On `adapter: twitch` + `mode: public` only `original_chat` is allowed:
+a different profile is rejected with a clear error.
 
-## Output pubblico in chat Twitch (`twitch.send`)
+## Public output in Twitch chat (`twitch.send`)
 
-L'invio pubblico in chat è **gated** e spento di default. Il blocco
-`twitch.send` (dentro `twitch:`) ha tre modalità:
+Public send in chat is **gated** and off by default. The
+`twitch.send` block (inside `twitch:`) has three modes:
 
-- `off` (default): nessun `PRIVMSG` inviato.
-- `shadow`: prova senza rete — l'agente decide cosa scriverebbe ma non invia
-  nulla. È il passo di rodaggio raccomandato (shadow-first).
-- `live`: invio reale in chat.
+- `off` (default): no `PRIVMSG` sent.
+- `shadow`: a dry run without network — the agent decides what it would write but
+  sends nothing. It is the recommended break-in step (shadow-first).
+- `live`: real send to chat.
 
-Guardrail (default conservativi): **allow-list** di canali (`allowed_channels`;
-`mode: live` richiede che il canale sia in lista), **budget** ben sotto i limiti
-IRC di Twitch (`max_per_minute: 1`, `max_per_hour: 20`), **kill-switch** con
-auto-degrado a shadow dopo `failure_threshold` invii falliti consecutivi (default
-3), e un **token di scrittura separato** (`TWITCH_SEND_OAUTH_TOKEN`) di un
-account bot dedicato. Nella TUI l'operatore ha i comandi `k` (kill-switch) e `p`
-(promote). Procedura completa nella [guida operatore Twitch](docs/twitch-operator.md).
+Guardrails (conservative defaults): channel **allow-list** (`allowed_channels`;
+`mode: live` requires the channel to be in the list), **budget** well below
+Twitch's IRC limits (`max_per_minute: 1`, `max_per_hour: 20`), **kill-switch** with
+auto-degrade to shadow after `failure_threshold` consecutive failed sends (default
+3), and a **separate write token** (`TWITCH_SEND_OAUTH_TOKEN`) of a
+dedicated bot account. In the TUI the operator has the commands `k` (kill-switch) and `p`
+(promote). Full procedure in the [Twitch operator guide](docs/twitch-operator.md).
 
-## Commentatore locale su Teams (cattura SO)
+## Local commentator on Teams (OS capture)
 
-Minnarone può fare da **commentatore locale** o **assistente meeting** su una
-call Teams a cui partecipi: osserva l'**audio di sistema** (le voci degli altri
-partecipanti, catturate dal loopback dell'uscita audio) e lo **schermo** (slide,
-volti, testo condivisi), e produce output solo sulla **console locale**
-(`[PRIVATE]`). Non invia nulla dentro la riunione: nessun messaggio, nessun
-audio, nessun output pubblico.
+Minnarone can act as a **local commentator** or **meeting assistant** on a
+Teams call you take part in: it observes the **system audio** (the voices of the other
+participants, captured from the audio-output loopback) and the **screen** (slides,
+faces, shared text), and produces output only on the **local console**
+(`[PRIVATE]`). It sends nothing into the meeting: no message, no
+audio, no public output.
 
-Preset pronti all'uso:
+Ready-to-use presets:
 
-- [examples/teams-commentator.yaml](examples/teams-commentator.yaml) — profilo `operator`.
-- [examples/teams-meeting-assistant.yaml](examples/teams-meeting-assistant.yaml) — profili `meeting_synthesizer` + `suggester`.
-- [examples/teams-meeting-full.yaml](examples/teams-meeting-full.yaml) — configurazione completa.
+- [examples/teams-commentator.yaml](examples/teams-commentator.yaml) — `operator` profile.
+- [examples/teams-meeting-assistant.yaml](examples/teams-meeting-assistant.yaml) — `meeting_synthesizer` + `suggester` profiles.
+- [examples/teams-meeting-full.yaml](examples/teams-meeting-full.yaml) — full configuration.
 
-Dettagli operativi (profili, TUI, troubleshooting) nella
-[guida assistente meeting](docs/meeting-assistant-operator.md).
+Operational details (profiles, TUI, troubleshooting) in the
+[meeting assistant guide](docs/meeting-assistant-operator.md).
 
-### Installazione
+### Installation
 
-La cattura del SO vive nell'extra `os-capture` (audio di sistema via `soundcard`,
-schermo via `mss`):
+OS capture lives in the `os-capture` extra (system audio via `soundcard`,
+screen via `mss`):
 
 ```bash
 pip install -e '.[os-capture]'   # oppure: uv sync --extra os-capture
 ```
 
-L'extra `os-capture` copre solo la **cattura raw**. Per far girare davvero i
-modelli servono anche:
+The `os-capture` extra covers only the **raw capture**. To actually run the
+models you also need:
 
-- l'extra `audio` (faster-whisper + sherpa-onnx) perché l'audio venga trascritto
-  e diarizzato (ASR/speaker);
-- l'extra `vlm` (transformers + torch) perché lo schermo venga descritto dal
-  captioner Qwen2-VL (import lazy: il modello si carica alla prima descrizione).
+- the `audio` extra (faster-whisper + sherpa-onnx) so that the audio is transcribed
+  and diarized (ASR/speaker);
+- the `vlm` extra (transformers + torch) so that the screen is described by the
+  Qwen2-VL captioner (lazy import: the model loads at the first description).
 
 ```bash
 pip install -e '.[os-capture,audio,vlm]'
 ```
 
-Con il solo `os-capture` puoi fare diagnostica di cattura (sotto) ma non ASR/VLM.
+With `os-capture` alone you can do capture diagnostics (below) but no ASR/VLM.
 
 ### Setup
 
-1. **Uscita audio di default**: il loopback cattura l'**uscita audio predefinita
-   del sistema**. Imposta come dispositivo di uscita di default quello su cui
-   Teams riproduce l'audio (Windows: *Impostazioni → Audio → Uscita*; Linux: il
-   sink PulseAudio corrispondente). Se Teams suona su un altro dispositivo, il
-   loopback catturerà il silenzio.
-2. **Permesso di cattura schermo**: autorizza il processo (es. il terminale) a
-   registrare lo schermo. Su macOS è *Impostazioni di sistema → Privacy e
-   sicurezza → Registrazione schermo*; senza il permesso i frame arrivano
-   vuoti/neri.
-3. **Selezione del monitor**: scegli quale schermo catturare con
-   `os_capture.monitor` (indice `>= 1`; 1 = monitor primario). Lo stesso indice è
-   esposto dallo smoke come `--monitor`.
+1. **Default audio output**: the loopback captures the **system default audio
+   output**. Set as the default output device the one on which
+   Teams plays audio (Windows: *Settings → Sound → Output*; Linux: the
+   corresponding PulseAudio sink). If Teams plays on another device, the
+   loopback will capture silence.
+2. **Screen capture permission**: authorize the process (e.g. the terminal) to
+   record the screen. On macOS it is *System Settings → Privacy &
+   Security → Screen Recording*; without the permission the frames come out
+   empty/black.
+3. **Monitor selection**: choose which screen to capture with
+   `os_capture.monitor` (index `>= 1`; 1 = primary monitor). The same index is
+   exposed by the smoke as `--monitor`.
 
-### Diagnostica (`minnarone-oscapture-smoke`)
+### Diagnostics (`minnarone-oscapture-smoke`)
 
-Prima di attivare ASR/VLM conviene verificare che audio e schermo vengano
-davvero catturati. Lo smoke della cattura SO è **capture-only** (nessun ASR/VLM,
-non richiede `OPENROUTER_API_KEY`) e scrive artifact bounded nella directory
-`--output`: `raw/audio/*.pcm` (PCM mono 16 kHz s16le), `raw/video/*.jpg`, e
-`stats.json` con conteggi ed eventuali failure.
+Before enabling ASR/VLM it is worth verifying that audio and screen are
+actually captured. The OS capture smoke is **capture-only** (no ASR/VLM,
+does not require `OPENROUTER_API_KEY`) and writes bounded artifacts to the
+`--output` directory: `raw/audio/*.pcm` (PCM mono 16 kHz s16le), `raw/video/*.jpg`, and
+`stats.json` with counts and any failures.
 
-Verifica la cattura audio dal loopback dell'uscita di default:
+Verify audio capture from the default output loopback:
 
 ```bash
 minnarone-oscapture-smoke \
@@ -230,7 +261,7 @@ minnarone-oscapture-smoke \
   --audio-chunk-seconds 1.0
 ```
 
-Verifica la cattura dello schermo dal monitor scelto:
+Verify screen capture from the chosen monitor:
 
 ```bash
 minnarone-oscapture-smoke \
@@ -241,9 +272,9 @@ minnarone-oscapture-smoke \
   --monitor 1
 ```
 
-Per controllare solo la segmentazione VAD sull'audio (conteggi/durate senza
-ASR), usa `--vad-diagnostic` (abilita anche l'audio): `stats.json` includerà
-`vad_utterances` e `vad_utterance_durations_ms`.
+To check only the VAD segmentation on the audio (counts/durations without
+ASR), use `--vad-diagnostic` (it also enables audio): `stats.json` will include
+`vad_utterances` and `vad_utterance_durations_ms`.
 
 ```bash
 minnarone-oscapture-smoke \
@@ -252,54 +283,54 @@ minnarone-oscapture-smoke \
   --vad-diagnostic
 ```
 
-### Avvio
+### Startup
 
-Valida prima a secco (nessun hardware aperto, nessuna rete), poi avvia il loop:
+Validate dry first (no hardware opened, no network), then start the loop:
 
 ```bash
 python -m minnarone examples/teams-commentator.yaml --check
 python -m minnarone examples/teams-commentator.yaml
 ```
 
-### Limiti multi-platform
+### Multi-platform limits
 
-- **Windows** (WASAPI) e **Linux** (monitor PulseAudio): loopback dell'uscita di
-  default **nativo**, nessun tooling aggiuntivo.
-- **macOS**: `soundcard` **non** supporta il loopback. Serve un device di
-  loopback esterno (es. BlackHole) impostato come uscita di default per far
-  arrivare l'audio di sistema alla cattura.
+- **Windows** (WASAPI) and **Linux** (PulseAudio monitor): **native** loopback of
+  the default output, no additional tooling.
+- **macOS**: `soundcard` does **not** support loopback. You need an external
+  loopback device (e.g. BlackHole) set as the default output to get the
+  system audio to the capture.
 
-## Diarizzazione degli speaker
+## Speaker diarization
 
-La pipeline audio (VAD → ASR → speaker tagging) etichetta ogni utterance con una
-di **tre etichette canoniche**:
+The audio pipeline (VAD → ASR → speaker tagging) labels every utterance with one
+of **three canonical labels**:
 
-- `streamer` — l'operatore locale / chi conduce la sessione;
-- `altro` — qualsiasi altra voce (ospiti, audio di un video riprodotto, ecc.); il
-  clustering interno resta per-cluster, ma l'etichetta esposta collassa in
-  un'unica identità "altro";
-- `?` — utterance troppo breve o non attribuibile.
+- `streamer` — the local operator / whoever runs the session;
+- `altro` — any other voice (guests, audio from a played video, etc.); the
+  internal clustering stays per-cluster, but the exposed label collapses into
+  a single "altro" identity;
+- `?` — utterance too short or not attributable.
 
-Le vecchie etichette `speaker_N` non esistono più. L'operatore può **marcare
-manualmente lo streamer** durante una run con la TUI premendo `s` ("Marca
-streamer"): fissa il cluster dell'ultima utterance assegnata come streamer e
-disabilita la scelta automatica per quel cluster (supporta anche più streamer).
+The old `speaker_N` labels no longer exist. The operator can **manually mark
+the streamer** during a run with the TUI by pressing `s` ("Mark
+streamer"): it pins the cluster of the last assigned utterance as streamer and
+disables the automatic choice for that cluster (it also supports multiple streamers).
 
-Il modello di speaker embedding va scelto **coerente con la lingua** dell'audio.
-`speaker_embedding.dimension` deve **corrispondere al modello scelto**:
+The speaker embedding model must be chosen **consistent with the language** of the
+audio. `speaker_embedding.dimension` must **match the chosen model**:
 
-- modello CAM++ inglese (VoxCeleb) → `dimension: 512`;
-- modello CAM++ zh-cn (common) → `dimension: 192`.
+- English CAM++ model (VoxCeleb) → `dimension: 512`;
+- zh-cn CAM++ model (common) → `dimension: 192`.
 
-Minnarone non scarica alcun modello: punta `speaker_embedding.model_path` a un
-file ONNX locale. `speaker_clustering.threshold` (default `0.45`) è il join floor
-di similarità coseno: più alto = più splitting; taralo per modello/lingua.
+Minnarone does not download any model: point `speaker_embedding.model_path` to a
+local ONNX file. `speaker_clustering.threshold` (default `0.45`) is the cosine
+similarity join floor: higher = more splitting; tune it per model/language.
 
-## Esempio di config (`config.yaml`)
+## Config example (`config.yaml`)
 
-Esempio Twitch chat-only (basato su
-[examples/twitch.example.yaml](examples/twitch.example.yaml)). Per altri scenari
-vedi gli esempi in [examples/](examples/): `twitch-commentator.example.yaml`,
+Twitch chat-only example (based on
+[examples/twitch.example.yaml](examples/twitch.example.yaml)). For other scenarios
+see the examples in [examples/](examples/): `twitch-commentator.example.yaml`,
 `twitch-original-chat.example.yaml`, `teams-commentator.yaml`,
 `teams-meeting-assistant.yaml`, `teams-meeting-full.yaml`.
 
@@ -391,22 +422,22 @@ retention:
 auto_memory: false      # inerte in MVP
 ```
 
-I punti `retention` e `auto_memory` sono presenti nello schema ma non alterano
-il comportamento (estensione v2).
+The `retention` and `auto_memory` items are present in the schema but do not alter
+the behavior (v2 extension).
 
-## LLM locale (llama.cpp)
+## Local LLM (llama.cpp)
 
-Con `llm_provider: llamacpp` il Reactor genera le reazioni contro un
-`llama-server` locale ([llama.cpp](https://github.com/ggml-org/llama.cpp)) con
-API OpenAI-compatibile: **niente `OPENROUTER_API_KEY`**, nessuna dipendenza
-runtime nuova. Il server va avviato **a mano** prima del loop live (minnarone
-non gestisce il processo, fa solo un health-check su `GET /health` all'avvio):
+With `llm_provider: llamacpp` the Reactor generates the reactions against a
+local `llama-server` ([llama.cpp](https://github.com/ggml-org/llama.cpp)) with
+an OpenAI-compatible API: **no `OPENROUTER_API_KEY`**, no new runtime
+dependency. The server must be started **by hand** before the live loop (minnarone
+does not manage the process, it only does a health-check on `GET /health` at startup):
 
 ```bash
 llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 8192 --reasoning off --parallel 1
 ```
 
-Config (esempio completo in
+Config (full example in
 [examples/llamacpp-local.example.yaml](examples/llamacpp-local.example.yaml)):
 
 ```yaml
@@ -415,46 +446,46 @@ llamacpp:
   base_url: http://127.0.0.1:8080   # default; porta esplicita richiesta
 ```
 
-Note:
+Notes:
 
-- Niente `model` in config né nel body: il server serve il solo modello
-  caricato (lo slug reale compare nei meta di osservabilità della risposta).
-- Gli `llm_params` (`temperature`, `max_tokens`, `timeout`, ...) passano come
-  per i provider cloud; `thinking` viene droppato (il reasoning si spegne
-  server-side con `--reasoning off`).
-- `--check` resta un dry-run senza rete: valida solo la forma di `base_url`.
-  Se all'avvio live il server è giù o sta ancora caricando il modello (503),
-  la CLI esce con un errore che include il comando qui sopra.
+- No `model` in config nor in the body: the server serves the single loaded
+  model (the real slug appears in the observability meta of the response).
+- The `llm_params` (`temperature`, `max_tokens`, `timeout`, ...) pass as
+  for the cloud providers; `thinking` is dropped (reasoning is turned off
+  server-side with `--reasoning off`).
+- `--check` stays a dry run without network: it validates only the shape of `base_url`.
+  If at live startup the server is down or is still loading the model (503),
+  the CLI exits with an error that includes the command above.
 
-### Captioning video locale via llama.cpp (`vlm.backend: llamacpp`)
+### Local video captioning via llama.cpp (`vlm.backend: llamacpp`)
 
-Il canale video può descrivere i frame usando un `llama-server` **multimodale**
-(modello + proiettore `--mmproj`, es. Gemma multimodale) invece del backend
-torch Qwen2-VL. Vantaggio decisivo su GPU piccole (~4 GB): **una sola istanza
-`llama-server` multimodale serve sia le reazioni testo (`llm_provider:
-llamacpp`) sia il captioning**, evitando la doppia residenza in VRAM di
-torch-VLM + LLM. Nessuna dipendenza runtime nuova (transformers/torch non
-servono con questo backend): il trasporto è lo stesso urllib del provider LLM
-locale.
+The video channel can describe the frames using a **multimodal** `llama-server`
+(model + `--mmproj` projector, e.g. multimodal Gemma) instead of the
+torch Qwen2-VL backend. Decisive advantage on small GPUs (~4 GB): **a single
+multimodal `llama-server` instance serves both the text reactions (`llm_provider:
+llamacpp`) and the captioning**, avoiding the double VRAM residency of
+torch-VLM + LLM. No new runtime dependency (transformers/torch are not
+needed with this backend): the transport is the same urllib as the local LLM
+provider.
 
-Avvia l'istanza multimodale a mano, aggiungendo il proiettore `--mmproj` e
-`--parallel 2` (così testo e visione girano in concorrenza sulla stessa
-istanza, costo ~10 MiB VRAM):
+Start the multimodal instance by hand, adding the `--mmproj` projector and
+`--parallel 2` (so that text and vision run concurrently on the same
+instance, cost ~10 MiB VRAM):
 
 ```bash
 llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 16384 --reasoning off --parallel 2
 ```
 
-> **Contesto e `--parallel`**: `llama-server` divide `-c` tra gli slot, quindi
-> il contesto per-richiesta è `n_ctx / n_slots`. Con `--parallel 2` serve
-> `-c 16384` per avere 8192 token a slot: un prompt multi-canale (chat + audio +
-> video + soul/facts) supera facilmente i 2048 che darebbe `-c 4096 --parallel 2`,
-> e llama-server risponderebbe `400 "exceeds the available context size"`. La KV
-> cache di E2B è piccola: quadruplicare il contesto costa ~+80 MiB VRAM.
+> **Context and `--parallel`**: `llama-server` splits `-c` across the slots, so
+> the per-request context is `n_ctx / n_slots`. With `--parallel 2` you need
+> `-c 16384` to have 8192 tokens per slot: a multi-channel prompt (chat + audio +
+> video + soul/facts) easily exceeds the 2048 that `-c 4096 --parallel 2` would give,
+> and llama-server would respond `400 "exceeds the available context size"`. The KV
+> cache of E2B is small: quadrupling the context costs ~+80 MiB VRAM.
 
-Config: il backend riusa `llamacpp.base_url` (stessa istanza del provider LLM),
-mentre `prompt`/`language`/`max_new_tokens`/downscale/`max_caption_chars`
-restano nel blocco `vlm:`:
+Config: the backend reuses `llamacpp.base_url` (same instance as the LLM provider),
+while `prompt`/`language`/`max_new_tokens`/downscale/`max_caption_chars`
+stay in the `vlm:` block:
 
 ```yaml
 vlm:
@@ -463,28 +494,28 @@ llamacpp:
   base_url: http://127.0.0.1:8080   # condiviso col provider LLM locale
 ```
 
-Note:
+Notes:
 
-- All'avvio del loop live (mai in `--check`) la CLI verifica via `GET /props`
-  che l'istanza esponga la visione (`modalities.vision == true`). Se manca il
-  proiettore, esce con un errore azionabile che ricorda `--mmproj`. Il check
-  gira anche con `llm_provider` cloud (il captioner usa comunque
-  `llamacpp.base_url`).
-- Contratto best-effort: su errore di trasporto/HTTP a runtime il captioner
-  ritorna una caption vuota (salta il frame) e logga l'evento, senza uccidere
-  il canale video. Il backend `qwen` resta invariato per chi lo seleziona.
-- **Installazione leggera**: questo backend richiede solo l'extra
-  `vlm-llamacpp` (`pip install -e '.[vlm-llamacpp]'` → solo Pillow), non l'extra
-  `vlm` pesante (torch/transformers), che serve solo al backend `qwen`.
+- At live loop startup (never in `--check`) the CLI verifies via `GET /props`
+  that the instance exposes vision (`modalities.vision == true`). If the
+  projector is missing, it exits with an actionable error that reminds you of `--mmproj`. The check
+  also runs with a cloud `llm_provider` (the captioner uses
+  `llamacpp.base_url` anyway).
+- Best-effort contract: on a transport/HTTP error at runtime the captioner
+  returns an empty caption (skips the frame) and logs the event, without killing
+  the video channel. The `qwen` backend stays unchanged for whoever selects it.
+- **Lightweight install**: this backend requires only the
+  `vlm-llamacpp` extra (`pip install -e '.[vlm-llamacpp]'` → only Pillow), not the heavy
+  `vlm` extra (torch/transformers), which is only needed by the `qwen` backend.
 
-## Smoke Twitch capture-only
+## Capture-only Twitch smoke
 
-Lo smoke Twitch è separato dal CLI dell'agente e non richiede
-`OPENROUTER_API_KEY`. La guida completa per operatori, artifact, troubleshooting
-e runtime chat-only `adapter: twitch` con output console è in
+The Twitch smoke is separate from the agent CLI and does not require
+`OPENROUTER_API_KEY`. The full guide for operators, artifacts, troubleshooting
+and the chat-only `adapter: twitch` runtime with console output is in
 [docs/twitch-operator.md](docs/twitch-operator.md).
-Per la chat servono le credenziali bot in ambiente (via `.env` o esportate):
-`TWITCH_BOT_USERNAME` e `TWITCH_OAUTH_TOKEN`.
+For chat you need the bot credentials in the environment (via `.env` or exported):
+`TWITCH_BOT_USERNAME` and `TWITCH_OAUTH_TOKEN`.
 
 ```bash
 minnarone-twitch-smoke \
@@ -493,8 +524,8 @@ minnarone-twitch-smoke \
   --output ./.smoke/twitch-chat
 ```
 
-Per abilitare anche la cattura audio raw servono `streamlink` e `ffmpeg`
-installati sul sistema e disponibili su `PATH`:
+To also enable raw audio capture you need `streamlink` and `ffmpeg`
+installed on the system and available on `PATH`:
 
 ```bash
 streamlink --version
@@ -509,7 +540,7 @@ minnarone-twitch-smoke \
   --quality audio_only
 ```
 
-Per validare solo la segmentazione VAD sull'audio Twitch, senza ASR:
+To validate only the VAD segmentation on the Twitch audio, without ASR:
 
 ```bash
 minnarone-twitch-smoke \
@@ -521,7 +552,7 @@ minnarone-twitch-smoke \
   --quality audio_only
 ```
 
-Per campionare anche frame video JPEG a bassa frequenza:
+To also sample low-frequency JPEG video frames:
 
 ```bash
 minnarone-twitch-smoke \
@@ -533,30 +564,36 @@ minnarone-twitch-smoke \
   --quality best
 ```
 
-Gli artifact sono scritti nella directory passata a `--output`:
-`perceptions.jsonl` per la chat, `raw/audio/*.pcm` per un numero limitato di
-sample PCM mono 16 kHz signed 16-bit little-endian, `raw/video/*.jpg` per un
-numero limitato di frame JPEG, e `stats.json` con conteggi ed eventuali failure.
-Con `--vad-diagnostic`, `stats.json` include anche `vad_utterances` e
-`vad_utterance_durations_ms`. I file `.pcm` e `.jpg` provano solo la cattura raw
-da FFmpeg: lo smoke capture-only non esegue ASR, diarizzazione o captioning VLM.
-La guida operatore include anche smoke manuali per trascrivere un `.pcm` con
-`faster-whisper`, estrarre speaker embedding con `sherpa-onnx`, e avviare il
-runtime console con `twitch.audio: true`. È disponibile anche uno smoke
-chat-only dedicato: `minnarone-twitch-chat-smoke`.
+The artifacts are written to the directory passed to `--output`:
+`perceptions.jsonl` for the chat, `raw/audio/*.pcm` for a limited number of
+PCM mono 16 kHz signed 16-bit little-endian samples, `raw/video/*.jpg` for a
+limited number of JPEG frames, and `stats.json` with counts and any failures.
+With `--vad-diagnostic`, `stats.json` also includes `vad_utterances` and
+`vad_utterance_durations_ms`. The `.pcm` and `.jpg` files prove only the raw capture
+from FFmpeg: the capture-only smoke does not run ASR, diarization or VLM captioning.
+The operator guide also includes manual smokes to transcribe a `.pcm` with
+`faster-whisper`, extract speaker embeddings with `sherpa-onnx`, and start the
+console runtime with `twitch.audio: true`. A dedicated chat-only smoke is
+also available: `minnarone-twitch-chat-smoke`.
 
-## Stato
+## Status
 
-Il runtime core è **implementato**: percezione Twitch (chat/audio/video) con
-invio pubblico gated (shadow/live), commentatore locale e assistente meeting su
-Teams (profili `operator`, `meeting_synthesizer`, `suggester`), diarizzazione
-degli speaker (`streamer`/`altro`/`?` + marcatura manuale), dashboard TUI di
-osservabilità e replay offline delle run.
+The core runtime is **implemented**: Twitch perception (chat/audio/video) with
+gated public send (shadow/live), local commentator and meeting assistant on
+Teams (`operator`, `meeting_synthesizer`, `suggester` profiles), speaker
+diarization (`streamer`/`altro`/`?` + manual marking), observability TUI
+dashboard and offline replay of the runs.
 
-Il lavoro rimanente è centrato sulle **run di accettazione live con
-human-in-the-loop** (HITL). Vedi la
-[roadmap](docs/SPECIFICATION.md#10-roadmap-per-priorità) per MVP / v2 / v3.
+The remaining work is centered on the **live acceptance runs with
+human-in-the-loop** (HITL). See the
+[roadmap](docs/SPECIFICATION.md#10-roadmap-per-priorità) for MVP / v2 / v3.
 
-## Licenza
+## Support
 
-Distribuito con licenza [MIT](LICENSE).
+If this project is useful to you, you can buy me a coffee ☕
+
+[![Buy me a coffee — PayPal](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/CarloSergi)
+
+## License
+
+Distributed under the [MIT](LICENSE) license.
