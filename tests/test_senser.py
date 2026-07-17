@@ -213,7 +213,8 @@ def test_invalid_trigger_mode_raises(tmp_path):
 
 # --- on_perception trigger mode -----------------------------------------------
 
-from minnarone.perception import Perception, Source
+# Import di sezione intenzionale: dichiarato accanto ai test che lo usano.
+from minnarone.perception import Perception, Source  # noqa: E402
 
 
 def _make_on_perception(tmp_path, clock=None, bot_identity=None):

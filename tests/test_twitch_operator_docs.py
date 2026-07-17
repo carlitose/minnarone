@@ -597,7 +597,7 @@ def test_twitch_operator_docs_no_live_mode_in_example_yaml():
             stripped = line.lstrip("# ").strip()
             # Skip doc prose/comments that mention live as a concept
             if stripped.startswith("mode:") and "live" in stripped:
-                assert False, f"{name} contains 'mode: live' as a config value"
+                pytest.fail(f"{name} contains 'mode: live' as a config value")
 
 
 def test_twitch_operator_docs_no_real_tokens():

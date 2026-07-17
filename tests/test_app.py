@@ -2371,8 +2371,6 @@ def test_multi_profile_concurrent_run_produces_output_from_all(
 
     from minnarone.fakes import FakeOutputRouter
 
-    outputs: list[str] = []
-
     def multi_transport(*, url, headers, body, timeout):
         del url, headers, timeout
         from minnarone.openrouter import HttpResponse
@@ -2566,7 +2564,8 @@ def test_multi_profile_tui_messages_do_not_mix(tmp_path, monkeypatch):
         r for r in agent.reactors
         if r._prompt_builder.commentator_style is CommentatorStyle.OPERATOR
     )
-    ms_reactor = next(
+    # Verifica che esista un reactor MEETING_SYNTHESIZER (StopIteration se assente).
+    next(
         r for r in agent.reactors
         if r._prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
     )

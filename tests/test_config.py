@@ -15,7 +15,6 @@ from minnarone.config import (
     OperatorProfileConfig,
     OriginalChatProfileConfig,
     OsCaptureConfig,
-    ProfileConfig,
     SuggesterProfileConfig,
     TwitchSendMode,
 )

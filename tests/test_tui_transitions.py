@@ -7,14 +7,12 @@ Keybinding semantics:
 """
 
 import asyncio
-import time
 
 import pytest
 
 from minnarone.config import TwitchSendConfig, TwitchSendMode
 from minnarone.dashboard import DashboardState, SendDiagnostics
 from minnarone.public_send import PublicSendPolicy
-
 
 textual = pytest.importorskip("textual")
 

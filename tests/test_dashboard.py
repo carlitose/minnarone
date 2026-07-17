@@ -1197,11 +1197,11 @@ def test_status_bar_includes_send_budget():
 def test_tui_router_captures_shadow_messages_in_minnarone_panel():
     """PUBLIC messages routed through the shadow router appear in the
     MinnaroneOutputStream with [SHADOW] markers for the MINNARONE panel."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.SHADOW,
@@ -1226,11 +1226,11 @@ def test_tui_router_captures_shadow_messages_in_minnarone_panel():
 
 def test_tui_router_captures_sent_messages_in_minnarone_panel():
     """PUBLIC messages that are SENT (not shadow) appear with [SENT] marker."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.LIVE,
@@ -1293,11 +1293,11 @@ def test_render_text_omits_send_section_when_no_policy():
 
 def test_tui_router_does_not_capture_dropped_messages():
     """Dropped PUBLIC messages do NOT appear in MinnaroneOutputStream."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.SHADOW,
