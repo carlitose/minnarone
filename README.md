@@ -435,6 +435,68 @@ auto_memory: false      # inerte in MVP
 The `retention` and `auto_memory` items are present in the schema but do not alter
 the behavior (v2 extension).
 
+## Prompt files (persona, rules, format)
+
+The **tunable** prompt text (persona, per-style rules, response format, the
+situation variants and the summarizer instruction) lives in external Markdown
+files, not in Python. They ship packaged with the wheel under
+`src/minnarone/prompts/` and are read at startup:
+
+| File | What it is |
+|------|-----------|
+| `rules.md` | Original-chat persona/style rules. Uses `{{channel}}`. |
+| `intro.md` | "Current situation" banner + channel line. Uses `{{channel}}`. |
+| `situations.md` | The 6 situation variants (keyed by `## <key>`). Uses `{{user}}`, `{{mention}}`, `{{reason}}`; must keep the `#end_conv` control token. |
+| `format.md` | The `RE:`/`MSG:` response contract. Must keep `RE:`, `MSG:`, `#end_conv`. |
+| `operator.md` | Local-commentator rules. Uses `{{language}}`. |
+| `meeting_synthesizer.md` | Meeting-notes rules. Uses `{{language}}`. |
+| `suggester.md` | Private-suggester rules. Uses `{{language}}`; must keep the `#nothing` control token. |
+| `summarizer.md` | Short-term-memory summarizer text (keyed sections). |
+
+### Overriding the prompts (`prompts_dir`)
+
+Set `prompts_dir` in the config, the same spirit as `soul_path` / `facts_dir`
+(the path is resolved relative to the config file):
+
+```yaml
+prompts_dir: my-prompts   # a directory next to the config file
+```
+
+Resolution is **per file**: for each prompt file, if it exists under
+`prompts_dir` it wins, otherwise the packaged default is used. You can override
+just one file and let the rest fall back. If `prompts_dir` is absent, only the
+packaged defaults are used, so a fresh install works with no configuration.
+
+The loader is **fail-fast**: a missing file, a missing/unknown placeholder, a
+missing control token or an empty required section aborts startup — a tunable
+prompt is never allowed to degrade to empty text.
+
+### Placeholders
+
+Substitution uses double braces `{{name}}`. The whitelisted names are
+`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}` and `{{reason}}`. Their
+values come from config/code (trusted data, never perceived content), single
+braces `{ }` and `<...>` survive untouched, and an injected value is never
+re-scanned (no recursive template injection).
+
+### Non-Italian / multi-channel
+
+Externalizing the prompts **is** the localization mechanism — there is no i18n
+engine and the project does not ship translated sets. To run a channel in
+another language: copy `src/minnarone/prompts/` to a new directory, rewrite the
+`.md` files in your language (keeping the placeholders and control tokens),
+and point `prompts_dir` at it. No code changes. A minimal, partial example lives
+in [examples/prompts-en/](examples/prompts-en/).
+
+### Security boundary (what you cannot override)
+
+The **anti-injection** and **disclosure** rules are hard-coded in `prompt.py` and
+are intentionally NOT among the editable files, together with the untrusted-data
+fence mechanics. This is deliberate: an editable file must never be able to
+weaken the protection that keeps the agent in character and treats perceived
+content as data, never as commands. A prompt override changes persona, style and
+language; it can never turn off the security rules.
+
 ## Local LLM (llama.cpp)
 
 With `llm_provider: llamacpp` the Reactor generates the reactions against a
