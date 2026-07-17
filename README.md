@@ -36,7 +36,7 @@ adapter, provider, cadences, mode) — without writing code.
 
 ```bash
 pip install -e .                 # core
-pip install -e '.[tui]'          # + dashboard di osservabilità (textual)
+pip install -e '.[tui]'          # + observability dashboard (textual)
 pip install -e '.[audio]'        # + Twitch audio runtime: faster-whisper + sherpa-onnx (ASR + speaker)
 pip install -e '.[video]'        # + Twitch video runtime: Streamlink Python + PyAV
 pip install -e '.[vlm]'          # + captioning `vlm.backend: qwen`: transformers + torch/torchvision + Pillow
