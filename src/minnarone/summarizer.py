@@ -23,7 +23,7 @@ import asyncio
 
 from .cadence import CadenceLoop
 from .llm import LLMError, LLMProvider
-from .perception import Perception, format_perception_line
+from .perception import Perception, Source
 from .prompt_observation import prompt_observation_context
 from .store import PerceptionStore
 
@@ -31,11 +31,40 @@ from .store import PerceptionStore
 # scorrevole della sessione, non l'intero log.
 _DEFAULT_WINDOW = 50
 
-_PROMPT_HEADER = (
-    "Riassumi in modo conciso cosa è successo finora nella sessione "
-    "(stream, conversazioni, chat). Tollera trascrizioni imperfette o rumorose. "
-    "Scrivi solo il riassunto, in italiano.\n\n"
-    "## EVENTI\n"
+# Istruzione del "sintetizzatore": riassunto ROLLING/incrementale. Il testo
+# core (istruzione, "Riassunto attuale:", "Eventi recenti:", "Aggiorna il
+# riassunto.") è fedele alla trascrizione degli screenshot (ticket 01).
+#
+# RICOSTRUZIONE (best-effort): la riga che chiede di strutturare la risposta in
+# STREAM / CONVERSAZIONI CON LO STREAMER / CONVERSAZIONI IN CHAT NON è confermata
+# parola-per-parola dalla trascrizione (gli screenshot mostrano quelle
+# sotto-sezioni nell'OUTPUT `[MEMORIA]`, ma non è certo che sia il PROMPT a
+# dettarle). La aggiungiamo qui perché è ciò che riproduce l'output osservato;
+# va riconfermata con uno screenshot ad alta risoluzione.
+_PROMPT_INSTRUCTION = (
+    "Sei un sintetizzatore. Mantieni un riassunto breve in italiano di come sta\n"
+    "evolvendo la live: cosa fa e dice lo streamer, di cosa parla la chat, "
+    "l'atmosfera.\n"
+    "Integra i nuovi eventi, tieni cio' che e' ancora rilevante e scarta il vecchio.\n"
+    "Solo il riassunto, niente preamboli.\n"
+    "Struttura il riassunto in tre sotto-sezioni: STREAM (cosa succede nello "
+    "stream),\n"
+    "CONVERSAZIONI CON LO STREAMER (scambi con lo streamer), CONVERSAZIONI IN "
+    "CHAT\n"
+    "(con chi ha parlato minnarone e di cosa).\n"
+)
+
+# Placeholder neutro per il primissimo giro, quando non c'è ancora un riassunto
+# precedente da reiniettare: evita di lasciare una riga vuota sotto
+# "Riassunto attuale:".
+_EMPTY_SUMMARY_PLACEHOLDER = "(ancora niente: e' l'inizio della sessione)"
+
+# Ordine e intestazione dei gruppi "Eventi recenti", per fonte. Un gruppo senza
+# eventi viene omesso del tutto (niente intestazione vuota).
+_SOURCE_GROUPS: tuple[tuple[Source, str], ...] = (
+    (Source.AUDIO, "STREAMER ha detto:"),
+    (Source.VIDEO, "SCHERMO:"),
+    (Source.CHAT, "CHAT:"),
 )
 
 
@@ -65,8 +94,48 @@ class Summarizer:
         return self._summary
 
     def _build_prompt(self, perceptions: list[Perception]) -> str:
-        body = "\n".join(format_perception_line(p) for p in perceptions)
-        return f"{_PROMPT_HEADER}{body}\n"
+        """Compone il prompt rolling: istruzione + riassunto precedente + eventi.
+
+        Il riassunto precedente (`self._summary`) è reiniettato sotto
+        "Riassunto attuale:", così il sintetizzatore AGGIORNA invece di rifare da
+        zero; al primissimo giro (vuoto) si usa un placeholder neutro. Gli eventi
+        recenti sono raggruppati per fonte (STREAMER/SCHERMO/CHAT); i gruppi
+        senza eventi sono omessi.
+        """
+        previous = self._summary.strip() or _EMPTY_SUMMARY_PLACEHOLDER
+        events = self._render_events(perceptions)
+        return (
+            f"{_PROMPT_INSTRUCTION}\n"
+            f"Riassunto attuale:\n{previous}\n\n"
+            f"Eventi recenti:\n{events}\n\n"
+            "Aggiorna il riassunto.\n"
+        )
+
+    @staticmethod
+    def _render_events(perceptions: list[Perception]) -> str:
+        """Raggruppa le percezioni per fonte in blocchi STREAMER/SCHERMO/CHAT.
+
+        Renderer DEDICATO del summarizer (non riusa `format_recent_line` né
+        `format_perception_line`): ogni evento è una riga `- ...`. Per la CHAT si
+        antepone lo speaker (`- <utente>: <testo>`), per audio/video basta il
+        testo perché l'intestazione del gruppo già indica la fonte. Un gruppo
+        senza eventi è omesso interamente.
+        """
+        blocks: list[str] = []
+        for source, header in _SOURCE_GROUPS:
+            group = [p for p in perceptions if p.source is source]
+            if not group:
+                continue
+            lines = [Summarizer._render_event_line(p) for p in group]
+            blocks.append(header + "\n" + "\n".join(lines))
+        return "\n".join(blocks)
+
+    @staticmethod
+    def _render_event_line(p: Perception) -> str:
+        if p.source is Source.CHAT:
+            who = p.speaker if p.speaker else "anon"
+            return f"- {who}: {p.text}"
+        return f"- {p.text}"
 
     async def summarize(self) -> str:
         """Legge le percezioni recenti, chiede all'LLM un riassunto e lo memorizza.

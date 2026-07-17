@@ -430,6 +430,32 @@ def test_original_chat_stable_prefix_requires_exact_re_msg_response_contract():
     assert "MSG: <il messaggio di chat> oppure #end_conv" in prefix
 
 
+def test_original_chat_summary_rendered_under_memoria_header():
+    # Nel prompt original-chat il riassunto va sotto [MEMORIA] (non [RIASSUNTO]).
+    prompt = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT
+    ).build(
+        recent=[_msg(1.0, "ciao")],
+        trigger=_trigger(),
+        summary="STREAM: enkk gioca.",
+    )
+    assert "[MEMORIA] (com'e' andata la live e le conversazioni recenti)" in prompt
+    assert "[RIASSUNTO]" not in prompt
+
+
+def test_operator_summary_still_rendered_under_riassunto_header():
+    # Le altre modalita' non cambiano: restano sotto ## RIASSUNTO.
+    prompt = PromptBuilder(
+        _blocks(), commentator_style=CommentatorStyle.OPERATOR
+    ).build(
+        recent=[_msg(1.0, "ciao")],
+        trigger=_trigger(),
+        summary="Discussione sul budget.",
+    )
+    assert "## RIASSUNTO" in prompt
+    assert "[MEMORIA]" not in prompt
+
+
 def test_original_chat_idle_situation_is_rendered_at_bottom():
     prompt = PromptBuilder(
         _blocks(), commentator_style=CommentatorStyle.ORIGINAL_CHAT

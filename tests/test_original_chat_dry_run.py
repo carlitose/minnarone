@@ -153,7 +153,7 @@ def test_fake_original_chat_dry_run_routes_re_msg_locally_and_observes_prompt(
     assert prompt.startswith(stable_prefix)
     assert FAKE_SUMMARY not in stable_prefix
     assert prompt.index(FAKE_SUMMARY) > len(stable_prefix)
-    assert prompt.index("[RIASSUNTO]") < prompt.index("[CONVERSAZIONE RECENTE]")
+    assert prompt.index("[MEMORIA]") < prompt.index("[CONVERSAZIONE RECENTE]")
 
 
 def test_fake_original_chat_dry_run_second_end_conv_is_visible_and_closes_window(

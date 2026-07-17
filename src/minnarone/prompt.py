@@ -442,7 +442,7 @@ class PromptBuilder:
             trigger=trigger,
             summary=summary,
             self_messages=self_messages,
-            summary_header="[RIASSUNTO]",
+            summary_header="[MEMORIA] (com'e' andata la live e le conversazioni recenti)",
             self_messages_header="[I TUOI ULTIMI MESSAGGI]",
             recent_header="[CONVERSAZIONE RECENTE]",
             recent_source_headers=ORIGINAL_CHAT_CONTEXT_SPECS,
