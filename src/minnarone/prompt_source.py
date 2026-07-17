@@ -93,8 +93,9 @@ class PromptSetSpec:
 
 # Mappa codice-lingua → nome. Il valore alimenta la sostituzione di
 # `{{language}}`: la fonte è la config (dato fidato), MAI contenuto percepito →
-# la sostituzione non è un vettore di injection. (Gemella di
-# `prompt._language_name`; sarà unificata quando 06 esternalizza gli stili.)
+# la sostituzione non è un vettore di injection. Fonte UNICA del mapping (il
+# ticket 06 ha rimosso la gemella `prompt._language_name`): `prompt.py` importa
+# `language_name` da qui.
 _LANGUAGE_NAMES = {
     "it": "italiano",
     "ita": "italiano",
@@ -352,8 +353,45 @@ SITUATIONS_SPEC = PromptSpec(
     ),
 )
 
+# Regole per-stile delle modalità non-original-chat (ticket 06). Prosa servita
+# con `.text()` (byte-preserving) nel prefisso stabile del rispettivo stile.
+# `{{language}}` è l'unico punto di sostituzione: la fonte è la config/codice
+# (dato fidato, reso da `language_name`), mai contenuto percepito → non è un
+# vettore di injection. È OBBLIGATORIO così un override non può "perdere" la
+# lingua. Il file del suggester DEVE contenere il token di controllo `#nothing`
+# (la sentinella "niente da suggerire"): fail-fast se un override lo elimina.
+OPERATOR_RULES_SPEC = PromptSpec(
+    filename="operator.md",
+    allowed_placeholders=frozenset({"language"}),
+    required_placeholders=frozenset({"language"}),
+)
+
+MEETING_SYNTHESIZER_RULES_SPEC = PromptSpec(
+    filename="meeting_synthesizer.md",
+    allowed_placeholders=frozenset({"language"}),
+    required_placeholders=frozenset({"language"}),
+)
+
+SUGGESTER_RULES_SPEC = PromptSpec(
+    filename="suggester.md",
+    allowed_placeholders=frozenset({"language"}),
+    required_placeholders=frozenset({"language"}),
+    required_tokens=("#nothing",),
+)
+
+# Set condiviso del prompt di reazione: oltre ai file original-chat include le
+# regole per-stile (ticket 06), così il PromptSet unico iniettato nel
+# `PromptBuilder` serve TUTTI gli stili senza doverne portare un secondo.
 ORIGINAL_CHAT_SET = PromptSetSpec(
-    specs=(FORMAT_SPEC, RULES_SPEC, INTRO_SPEC, SITUATIONS_SPEC)
+    specs=(
+        FORMAT_SPEC,
+        RULES_SPEC,
+        INTRO_SPEC,
+        SITUATIONS_SPEC,
+        OPERATOR_RULES_SPEC,
+        MEETING_SYNTHESIZER_RULES_SPEC,
+        SUGGESTER_RULES_SPEC,
+    )
 )
 
 

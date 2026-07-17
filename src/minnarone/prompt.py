@@ -35,7 +35,7 @@ from .perception import (
     format_perception_line,
     format_recent_line,
 )
-from .prompt_source import PromptSet, load_prompt_set
+from .prompt_source import PromptSet, language_name, load_prompt_set
 from .senser import Trigger
 
 # Delimitatori del blocco di DATI non fidati: tutto ciò che è percepito
@@ -108,38 +108,11 @@ _DISCLOSURE_ANNOUNCE = (
     "essere un'AI; resta comunque in personaggio nello stile.\n"
 )
 
-_COMMENTATOR_RULES_TEMPLATE = (
-    "- Modalità commentatore locale: parla all'operatore in {language}, non alla "
-    "chat pubblica. Usa chat, audio e video percepiti come contesto per "
-    "commentare cosa sta succedendo nello stream.\n"
-    "- Produci commenti brevi, naturali e utili per chi guarda da questa "
-    "macchina. NON inviare messaggi pubblici Twitch, non chiedere di scrivere "
-    "in chat e non fingere che l'output sia visibile al pubblico.\n"
-)
-
-_MEETING_SYNTHESIZER_RULES_TEMPLATE = (
-    "- Modalità sintesi riunione: sei un note-taker che prende appunti "
-    "strutturati in {language} sulla conversazione in corso.\n"
-    "- Concentrati su: argomenti discussi, chi ha detto cosa, decisioni "
-    "prese, azioni da fare (action item).\n"
-    "- Produci un riepilogo aggiornato e leggibile, non un messaggio di "
-    "chat: usa elenchi puntati, intestazioni brevi e linguaggio chiaro.\n"
-    "- NON interagire con la chat, non rispondere a nessuno e non "
-    "generare messaggi pubblici: il tuo output è un documento interno "
-    "per l'operatore.\n"
-)
-
-_SUGGESTER_RULES_TEMPLATE = (
-    "- Modalità suggeritore: sei un assistente privato che aiuta "
-    "l'operatore durante una riunione in {language}.\n"
-    "- Il tuo compito è suggerire domande da porre o cose da "
-    "ricordare/menzionare, basandoti su ciò che è stato appena detto "
-    "e sui fatti che conosci sugli interlocutori.\n"
-    "- Se in questo momento non c'è nulla di utile da suggerire, "
-    "rispondi SOLO con `#nothing` e nient'altro.\n"
-    "- NON interagire con nessuno direttamente: il tuo output è "
-    "visibile solo all'operatore.\n"
-)
+# Le regole per-stile (operator/meeting-synthesizer/suggester) NON sono più
+# costanti inline: vivono in file esterni (`operator.md`, `meeting_synthesizer.md`,
+# `suggester.md`) serviti dal prompt-source con `.text()` (byte-preserving) e con
+# il placeholder `{{language}}` reso da `language_name` sulla config. Vedi
+# `prompt_source.OPERATOR_RULES_SPEC` & co. per il contratto di validazione.
 
 # Canale di default della modalità original-chat. Le regole (`rules.md`) e il
 # banner (`intro.md`) usano un unico placeholder `{{channel}}` reso da QUESTA
@@ -193,19 +166,18 @@ class PromptBuilder:
             return self._original_chat_stable_prefix()
 
         disclosure = _DISCLOSURE_ANNOUNCE if self._announce_ai else _DISCLOSURE_HIDE
+        # Le regole per-stile sono servite dal loader (`.text()`, byte-preserving)
+        # dal file corrispondente; `{{language}}` è reso dalla config (dato fidato).
         commentator = ""
+        language = language_name(self._commentator_language)
         if self._commentator_style is CommentatorStyle.OPERATOR:
-            commentator = _COMMENTATOR_RULES_TEMPLATE.format(
-                language=_language_name(self._commentator_language)
-            )
+            commentator = self._prompts.text("operator.md", language=language)
         elif self._commentator_style is CommentatorStyle.MEETING_SYNTHESIZER:
-            commentator = _MEETING_SYNTHESIZER_RULES_TEMPLATE.format(
-                language=_language_name(self._commentator_language)
+            commentator = self._prompts.text(
+                "meeting_synthesizer.md", language=language
             )
         elif self._commentator_style is CommentatorStyle.SUGGESTER:
-            commentator = _SUGGESTER_RULES_TEMPLATE.format(
-                language=_language_name(self._commentator_language)
-            )
+            commentator = self._prompts.text("suggester.md", language=language)
         return (
             "## REGOLE\n"
             f"{_ROBUSTNESS_RULES}"
@@ -688,18 +660,3 @@ def _extract_speaker_facts(facts_block: str, speaker: str) -> str | None:
         text = match.group(1).strip()
         return text if text else None
     return None
-
-
-def _language_name(language: str) -> str:
-    names = {
-        "it": "italiano",
-        "ita": "italiano",
-        "italian": "italiano",
-        "en": "inglese",
-        "eng": "inglese",
-        "english": "inglese",
-        "es": "spagnolo",
-        "spa": "spagnolo",
-        "spanish": "spagnolo",
-    }
-    return names.get(language.lower(), language)

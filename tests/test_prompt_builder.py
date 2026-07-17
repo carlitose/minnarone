@@ -1715,3 +1715,170 @@ def test_original_chat_situations_served_from_loader_override(tmp_path):
         ),
     )
     assert "GENERIC-OVR video_react" in generic
+
+
+# --- Ticket 06: regole per-stile (operator/meeting/suggester) servite da file --
+
+# Corpi attesi (default, lingua "it" -> "italiano"): byte-identici al vecchio
+# testo inline delle costanti `_*_RULES_TEMPLATE`. Ognuno termina col newline
+# finale del file e, nel prefisso stabile, e' seguito da `\n## IDENTITÀ\n`
+# (confine byte-invariante col resto delle regole).
+_OPERATOR_RULES_IT = (
+    "- Modalità commentatore locale: parla all'operatore in italiano, non alla "
+    "chat pubblica. Usa chat, audio e video percepiti come contesto per "
+    "commentare cosa sta succedendo nello stream.\n"
+    "- Produci commenti brevi, naturali e utili per chi guarda da questa "
+    "macchina. NON inviare messaggi pubblici Twitch, non chiedere di scrivere "
+    "in chat e non fingere che l'output sia visibile al pubblico.\n"
+)
+
+_MEETING_SYNTHESIZER_RULES_IT = (
+    "- Modalità sintesi riunione: sei un note-taker che prende appunti "
+    "strutturati in italiano sulla conversazione in corso.\n"
+    "- Concentrati su: argomenti discussi, chi ha detto cosa, decisioni "
+    "prese, azioni da fare (action item).\n"
+    "- Produci un riepilogo aggiornato e leggibile, non un messaggio di "
+    "chat: usa elenchi puntati, intestazioni brevi e linguaggio chiaro.\n"
+    "- NON interagire con la chat, non rispondere a nessuno e non "
+    "generare messaggi pubblici: il tuo output è un documento interno "
+    "per l'operatore.\n"
+)
+
+_SUGGESTER_RULES_IT = (
+    "- Modalità suggeritore: sei un assistente privato che aiuta "
+    "l'operatore durante una riunione in italiano.\n"
+    "- Il tuo compito è suggerire domande da porre o cose da "
+    "ricordare/menzionare, basandoti su ciò che è stato appena detto "
+    "e sui fatti che conosci sugli interlocutori.\n"
+    "- Se in questo momento non c'è nulla di utile da suggerire, "
+    "rispondi SOLO con `#nothing` e nient'altro.\n"
+    "- NON interagire con nessuno direttamente: il tuo output è "
+    "visibile solo all'operatore.\n"
+)
+
+
+def test_operator_rules_served_from_loader_byte_identical():
+    # Le regole OPERATOR sono servite da `operator.md` via il loader e restano
+    # byte-identiche al vecchio testo inline (lingua di default "it" -> italiano).
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.OPERATOR,
+        commentator_language="it",
+    ).stable_prefix()
+    # il corpo compare integro e il confine col resto delle regole e' invariato.
+    assert f"{_OPERATOR_RULES_IT}\n## IDENTITÀ\n" in prefix
+
+
+def test_meeting_synthesizer_rules_served_from_loader_byte_identical():
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.MEETING_SYNTHESIZER,
+        commentator_language="it",
+    ).stable_prefix()
+    assert f"{_MEETING_SYNTHESIZER_RULES_IT}\n## IDENTITÀ\n" in prefix
+
+
+def test_suggester_rules_served_from_loader_byte_identical():
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.SUGGESTER,
+        commentator_language="it",
+    ).stable_prefix()
+    assert f"{_SUGGESTER_RULES_IT}\n## IDENTITÀ\n" in prefix
+
+
+def test_style_rules_language_substitution_for_english():
+    # `{{language}}` sostituito da `language_name("en")` -> "inglese" per i tre stili.
+    for style in (
+        CommentatorStyle.OPERATOR,
+        CommentatorStyle.MEETING_SYNTHESIZER,
+        CommentatorStyle.SUGGESTER,
+    ):
+        it_prefix = PromptBuilder(
+            _blocks(), commentator_style=style, commentator_language="it"
+        ).stable_prefix()
+        en_prefix = PromptBuilder(
+            _blocks(), commentator_style=style, commentator_language="en"
+        ).stable_prefix()
+        assert "italiano" in it_prefix
+        assert "inglese" in en_prefix
+        assert it_prefix != en_prefix
+
+
+def test_style_rules_honor_prompt_set_override(tmp_path):
+    # Un override in prompts_dir cambia il testo servito per ciascuno stile:
+    # prova l'intero percorso file->prompt (non piu' la costante inline).
+    from minnarone.prompt_source import load_prompt_set
+
+    (tmp_path / "operator.md").write_text(
+        "- Operator personalizzato in {{language}}.\n", encoding="utf-8"
+    )
+    (tmp_path / "meeting_synthesizer.md").write_text(
+        "- Meeting personalizzato in {{language}}.\n", encoding="utf-8"
+    )
+    (tmp_path / "suggester.md").write_text(
+        "- Suggester personalizzato in {{language}}, rispondi con `#nothing`.\n",
+        encoding="utf-8",
+    )
+    prompt_set = load_prompt_set(tmp_path)
+
+    op = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.OPERATOR,
+        prompt_set=prompt_set,
+    ).stable_prefix()
+    assert "Operator personalizzato in italiano." in op
+
+    mtg = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.MEETING_SYNTHESIZER,
+        prompt_set=prompt_set,
+    ).stable_prefix()
+    assert "Meeting personalizzato in italiano." in mtg
+
+    sug = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.SUGGESTER,
+        prompt_set=prompt_set,
+    ).stable_prefix()
+    assert "Suggester personalizzato in italiano" in sug
+
+
+def test_suggester_rules_file_requires_nothing_token(tmp_path):
+    # Il file del suggester DEVE contenere il token di controllo `#nothing`:
+    # un override che lo elimina fallisce fast (fail-fast al caricamento).
+    from minnarone.prompt_source import PromptError, load_prompt_set
+
+    (tmp_path / "suggester.md").write_text(
+        "- Suggester rotto in {{language}}, senza sentinella.\n", encoding="utf-8"
+    )
+    try:
+        load_prompt_set(tmp_path)
+    except PromptError as exc:
+        assert "#nothing" in str(exc)
+    else:
+        raise AssertionError("atteso PromptError per suggester.md senza #nothing")
+
+
+def test_language_name_is_unified_in_prompt_source():
+    # Ticket 03/06: niente piu' mappa duplicata in prompt.py; la fonte unica e'
+    # `prompt_source.language_name`. Le vecchie chiavi mappano ancora come prima.
+    import minnarone.prompt as prompt_module
+    from minnarone.prompt_source import language_name
+
+    assert not hasattr(prompt_module, "_language_name")
+    old_codes = {
+        "it": "italiano",
+        "ita": "italiano",
+        "italian": "italiano",
+        "en": "inglese",
+        "eng": "inglese",
+        "english": "inglese",
+        "es": "spagnolo",
+        "spa": "spagnolo",
+        "spanish": "spagnolo",
+    }
+    for code, expected in old_codes.items():
+        assert language_name(code) == expected
+    # codice sconosciuto -> passthrough (come il vecchio comportamento).
+    assert language_name("zz") == "zz"
