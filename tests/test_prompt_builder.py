@@ -617,6 +617,8 @@ def test_original_chat_streamer_situations_are_trigger_specific_at_bottom():
 
     assert "Lo streamer si e' rivolto a TE" in mention_tail
     assert "Rispondigli, in modo naturale" in mention_tail
+    # Divergenza D: riferimento alle sezioni reali del prompt.
+    assert "([I TUOI ULTIMI MESSAGGI] e [MEMORIA])" in mention_tail
     assert "| streamer: minnarone mi senti?" in mention_tail
 
     continuation = _speech(5.0, "si ma intendevo prima")
@@ -639,6 +641,10 @@ def test_original_chat_streamer_situations_are_trigger_specific_at_bottom():
     assert "POTREBBE" in continuation_tail
     assert "RIFLETTICI ATTENTAMENTE" in continuation_tail
     assert "MSG: #end_conv" in continuation_tail
+    # Divergenza D: la continuation streamer cita [I TUOI ULTIMI MESSAGGI],
+    # non piu' [CONVERSAZIONE RECENTE].
+    assert "[I TUOI ULTIMI MESSAGGI]" in continuation_tail
+    assert "[CONVERSAZIONE RECENTE]" not in continuation_tail
     assert "| streamer: si ma intendevo prima" in continuation_tail
 
 
