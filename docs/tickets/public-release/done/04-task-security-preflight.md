@@ -52,3 +52,23 @@ pattern che i grep manuali non coprono.
 
 - Riscrittura della history (solo se un vero positivo la rende necessaria —
   in quel caso diventa un ticket dedicato).
+
+---
+
+## Esito (2026-07-17) — CHIUSO
+
+**gitleaks 8.30.1** su tutta la history (`gitleaks git --log-opts="--all"`):
+**"no leaks found"** — 96 commit, ~3.11 MB scansionati, exit 0. Report vuoto
+(nessun finding, quindi nessun triage necessario).
+
+Review `git ls-files`: nessun artefatto residuo problematico. Estensioni
+tracciate: 139 .md, 113 .py, 10 .png (screenshot), 8 .yaml (examples), 1 .jpg
+(hero image), .toml/.lock/.json di progetto, `.env.example`. Nessun
+`.log`/`.env`/`.key`/`.db`/dump.
+
+Unica pulizia: rimosso `skills-lock.json` (lockfile orfano di Claude Code che
+referenziava la skill `project-designer` già tolta nel ticket 01) e aggiunto a
+`.gitignore`.
+
+Nota: lo scan andrebbe ri-eseguito sullo stato finale di main dopo il merge di
+tutte le PR dello stack, come gate finale prima del flip (ticket 05).

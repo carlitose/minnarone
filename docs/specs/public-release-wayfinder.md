@@ -45,6 +45,16 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
 - **README pubblico in inglese + README.it.md** (grilling 03, 2026-07-17):
   README principale tradotto in inglese per il pubblico globale, versione
   italiana conservata come `README.it.md` con link incrociati. → ticket 08.
+- **Pre-flight sicurezza pulito** (ticket 04, 2026-07-17): gitleaks 8.30.1 su
+  tutta la history (`git --log-opts=--all`) → **"no leaks found"**, 96 commit,
+  3.11 MB scansionati. Review `git ls-files`: nessun `.log`/`.env`/`.key`/dump
+  tracciato (solo `.env.example`). Rimosso `skills-lock.json` (artefatto orfano
+  di Claude Code che puntava alla skill `project-designer` già rimossa nel
+  ticket 01) e aggiunto a `.gitignore`.
+- **Extra utente (2026-07-17)**: hero image dalla copertina del video di enkk
+  (`docs/source/minnarone-cover.jpg`) in cima ai due README; sezione "offrimi
+  un caffè" con link PayPal (`https://paypal.me/CarloSergi`). Entrambi committati
+  sulla branch/PR del ticket 08.
 
 ## Not Yet Specified
 

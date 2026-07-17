@@ -34,3 +34,4 @@ perceptions.jsonl
 .tokensave/
 .ruff_cache/
 wiki/
+skills-lock.json
