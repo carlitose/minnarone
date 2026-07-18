@@ -38,7 +38,7 @@ GitHub, nessun contenuto inatteso in issue/PR pubbliche.
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md)
 - [13-grilling-persona-facts-onboarding.md](done/13-grilling-persona-facts-onboarding.md)
 - [14-research-public-twitch-safety.md](done/14-research-public-twitch-safety.md) — done
-- [15-research-runtime-model-profiles.md](15-research-runtime-model-profiles.md)
+- [15-research-runtime-model-profiles.md](done/15-research-runtime-model-profiles.md) — done
 - [16-prototype-agent-and-human-onboarding.md](16-prototype-agent-and-human-onboarding.md)
 - [17-task-readme-skill-catalog-onboarding.md](17-task-readme-skill-catalog-onboarding.md)
 - [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
