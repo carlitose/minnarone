@@ -1,0 +1,9 @@
+{
+  "profile": "P0",
+  "shadow_requires_send_token": false,
+  "account_bot_dedicated": true,
+  "broadcaster_consent": true,
+  "disclosure_choice": "profile",
+  "retention_ack": true,
+  "config_path": "spike/onboarding_surface/fixtures/shadow.yaml"
+}

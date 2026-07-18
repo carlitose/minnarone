@@ -161,6 +161,12 @@ guida operatore molto lunga.
   GGUF/mmproj hanno owner, licenza, revision e SHA-256; il vecchio CAM++ zh-cn
   192 non è più raccomandato per italiano. Il ticket 16 proverà docs + manifest
   + `minnarone-runtime-doctor`, senza download multi-GB impliciti.
+- **Superficie onboarding scelta (ticket 16, 2026-07-18)**: docs/template
+  task-first restano la fonte per l'utente normale; due skill sottili
+  `minnarone-twitch-onboarding` e `minnarone-runtime-doctor` orchestrano code
+  agent, conferme e check sul manifest. `minnarone-prompts` resta separata.
+  Nessun `minnarone init/doctor` core ora: il prototipo evita 10/10 errori con
+  meno duplicazione, mentre il CLI risparmierebbe un solo passo umano.
 
 ## Evidence: First Real Twitch Operator Journey (2026-07-18)
 
@@ -187,9 +193,6 @@ guida operatore molto lunga.
 
 ## Not Yet Specified
 
-- Se l'onboarding pubblico debba restare docs/templates oppure includere un
-  comando guidato (`minnarone init`/`doctor`) che crea config + soul + facts e
-  verifica credenziali, dipendenze e modelli.
 - Quale modello OpenRouter sia il default pubblico e come validare parametri
   model-specific (`thinking` vs `reasoning_effort`) senza inseguire slug
   hard-coded obsoleti.
@@ -228,9 +231,8 @@ guida operatore molto lunga.
   14 done.
 - **Runtime/model profiles — risolto per il prototipo**: ticket 15 done; sei
   profili e un manifest di artifact pinned sono pronti come input del ticket 16.
-- **Onboarding guidato e nuove skill**: scegliere tramite prototipo minimo il
-  confine tra skill repo-local, docs/templates e `init/doctor`; non costruire
-  interfacce definitive prima delle decisioni 10, 13–15. → ticket 16.
+- **Onboarding guidato — risolto dal prototipo**: ticket 16 done; ticket 17
+  produce tutorial/template e le due skill sottili, senza CLI core.
 - **README e code-agent surface**: golden path task-first, catalogo skill e
   istruzioni di repo dipendono dagli esiti precedenti. → ticket 17.
 - **Attriti runtime noti**: smoke senza dotenv, chat quieta che invalida media
@@ -259,9 +261,8 @@ guida operatore molto lunga.
   ai ticket 16–18.
 - 15 — done — profili runtime/modelli/hardware e acquisizione ripetibile;
   matrice, budget, licenze, revision e digest consegnati al prototipo 16.
-- 16 — prototype — catalogo nuove skill + confronto skill/docs/templates vs
-  `minnarone init/doctor` → prova reversibile e scelta dell'interfaccia minima
-  per code agent e utente normale.
+- 16 — done — prototipo onboarding/doctor e confronto superfici; scelti docs +
+  manifest + due skill sottili, rinviato il CLI core.
 - 17 — task — README task-first, catalogo skill, tutorial Twitch progressivo,
   golden config sanitizzati e `AGENTS.md`/CONTRIBUTING pointers → percorso umano
   e code-agent ripetibile.
@@ -270,7 +271,7 @@ guida operatore molto lunga.
 
 ## Next Review
 
-Con 10–15 chiusi, prototipare il catalogo/onboarding nel 16,
-poi rendere eseguibili 17–18 e decidere se il 09 va assorbito nel polish. Solo
+Con 10–16 chiusi, rendere eseguibili 17–18 e decidere se il 09 va assorbito nel
+polish. Solo
 quando la nuova frontiera è verde si riapre il ticket 05 con conferma esplicita
 dell'utente e verifica anonima post-flip.
