@@ -127,7 +127,7 @@ allowed to repeat). The same tools run at commit time via
 is excluded from all of them.
 
 For contributors and code agents working on the externalized prompts there is a
-repo-local Claude Code skill in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
+repo-local Claude Code skill in [`.claude/skills/minnarone-prompts/`](.claude/skills/minnarone-prompts/SKILL.md):
 it documents the file map and the non-obvious constraints (required
 placeholders, control tokens, the hard-coded security boundary, byte-invariance
 of the packaged defaults) and prescribes the safe flow — edit →

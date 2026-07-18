@@ -1,9 +1,9 @@
 ---
-name: prompts
+name: minnarone-prompts
 description: Safely manage minnarone's externalized prompts. Use when asked to change/edit the prompts, translate the prompt-set into another language, validate an override or a prompts_dir, add/rename section headers, or preview the effect of a prompt change before committing. Three modes - validate, edit, try.
 ---
 
-# Skill `prompts` — validate, edit and preview the externalized prompts
+# Skill `minnarone-prompts` — validate, edit and preview the externalized prompts
 
 One skill with three modes (**validate** / **edit** / **try**) because the three
 flows share the same file map, the same constraints and the same warnings — and
@@ -139,10 +139,10 @@ Two levels, from lightest to fullest:
 
    ```bash
    # packaged defaults
-   uv run python .claude/skills/prompts/preview_prompt.py
+   uv run python .claude/skills/minnarone-prompts/preview_prompt.py
 
    # with an override
-   uv run python .claude/skills/prompts/preview_prompt.py PATH/TO/DIR
+   uv run python .claude/skills/minnarone-prompts/preview_prompt.py PATH/TO/DIR
    ```
 
    Fail-fast: if the set is broken the script dies with `PromptError` before
