@@ -4,5 +4,9 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-echo "pre-commit: running make quality"
-make quality
+# La configurazione degli hook è in `.pre-commit-config.yaml` (unica fonte di
+# verità: ruff format/check, vulture, deptry, pylint duplicate-code). Questo
+# script fa da ponte per chi ha attivato `git config core.hooksPath .githooks`,
+# così non serve necessariamente `pre-commit install`. Gira sui file in stage.
+echo "pre-commit: running configured hooks"
+uv run --extra dev pre-commit run

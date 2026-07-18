@@ -110,12 +110,21 @@ or artifacts.
 uv sync --extra dev
 make quality
 
-# enable the pre-commit git hook tracked in the repo
-git config core.hooksPath .githooks
+# run every hook against the whole repo on demand
+uv run --extra dev pre-commit run --all-files
+
+# make the hooks run automatically at commit — either:
+git config core.hooksPath .githooks   # bridge to .pre-commit-config.yaml
+# ...or the standard pre-commit install:
+uv run --extra dev pre-commit install
 ```
 
-The target runs Ruff, Vulture, Deptry and Pylint limited to `duplicate-code`
-(`R0801`).
+`make quality` runs `ruff format --check`, `ruff check`, Vulture, Deptry and
+Pylint limited to `duplicate-code` (`R0801`, on `src` only — test setup is
+allowed to repeat). The same tools run at commit time via
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml) (local `uv run` hooks;
+`ruff check --fix` and `ruff format` also auto-fix). The `spike/` reference code
+is excluded from all of them.
 
 For contributors and code agents working on the externalized prompts there is a
 repo-local Claude Code skill in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
