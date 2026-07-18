@@ -184,16 +184,12 @@ class Reactor:
                 if self._last_route_was_dropped():
                     return
                 if response.message:
-                    self._note_self_message(
-                        response.message, reason=response.reason
-                    )
+                    self._note_self_message(response.message, reason=response.reason)
             else:
                 # Private path: unchanged behaviour.
                 await self._route_local_output(response.display_text)
                 if response.message and not response.end_conversation:
-                    self._note_self_message(
-                        response.message, reason=response.reason
-                    )
+                    self._note_self_message(response.message, reason=response.reason)
             return
 
         if self._human is None:
@@ -279,16 +275,12 @@ class Reactor:
 
     def _recent_for_prompt(self) -> list[Perception]:
         if not self._uses_original_chat_style():
-            return self._filter_self_perceptions(
-                self._store.tail(self._recent_window)
-            )
+            return self._filter_self_perceptions(self._store.tail(self._recent_window))
 
         recent: list[Perception] = []
         for spec in ORIGINAL_CHAT_CONTEXT_SPECS:
             recent.extend(self._tail_matching(spec.source, spec.type))
-        return self._filter_self_perceptions(
-            sorted(recent, key=lambda p: p.ts)
-        )
+        return self._filter_self_perceptions(sorted(recent, key=lambda p: p.ts))
 
     def _filter_self_perceptions(
         self, perceptions: list[Perception]

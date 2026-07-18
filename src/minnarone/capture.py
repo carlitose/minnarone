@@ -175,9 +175,7 @@ def make_device_capture_source(
         # include_loopback=True; macOS non lo supporta.
         try:
             speaker = sc.default_speaker()
-            loopback = sc.get_microphone(
-                str(speaker.name), include_loopback=True
-            )
+            loopback = sc.get_microphone(str(speaker.name), include_loopback=True)
         except Exception as exc:  # noqa: BLE001 - fallback errore operatore chiaro
             raise RuntimeError(
                 "nessun device di loopback per l'uscita di default: verifica "

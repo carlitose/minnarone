@@ -184,23 +184,17 @@ class TwitchChatSender:
         except (OSError, ConnectionError) as exc:
             self._connected = False
             self._schedule_reconnect()
-            raise TwitchSendConnectionError(
-                "write failed, connection lost"
-            ) from exc
+            raise TwitchSendConnectionError("write failed, connection lost") from exc
 
     def _validate_message(self, text: str) -> None:
         """Refuse messages that would violate IRC protocol constraints."""
         if _CONTROL_CHAR_RE.search(text):
-            raise TwitchSendMessageRefused(
-                "message contains control characters"
-            )
+            raise TwitchSendMessageRefused("message contains control characters")
 
         # The full IRC line is: PRIVMSG #channel :text\r\n
         overhead = len(f"PRIVMSG #{self._channel} :".encode("utf-8")) + 2  # \r\n
         if len(text.encode("utf-8")) + overhead > _IRC_MAX_LINE_BYTES:
-            raise TwitchSendMessageRefused(
-                "message exceeds IRC length limit"
-            )
+            raise TwitchSendMessageRefused("message exceeds IRC length limit")
 
     # -- reconnect -----------------------------------------------------------
 
@@ -219,9 +213,7 @@ class TwitchChatSender:
                 self._backoff_seconds = min(
                     self._backoff_seconds * 2, _BACKOFF_MAX_SECONDS
                 )
-                logger.info(
-                    "twitch sender: reconnecting in %.1fs", delay
-                )
+                logger.info("twitch sender: reconnecting in %.1fs", delay)
                 await asyncio.sleep(delay)
                 if self._stopped:
                     break
@@ -231,9 +223,7 @@ class TwitchChatSender:
                     self._reconnecting = False
                     return
                 except (OSError, ConnectionError):
-                    logger.warning(
-                        "twitch sender: reconnect attempt failed, retrying"
-                    )
+                    logger.warning("twitch sender: reconnect attempt failed, retrying")
                     continue
         except asyncio.CancelledError:
             pass

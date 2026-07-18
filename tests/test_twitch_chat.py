@@ -196,7 +196,9 @@ def test_reader_raises_clear_error_on_auth_notice():
     assert stream.closed is True
 
 
-def test_smoke_workflow_writes_chat_perceptions_without_openrouter(tmp_path, monkeypatch):
+def test_smoke_workflow_writes_chat_perceptions_without_openrouter(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     output = tmp_path / "perceptions.jsonl"
     adapter = FakeSourceAdapter(

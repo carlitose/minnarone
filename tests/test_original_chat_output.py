@@ -2,9 +2,7 @@ from minnarone.original_chat_output import normalize_original_chat_response
 
 
 def test_normalizes_exact_re_msg_response():
-    response = normalize_original_chat_response(
-        "RE: boss fight\nMSG: bella giocata"
-    )
+    response = normalize_original_chat_response("RE: boss fight\nMSG: bella giocata")
 
     assert response.reason == "boss fight"
     assert response.message == "bella giocata"
@@ -24,9 +22,7 @@ def test_tolerates_minor_label_formatting_and_preamble():
 
 
 def test_normalizes_missing_colons_to_canonical_re_msg_lines():
-    response = normalize_original_chat_response(
-        "RE boss fight\nMSG bella giocata"
-    )
+    response = normalize_original_chat_response("RE boss fight\nMSG bella giocata")
 
     assert response.reason == "boss fight"
     assert response.message == "bella giocata"
@@ -34,9 +30,7 @@ def test_normalizes_missing_colons_to_canonical_re_msg_lines():
 
 
 def test_normalizes_malformed_msg_separator_to_canonical_re_msg_lines():
-    response = normalize_original_chat_response(
-        "RE: boss fight\nMSG - bella giocata"
-    )
+    response = normalize_original_chat_response("RE: boss fight\nMSG - bella giocata")
 
     assert response.reason == "boss fight"
     assert response.message == "bella giocata"
@@ -44,9 +38,7 @@ def test_normalizes_malformed_msg_separator_to_canonical_re_msg_lines():
 
 
 def test_uses_unlabeled_body_as_message_when_msg_label_is_missing():
-    response = normalize_original_chat_response(
-        "RE: boss fight\nbella giocata"
-    )
+    response = normalize_original_chat_response("RE: boss fight\nbella giocata")
 
     assert response.reason == "boss fight"
     assert response.message == "bella giocata"

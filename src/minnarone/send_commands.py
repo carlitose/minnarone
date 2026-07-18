@@ -67,14 +67,10 @@ class SendCommandSurface:
         """
         with self._lock:
             self._policy.engage_kill_switch()
-            self._record_transition(
-                "kill_switch", "operator", "operator_kill_switch"
-            )
+            self._record_transition("kill_switch", "operator", "operator_kill_switch")
             return TransitionResult(accepted=True, reason="kill_switch_engaged")
 
-    def _record_transition(
-        self, transition: str, actor: str, reason: str
-    ) -> None:
+    def _record_transition(self, transition: str, actor: str, reason: str) -> None:
         if self._event_recorder is None:
             return
         record = getattr(self._event_recorder, "record_send_transition", None)

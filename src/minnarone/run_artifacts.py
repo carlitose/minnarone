@@ -101,16 +101,8 @@ def _prune_old_run_dirs(
     active_run_dir: Path,
     keep_latest: int,
 ) -> None:
-    active_runs = [
-        path
-        for path in root.iterdir()
-        if _is_active_run_dir(path)
-    ]
-    completed = [
-        path
-        for path in root.iterdir()
-        if _is_completed_run_dir(path)
-    ]
+    active_runs = [path for path in root.iterdir() if _is_active_run_dir(path)]
+    completed = [path for path in root.iterdir() if _is_completed_run_dir(path)]
     active = active_run_dir.resolve()
     other_completed_runs = [path for path in completed if path.resolve() != active]
     completed_budget = max(keep_latest - len(active_runs), 0)

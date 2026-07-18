@@ -366,7 +366,9 @@ def test_frame_to_image_accepts_existing_image_without_writing_files():
 
     image = _FakeImage("already-image")
 
-    converted = frame_to_pil_image(VideoFrame(pixels=image), image_module=_FakeImageModule())
+    converted = frame_to_pil_image(
+        VideoFrame(pixels=image), image_module=_FakeImageModule()
+    )
 
     assert converted is image
     assert image.converted_to == "RGB"

@@ -39,7 +39,9 @@ def _build(tmp_path, llm_message="enkk ha battuto il boss."):
 
 def _speech(store, text, speaker="streamer", ts=1.0):
     store.append(
-        Perception(ts=ts, source=Source.AUDIO, type="speech", text=text, speaker=speaker)
+        Perception(
+            ts=ts, source=Source.AUDIO, type="speech", text=text, speaker=speaker
+        )
     )
 
 

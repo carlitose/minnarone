@@ -116,9 +116,7 @@ class CommentatorConfig:
             private_only = self._PRIVATE_ONLY_STYLES & self.profiles.keys()
             if private_only:
                 names = ", ".join(sorted(s.value for s in private_only))
-                raise ConfigError(
-                    f"profilo/i {names} richiede mode: private"
-                )
+                raise ConfigError(f"profilo/i {names} richiede mode: private")
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,9 +333,7 @@ class TwitchSendConfig:
             object.__setattr__(
                 self,
                 name,
-                _coerce_config_positive_int(
-                    getattr(self, name), f"twitch.send.{name}"
-                ),
+                _coerce_config_positive_int(getattr(self, name), f"twitch.send.{name}"),
             )
 
     def validate_for_mode(self, mode: OutputMode) -> None:
@@ -659,8 +655,7 @@ def _asr_config_from_dict(data: dict[str, object]) -> AsrConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi asr non riconosciuti: "
-            + ", ".join(f"asr.{key}" for key in unknown)
+            "campi asr non riconosciuti: " + ", ".join(f"asr.{key}" for key in unknown)
         )
     try:
         return AsrConfig(
@@ -669,9 +664,7 @@ def _asr_config_from_dict(data: dict[str, object]) -> AsrConfig:
             compute_type=data.get("compute_type", "default"),  # type: ignore[arg-type]
             language=data.get("language"),  # type: ignore[arg-type]
             beam_size=data.get("beam_size", 5),  # type: ignore[arg-type]
-            condition_on_previous_text=data.get(
-                "condition_on_previous_text", False
-            ),  # type: ignore[arg-type]
+            condition_on_previous_text=data.get("condition_on_previous_text", False),  # type: ignore[arg-type]
         )
     except AsrConfigError as exc:
         raise ConfigError(f"asr.{exc}") from exc
@@ -738,9 +731,7 @@ def _video_config_from_dict(data: dict[str, object]) -> VideoPerceptionConfig:
     try:
         return VideoPerceptionConfig(
             sample_every=data.get("sample_every", 1),  # type: ignore[arg-type]
-            dedup_change_threshold=data.get(
-                "dedup_change_threshold", 0.0
-            ),  # type: ignore[arg-type]
+            dedup_change_threshold=data.get("dedup_change_threshold", 0.0),  # type: ignore[arg-type]
         )
     except VideoConfigError as exc:
         raise ConfigError(f"video.{exc}") from exc
@@ -813,9 +804,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
         if value is None:
             value = {}
         if not isinstance(value, dict):
-            raise ConfigError(
-                f"commentator.profiles.{key} deve essere una tabella"
-            )
+            raise ConfigError(f"commentator.profiles.{key} deve essere una tabella")
         parsed_profiles[style] = _build_profile_from_dict(style, value)
 
     return CommentatorConfig(
@@ -902,7 +891,9 @@ class Config:
         if not isinstance(self.asr, AsrConfig):
             raise ConfigError("asr deve essere una AsrConfig")
         if not isinstance(self.speaker_embedding, SpeakerEmbeddingConfig):
-            raise ConfigError("speaker_embedding deve essere una SpeakerEmbeddingConfig")
+            raise ConfigError(
+                "speaker_embedding deve essere una SpeakerEmbeddingConfig"
+            )
         if not isinstance(self.speaker_clustering, SpeakerClusteringConfig):
             raise ConfigError(
                 "speaker_clustering deve essere una SpeakerClusteringConfig"

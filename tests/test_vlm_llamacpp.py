@@ -276,10 +276,12 @@ def test_build_captioner_routes_to_llamacpp_backend(tmp_path):
     perceiver = _build_default_video_perceiver(
         _routing_config("llamacpp"),
         store,
-        qwen_captioner_factory=lambda _c: chosen.append("qwen")
-        or _RecordingCaptioner("qwen"),
-        llamacpp_captioner_factory=lambda _c: chosen.append("llamacpp")
-        or _RecordingCaptioner("llamacpp"),
+        qwen_captioner_factory=lambda _c: (
+            chosen.append("qwen") or _RecordingCaptioner("qwen")
+        ),
+        llamacpp_captioner_factory=lambda _c: (
+            chosen.append("llamacpp") or _RecordingCaptioner("llamacpp")
+        ),
     )
     perceiver.perceive_frame(VideoFrame(pixels=b"frame-bytes", ts=1.0))
 
@@ -293,10 +295,12 @@ def test_build_captioner_routes_to_qwen_backend_by_default(tmp_path):
     perceiver = _build_default_video_perceiver(
         _routing_config("qwen"),
         store,
-        qwen_captioner_factory=lambda _c: chosen.append("qwen")
-        or _RecordingCaptioner("qwen"),
-        llamacpp_captioner_factory=lambda _c: chosen.append("llamacpp")
-        or _RecordingCaptioner("llamacpp"),
+        qwen_captioner_factory=lambda _c: (
+            chosen.append("qwen") or _RecordingCaptioner("qwen")
+        ),
+        llamacpp_captioner_factory=lambda _c: (
+            chosen.append("llamacpp") or _RecordingCaptioner("llamacpp")
+        ),
     )
     perceiver.perceive_frame(VideoFrame(pixels=b"frame-bytes", ts=1.0))
 

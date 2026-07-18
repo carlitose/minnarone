@@ -123,12 +123,8 @@ def test_tail_skips_corrupt_line(tmp_path):
 
 def test_tail_matching_returns_recent_source_specific_perceptions(tmp_path):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
-    store.append(
-        Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio")
-    )
-    store.append(
-        Perception(ts=2.0, source=Source.VIDEO, type="caption", text="video")
-    )
+    store.append(Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio"))
+    store.append(Perception(ts=2.0, source=Source.VIDEO, type="caption", text="video"))
     for index in range(300):
         store.append(
             Perception(
@@ -154,9 +150,7 @@ def test_tail_matching_returns_recent_source_specific_perceptions(tmp_path):
 
 def test_tail_matching_uses_source_cache_when_global_tail_is_busy(tmp_path):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
-    store.append(
-        Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio")
-    )
+    store.append(Perception(ts=1.0, source=Source.AUDIO, type="speech", text="audio"))
     for index in range(300):
         store.append(_p(2.0 + index, f"chat {index}"))
 
@@ -193,8 +187,8 @@ def test_invalid_utf8_line_does_not_brick_reads_or_constructor(tmp_path):
     # il costruttore non deve sollevare (prima brickava via _prime_recent)
     store = PerceptionStore(p)
     texts_since = [pc.text for pc in store.read_since(0.0)]
-    assert texts_since == ["prima", "dopo"]              # salta la riga corrotta
+    assert texts_since == ["prima", "dopo"]  # salta la riga corrotta
     assert [pc.text for pc in store.tail(10)] == ["prima", "dopo"]
     rows, pos = store.read_from(0)
     assert [pc.text for pc in rows] == ["prima", "dopo"]
-    assert pos == p.stat().st_size                        # cursore a fine file
+    assert pos == p.stat().st_size  # cursore a fine file

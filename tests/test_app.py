@@ -1523,11 +1523,7 @@ def test_tui_original_chat_end_conv_output_goes_to_dashboard_as_skipped_re_msg(
         del url, headers, body, timeout
         from minnarone.openrouter import HttpResponse
 
-        payload = {
-            "choices": [
-                {"message": {"content": "RE: idle\nMSG: #end_conv"}}
-            ]
-        }
+        payload = {"choices": [{"message": {"content": "RE: idle\nMSG: #end_conv"}}]}
         return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
 
     cfg = Config.load(
@@ -1663,11 +1659,7 @@ def test_console_original_chat_end_conv_output_prints_skipped_re_msg_locally(
         del url, headers, body, timeout
         from minnarone.openrouter import HttpResponse
 
-        payload = {
-            "choices": [
-                {"message": {"content": "RE: idle\nMSG: #end_conv"}}
-            ]
-        }
+        payload = {"choices": [{"message": {"content": "RE: idle\nMSG: #end_conv"}}]}
         return HttpResponse(status=200, body=json.dumps(payload).encode("utf-8"))
 
     cfg = Config.load(
@@ -1738,7 +1730,9 @@ def test_meeting_synthesizer_config_is_valid(tmp_path):
         )
     )
     assert CommentatorStyle.MEETING_SYNTHESIZER in cfg.commentator.profiles
-    assert cfg.commentator.profiles[CommentatorStyle.MEETING_SYNTHESIZER].interval_s == 5.0
+    assert (
+        cfg.commentator.profiles[CommentatorStyle.MEETING_SYNTHESIZER].interval_s == 5.0
+    )
 
 
 def test_meeting_synthesizer_build_agent_wires_periodic_senser(tmp_path):
@@ -1763,7 +1757,9 @@ def test_meeting_synthesizer_build_agent_wires_periodic_senser(tmp_path):
     assert isinstance(agent, Agent)
     assert agent.senser.trigger_mode == "periodic"
     assert agent.senser._interval_s == 42.0
-    assert agent.prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
+    assert (
+        agent.prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
+    )
     assert isinstance(agent.router, ConsoleOutputRouter)
     assert agent.mode is OutputMode.PRIVATE
 
@@ -1967,9 +1963,7 @@ def test_suggester_build_agent_wires_on_perception_senser(tmp_path):
     assert agent.mode is OutputMode.PRIVATE
 
 
-def test_suggester_speech_perception_produces_private_output(
-    tmp_path, monkeypatch
-):
+def test_suggester_speech_perception_produces_private_output(tmp_path, monkeypatch):
     """End-to-end: a speech perception triggers a suggestion as [PRIVATE] output.
 
     Uses a FakeOutputRouter so no network is needed. The Senser is on_perception:
@@ -2107,9 +2101,7 @@ def test_suggester_non_speech_perceptions_do_not_trigger(tmp_path, monkeypatch):
         prompt = _prompt_from_body(body)
         if "Sei un sintetizzatore" not in prompt:
             llm_calls.append(prompt)
-        payload = json.dumps(
-            {"choices": [{"message": {"content": "suggestion"}}]}
-        )
+        payload = json.dumps({"choices": [{"message": {"content": "suggestion"}}]})
         return HttpResponse(status=200, body=payload.encode("utf-8"))
 
     router = FakeOutputRouter()
@@ -2363,9 +2355,7 @@ def test_multi_profile_each_reactor_has_own_senser_prompt_router(tmp_path):
     assert len(set(builders)) == 3
 
 
-def test_multi_profile_concurrent_run_produces_output_from_all(
-    tmp_path, monkeypatch
-):
+def test_multi_profile_concurrent_run_produces_output_from_all(tmp_path, monkeypatch):
     """All 3 Reactors produce output when their respective triggers fire."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
@@ -2561,18 +2551,25 @@ def test_multi_profile_tui_messages_do_not_mix(tmp_path, monkeypatch):
     )
 
     op_reactor = next(
-        r for r in agent.reactors
+        r
+        for r in agent.reactors
         if r._prompt_builder.commentator_style is CommentatorStyle.OPERATOR
     )
     # Verifica che esista un reactor MEETING_SYNTHESIZER (StopIteration se assente).
     next(
-        r for r in agent.reactors
+        r
+        for r in agent.reactors
         if r._prompt_builder.commentator_style is CommentatorStyle.MEETING_SYNTHESIZER
     )
 
     agent.store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg",
-                   text="ehi minnarone ci sei?", speaker="u1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone ci sei?",
+            speaker="u1",
+        )
     )
 
     asyncio.run(op_reactor.run_once())
@@ -3130,11 +3127,11 @@ def test_run_summary_reaches_reaction_prompt(tmp_path, monkeypatch):
 def test_dispatch_routes_chat_event_to_store(tmp_path):
     """Il dispatcher instrada un `RawEvent` di chat al `ChatPerceiver` → store."""
     cfg = Config.load(_write_workspace(tmp_path, mode="public"))
-    agent = build_agent(
-        cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"
-    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
     agent.dispatch(
-        RawEvent(channel="chat", payload={"text": "ciao mondo", "speaker": "u1"}, ts=7.0)
+        RawEvent(
+            channel="chat", payload={"text": "ciao mondo", "speaker": "u1"}, ts=7.0
+        )
     )
     tail = agent.store.tail(10)
     assert tail[-1].text == "ciao mondo"
@@ -3150,9 +3147,7 @@ def test_dispatch_skips_unconfigured_channel(tmp_path):
     silenzio, senza crash né percezioni scritte.
     """
     cfg = Config.load(_write_workspace(tmp_path, mode="public"))
-    agent = build_agent(
-        cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl"
-    )
+    agent = build_agent(cfg, transport=_fake_transport, store_path=tmp_path / "p.jsonl")
     assert "audio" not in agent.perceivers
     # Nessuna eccezione, nessuna percezione scritta per un canale non cablato.
     agent.dispatch(RawEvent(channel="audio", payload=object(), ts=1.0))
@@ -3450,9 +3445,7 @@ def test_run_surfaces_cancelled_child_cleanup_failure(tmp_path, monkeypatch):
     asyncio.run(drive())
 
 
-def test_original_chat_prompt_uses_channel_from_twitch_config(
-    tmp_path, monkeypatch
-):
+def test_original_chat_prompt_uses_channel_from_twitch_config(tmp_path, monkeypatch):
     # FU-01: il canale nel prompt deve seguire twitch.channel della config,
     # non il default cablato "enkk".
     monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)

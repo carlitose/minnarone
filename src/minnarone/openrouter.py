@@ -119,7 +119,9 @@ def _open_request(
     try:
         with opener.open(req, timeout=timeout) as resp:
             return HttpResponse(status=resp.status, body=resp.read())
-    except urllib.error.HTTPError as exc:  # risposta HTTP con status di errore (incl. 3xx)
+    except (
+        urllib.error.HTTPError
+    ) as exc:  # risposta HTTP con status di errore (incl. 3xx)
         return HttpResponse(status=exc.code, body=exc.read())
     except TimeoutError as exc:  # urlopen timeout
         raise TransportTimeout(str(exc)) from exc

@@ -64,8 +64,7 @@ class QwenVlConfig:
         backend = _non_empty_str(self.backend, "backend")
         if backend not in VLM_BACKENDS:
             raise QwenVlConfigError(
-                "backend deve essere 'qwen' o 'llamacpp' (non "
-                f"{self.backend!r})"
+                f"backend deve essere 'qwen' o 'llamacpp' (non {self.backend!r})"
             )
         object.__setattr__(self, "backend", backend)
         object.__setattr__(
@@ -102,9 +101,7 @@ class QwenVlConfig:
         )
         quantization = _optional_non_empty_str(self.quantization, "quantization")
         if quantization is not None and quantization not in {"4bit", "8bit"}:
-            raise QwenVlConfigError(
-                "quantization deve essere '4bit', '8bit' o null"
-            )
+            raise QwenVlConfigError("quantization deve essere '4bit', '8bit' o null")
         object.__setattr__(self, "quantization", quantization)
         language = _non_empty_str(self.language, "language")
         object.__setattr__(self, "language", language)
@@ -292,8 +289,7 @@ class Qwen2VlCaptioner:
     def _run_with_timeout(self, work) -> str:
         if not self._inference_lock.acquire(blocking=False):
             raise QwenVlCaptionError(
-                "local Qwen2-VL caption backend is still busy after a previous "
-                "timeout"
+                "local Qwen2-VL caption backend is still busy after a previous timeout"
             )
         results: Queue[tuple[bool, str | BaseException]] = Queue(maxsize=1)
 
@@ -320,7 +316,9 @@ class Qwen2VlCaptioner:
         try:
             ok, value = results.get_nowait()
         except Empty as exc:
-            raise QwenVlCaptionError("local Qwen2-VL caption produced no result") from exc
+            raise QwenVlCaptionError(
+                "local Qwen2-VL caption produced no result"
+            ) from exc
         if ok:
             return str(value)
         if isinstance(value, QwenVlCaptionError):
@@ -328,7 +326,9 @@ class Qwen2VlCaptioner:
         raise QwenVlCaptionError(f"local Qwen2-VL caption failed: {value}") from value
 
 
-def frame_to_pil_image(frame: VideoFrame, *, image_module: object | None = None) -> object:
+def frame_to_pil_image(
+    frame: VideoFrame, *, image_module: object | None = None
+) -> object:
     """Convert a `VideoFrame` payload to a PIL image without writing files."""
     image_api = image_module if image_module is not None else _import_pillow_image()
     pixels = frame.pixels
@@ -337,6 +337,7 @@ def frame_to_pil_image(frame: VideoFrame, *, image_module: object | None = None)
     if isinstance(pixels, (bytes, bytearray, memoryview)):
         return image_api.open(BytesIO(bytes(pixels))).convert("RGB")  # type: ignore[attr-defined]
     return image_api.fromarray(pixels).convert("RGB")  # type: ignore[attr-defined]
+
 
 def downscale_image_for_vlm(
     image: object,
@@ -366,6 +367,7 @@ def downscale_image_for_vlm(
         resample=_resize_filter(image_module),
     )
 
+
 def _bounded_size(
     *,
     width: int,
@@ -388,6 +390,7 @@ def _bounded_size(
             break
     return target_width, target_height
 
+
 def _image_size(image: object) -> tuple[int, int]:
     size = getattr(image, "size", None)
     if (
@@ -403,6 +406,7 @@ def _image_size(image: object) -> tuple[int, int]:
     if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
         return width, height
     raise QwenVlCaptionError("VLM image has no valid pixel size")
+
 
 def _resize_filter(image_module: object | None) -> object:
     image_api = image_module if image_module is not None else _import_pillow_image()

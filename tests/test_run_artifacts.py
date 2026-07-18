@@ -21,8 +21,10 @@ def test_create_run_session_creates_run_local_artifact_paths(tmp_path):
 
     assert session.run_dir.is_dir()
     assert (session.run_dir / OWNERSHIP_MARKER).is_file()
-    assert (session.run_dir / OWNERSHIP_MARKER).read_text(encoding="utf-8").endswith(
-        ":active\n"
+    assert (
+        (session.run_dir / OWNERSHIP_MARKER)
+        .read_text(encoding="utf-8")
+        .endswith(":active\n")
     )
     assert session.run_dir.parent == root
     assert session.perception_log_path == session.run_dir / "perceptions.jsonl"

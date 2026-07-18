@@ -397,10 +397,7 @@ def _build_router(
     TuiPrivateOutputRouter (il display è del pannello TUI, non di stdout).
     """
     if mode is OutputMode.PUBLIC:
-        if (
-            send_config is not None
-            and send_config.mode is not TwitchSendMode.OFF
-        ):
+        if send_config is not None and send_config.mode is not TwitchSendMode.OFF:
             import time
 
             policy = PublicSendPolicy(
@@ -504,6 +501,7 @@ def _lazy_device_audio_source(config: OsCaptureConfig) -> Captured:
     al `--check`: lo si chiama dentro il generatore async, così l'hardware si
     apre soltanto quando la pompa inizia a iterare dentro `start()`.
     """
+
     async def _source() -> AsyncIterator[AudioChunk]:
         async for chunk in make_device_capture_source(
             source_label="system", chunk_seconds=config.audio_chunk_seconds
@@ -722,6 +720,7 @@ def _build_default_video_perceiver(
       condivisa (riusa `config.llamacpp.base_url`).
     Entrambe le costruzioni sono iniettabili per i test.
     """
+
     def build_captioner() -> Captioner:
         if config.vlm.backend == "llamacpp":
             if llamacpp_captioner_factory is not None:
@@ -841,10 +840,7 @@ def build_agent(
     # questo speaker vengono escluse dai trigger e dalla finestra recente del
     # prompt. Assente (send: off o non-Twitch) → nessun filtro.
     bot_identity: str | None = None
-    if (
-        config.twitch is not None
-        and config.twitch.send.mode is not TwitchSendMode.OFF
-    ):
+    if config.twitch is not None and config.twitch.send.mode is not TwitchSendMode.OFF:
         bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
 
     # Prompt-set del summarizer (ticket 05): set SEPARATO da quello original-chat
@@ -860,10 +856,7 @@ def build_agent(
     # Costruzione del sender: SOLO quando il config dichiara mode: live.
     # off/shadow non costruiscono il sender né leggono il token di scrittura.
     sender: TwitchChatSender | None = None
-    if (
-        config.twitch is not None
-        and config.twitch.send.mode is TwitchSendMode.LIVE
-    ):
+    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
         sender = TwitchChatSender(
             channel=config.twitch.channel,
             username=os.environ["TWITCH_BOT_USERNAME"],
@@ -923,14 +916,16 @@ def build_agent(
             style_stream = MinnaroneOutputStream()
             output_streams[style] = style_stream
             _per_profile_routers[style] = TuiPrivateOutputRouter(
-                style_stream, public_router=public_router,
+                style_stream,
+                public_router=public_router,
             )
         if output_streams:
             active_minnarone_output = next(iter(output_streams.values()))
         else:
             active_minnarone_output = minnarone_output
         out_router = _per_profile_routers.get(_first_style) or TuiPrivateOutputRouter(
-            minnarone_output, public_router=public_router,
+            minnarone_output,
+            public_router=public_router,
         )
     else:
         send_config = config.twitch.send if config.twitch is not None else None
@@ -1131,7 +1126,9 @@ def build_agent(
     )
 
 
-def _speaker_diagnostics_from_audio_perceiver(audio_perceiver: object | None) -> object | None:
+def _speaker_diagnostics_from_audio_perceiver(
+    audio_perceiver: object | None,
+) -> object | None:
     if audio_perceiver is None:
         return None
     return getattr(audio_perceiver, "speaker_diagnostics", None)

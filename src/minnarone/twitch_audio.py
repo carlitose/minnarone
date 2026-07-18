@@ -118,9 +118,7 @@ class TwitchAudioReader(SourceAdapter):
     async def _read_audio_chunk(self) -> bytes:
         data = bytearray()
         while len(data) < self._chunk_size:
-            part = await self._pipeline.read_ffmpeg_stdout(
-                self._chunk_size - len(data)
-            )
+            part = await self._pipeline.read_ffmpeg_stdout(self._chunk_size - len(data))
             if not part:
                 self._pipeline.raise_pump_failure_if_done()
                 returncode = await self._pipeline.wait_ffmpeg()

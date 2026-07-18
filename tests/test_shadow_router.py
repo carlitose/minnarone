@@ -429,7 +429,13 @@ def test_shadow_message_appears_in_recent_messages(tmp_path):
     """A shadow decision should update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     router = _shadow_router_for_reactor(
         decision=SendDecision(ACTION_SHADOW, REASON_OK),
@@ -447,7 +453,13 @@ def test_dropped_message_does_not_appear_in_recent_messages(tmp_path):
     """A drop decision should NOT update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     router = _shadow_router_for_reactor(
         decision=SendDecision(ACTION_DROP, REASON_BUDGET_MINUTE),
@@ -468,7 +480,13 @@ def test_end_conv_public_does_not_shadow(tmp_path):
     """#end_conv should close the window without generating a shadow message."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     buf = io.StringIO()
     router = TwitchPublicOutputRouter(
@@ -748,7 +766,13 @@ def test_sent_message_appears_in_recent_messages(tmp_path):
     """A sent message should update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     sender = FakeSender()
     policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
@@ -772,7 +796,13 @@ def test_failed_send_updates_bookkeeping_conservatively(tmp_path):
     """A failed send updates bookkeeping as if sent (conservative per PRD)."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
     policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
@@ -830,6 +860,7 @@ def test_live_config_wires_sender_into_router(tmp_path, monkeypatch):
 
     async def fake_connect():
         from tests.test_twitch_chat_sender import _FakeIRCStream
+
         return _FakeIRCStream()
 
     agent = build_agent(

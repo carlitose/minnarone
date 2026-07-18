@@ -41,9 +41,7 @@ def test_new_frame_produces_caption_perception(tmp_path):
     captioner = FakeCaptioner(text="una tazza rossa")
     perceiver, store = _perceiver(tmp_path, captioner)
 
-    created = perceiver.perceive_frame(
-        VideoFrame(pixels="frame-a", ts=5.0)
-    )
+    created = perceiver.perceive_frame(VideoFrame(pixels="frame-a", ts=5.0))
 
     assert len(created) == 1
     assert captioner.calls == 1
@@ -367,7 +365,11 @@ def test_distinct_array_frames_are_not_deduped(tmp_path):
     store = PerceptionStore(tmp_path / "p.jsonl")
     cap = FakeCaptioner(text="caption")
     perceiver = VideoPerceiver(store, cap)
-    perceiver.perceive_frame(VideoFrame(pixels=_FakeArray(b"AAAA" * 1000 + b"X"), ts=1.0))
-    perceiver.perceive_frame(VideoFrame(pixels=_FakeArray(b"AAAA" * 1000 + b"Y"), ts=2.0))
+    perceiver.perceive_frame(
+        VideoFrame(pixels=_FakeArray(b"AAAA" * 1000 + b"X"), ts=1.0)
+    )
+    perceiver.perceive_frame(
+        VideoFrame(pixels=_FakeArray(b"AAAA" * 1000 + b"Y"), ts=2.0)
+    )
     # due frame con contenuto diverso non collassano in uno solo
     assert len(store.read_since(0.0)) == 2

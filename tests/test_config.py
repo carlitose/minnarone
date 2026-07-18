@@ -246,7 +246,7 @@ def test_os_capture_adapter_rejects_wrong_os_capture_object_type():
 @pytest.mark.parametrize(
     "line, replacement, message",
     [
-        ("channel: \"#Minnarone\"", "channel: '#'", "channel Twitch"),
+        ('channel: "#Minnarone"', "channel: '#'", "channel Twitch"),
         ("quality: best", "quality: ''", "quality"),
         ("audio_chunk_seconds: 1.0", "audio_chunk_seconds: 0", "audio_chunk_seconds"),
         (
@@ -718,9 +718,7 @@ def test_commentator_unknown_field_within_profile_raises(tmp_path):
 
 
 def test_commentator_profile_validation_negative_interval_raises(tmp_path):
-    with pytest.raises(
-        ConfigError, match="MeetingSynthesizerProfileConfig.interval_s"
-    ):
+    with pytest.raises(ConfigError, match="MeetingSynthesizerProfileConfig.interval_s"):
         Config.load(
             _write(
                 tmp_path,
@@ -867,7 +865,9 @@ def test_commentator_unknown_top_level_key_raises():
 
 def test_commentator_validate_for_mode_public_with_private_only_profile_raises():
     cfg = CommentatorConfig(
-        profiles={CommentatorStyle.MEETING_SYNTHESIZER: MeetingSynthesizerProfileConfig()},
+        profiles={
+            CommentatorStyle.MEETING_SYNTHESIZER: MeetingSynthesizerProfileConfig()
+        },
     )
     with pytest.raises(ConfigError, match="mode: private"):
         cfg.validate_for_mode(OutputMode.PUBLIC)

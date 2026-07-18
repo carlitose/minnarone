@@ -73,9 +73,7 @@ def test_missing_facts_dir_yields_empty_facts_no_crash(tmp_path):
     soul = tmp_path / "soul.md"
     _write(soul, "io")
 
-    blocks = FileMemory(
-        soul_path=str(soul), facts_dir=str(tmp_path / "nope")
-    ).load()
+    blocks = FileMemory(soul_path=str(soul), facts_dir=str(tmp_path / "nope")).load()
 
     assert blocks.facts == ""
 

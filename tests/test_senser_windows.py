@@ -87,9 +87,7 @@ def test_idle_suppressed_while_window_open(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", clock=clock, idle_interval=10.0
-    )
+    senser = Senser(store, agent_name="Minnarone", clock=clock, idle_interval=10.0)
     chat.perceive("minnarone ciao", speaker="enkk", ts=1.0)
     assert senser.tick()[0].kind == "mention"  # apre la finestra di enkk
     # passa oltre l'idle_interval ma la finestra (ttl 180s) è ancora aperta
@@ -103,9 +101,7 @@ def test_idle_fires_once_window_expired(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", clock=clock, idle_interval=10.0
-    )
+    senser = Senser(store, agent_name="Minnarone", clock=clock, idle_interval=10.0)
     chat.perceive("minnarone ciao", speaker="enkk", ts=1.0)
     assert senser.tick()[0].kind == "mention"
     # oltre il ttl della finestra (180s): la finestra è scaduta, idle scatta

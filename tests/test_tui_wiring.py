@@ -35,9 +35,7 @@ def _live_config(**kwargs) -> TwitchSendConfig:
 def test_auto_degrade_recorded_with_actor_auto(tmp_path):
     """When the router auto-degrades after failures, the event should have actor=auto."""
     recorder = RunEventRecorder(tmp_path)
-    policy = PublicSendPolicy(
-        _live_config(failure_threshold=2), clock=FakeClock()
-    )
+    policy = PublicSendPolicy(_live_config(failure_threshold=2), clock=FakeClock())
     policy.promote()
 
     from minnarone.send_commands import SendCommandSurface

@@ -26,16 +26,13 @@ class LiveTuiDependencyError(RuntimeError):
 
 
 class _LiveAgent(Protocol):
-    async def run(self) -> None:
-        ...
+    async def run(self) -> None: ...
 
-    def observability_snapshot(self) -> object:
-        ...
+    def observability_snapshot(self) -> object: ...
 
 
 class _LiveTuiApp(Protocol):
-    def run(self) -> object:
-        ...
+    def run(self) -> object: ...
 
 
 class _ObservabilitySnapshotBridge:

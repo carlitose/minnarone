@@ -417,7 +417,9 @@ def test_send_on_broken_connection_raises_and_triggers_reconnect():
     """When write fails, send raises TwitchSendConnectionError."""
     call_count = 0
     good_stream = _FakeIRCStream()
-    bad_stream = _DisconnectingStream(fail_on_write=4)  # Fail on the 4th write (1st after handshake)
+    bad_stream = _DisconnectingStream(
+        fail_on_write=4
+    )  # Fail on the 4th write (1st after handshake)
 
     async def connect():
         nonlocal call_count

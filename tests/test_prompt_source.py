@@ -112,7 +112,9 @@ def test_empty_required_content_not_silent(tmp_path: Path) -> None:
 
 
 def test_unknown_placeholder_fails_fast(tmp_path: Path) -> None:
-    (tmp_path / "format.md").write_text("RE: MSG: #end_conv {{boom}}\n", encoding="utf-8")
+    (tmp_path / "format.md").write_text(
+        "RE: MSG: #end_conv {{boom}}\n", encoding="utf-8"
+    )
     spec = PromptSetSpec(
         specs=(PromptSpec(filename="format.md", allowed_placeholders=frozenset()),)
     )
@@ -226,9 +228,7 @@ def test_key_spec_foreign_placeholder_names_file_and_section(tmp_path: Path) -> 
 
 
 def test_key_spec_missing_required_placeholder_names_section(tmp_path: Path) -> None:
-    (tmp_path / "keyed.md").write_text(
-        "## a\nsenza placeholder\n", encoding="utf-8"
-    )
+    (tmp_path / "keyed.md").write_text("## a\nsenza placeholder\n", encoding="utf-8")
     spec = _keyed_spec(a=KeySpec(required_placeholders=frozenset({"user"})))
     with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'a'.*user"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
@@ -363,9 +363,7 @@ def test_situations_end_conv_missing_in_one_section_names_it(
 def test_situations_placeholder_in_wrong_section_names_it(tmp_path: Path) -> None:
     # `{{user}}` in streamer-mention: il render di quella sezione non fornisce
     # valori → oggi esploderebbe a runtime. Deve fallire al load, con sezione.
-    _write_situations(
-        tmp_path, {"streamer-mention": "lo streamer parla a {{user}}"}
-    )
+    _write_situations(tmp_path, {"streamer-mention": "lo streamer parla a {{user}}"})
     with pytest.raises(
         PromptError,
         match=r"'situations\.md' sezione 'streamer-mention'.*user",
@@ -376,9 +374,7 @@ def test_situations_placeholder_in_wrong_section_names_it(tmp_path: Path) -> Non
 def test_situations_reason_only_allowed_in_generic(tmp_path: Path) -> None:
     # `{{reason}}` è fornito solo dal render di `generic`: altrove è un errore.
     _write_situations(tmp_path, {"idle": "idle {{reason}} MSG: #end_conv"})
-    with pytest.raises(
-        PromptError, match=r"'situations\.md' sezione 'idle'.*reason"
-    ):
+    with pytest.raises(PromptError, match=r"'situations\.md' sezione 'idle'.*reason"):
         load_prompt_set(tmp_path)
 
 
@@ -492,9 +488,7 @@ def test_headers_valid_full_override_passes(tmp_path: Path) -> None:
 def test_headers_missing_key_fails_fast(tmp_path: Path) -> None:
     # Un headers.md senza una chiave obbligatoria fallisce all'avvio nominando
     # il file (mai un header vuoto silenzioso a runtime).
-    (tmp_path / "headers.md").write_text(
-        "## regole\n[RULES]\n", encoding="utf-8"
-    )
+    (tmp_path / "headers.md").write_text("## regole\n[RULES]\n", encoding="utf-8")
     with pytest.raises(PromptError, match=r"headers\.md"):
         load_prompt_set(tmp_path)
 
@@ -512,9 +506,7 @@ def test_headers_channel_only_allowed_in_cosa_sai(tmp_path: Path) -> None:
 def test_headers_cosa_sai_requires_channel(tmp_path: Path) -> None:
     # Un override non puo' "perdere" il canale (stessa regola di rules/intro).
     _write_headers(tmp_path, {"cosa_sai": "WHAT YOU KNOW (the streamer):"})
-    with pytest.raises(
-        PromptError, match=r"'headers\.md' sezione 'cosa_sai'.*channel"
-    ):
+    with pytest.raises(PromptError, match=r"'headers\.md' sezione 'cosa_sai'.*channel"):
         load_prompt_set(tmp_path)
 
 
@@ -524,9 +516,7 @@ def test_headers_reject_header_ref_placeholders_no_recursion(
     # I placeholder `{{header_*}}` sono per i CORPI (situations.md), non per
     # headers.md stesso: niente ricorsione header->header.
     _write_headers(tmp_path, {"memoria": "{{header_situazione}}"})
-    with pytest.raises(
-        PromptError, match=r"'headers\.md' sezione 'memoria'"
-    ):
+    with pytest.raises(PromptError, match=r"'headers\.md' sezione 'memoria'"):
         load_prompt_set(tmp_path)
 
 
@@ -566,9 +556,7 @@ def test_default_situations_reference_headers_not_literals() -> None:
     # costruzione).
     from importlib.resources import files
 
-    raw = (files(DEFAULT_PROMPTS_PKG) / "situations.md").read_text(
-        encoding="utf-8"
-    )
+    raw = (files(DEFAULT_PROMPTS_PKG) / "situations.md").read_text(encoding="utf-8")
     assert "{{header_tuoi_ultimi_messaggi}}" in raw
     assert "{{header_memoria}}" in raw
     assert "{{header_conversazione_recente}}" in raw

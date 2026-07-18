@@ -109,7 +109,9 @@ class StreamlinkFfmpegPipeline:
                 except asyncio.CancelledError:
                     pass
                 except TimeoutError:
-                    pump_error = TimeoutError(f"{self._label} pump did not stop in time")
+                    pump_error = TimeoutError(
+                        f"{self._label} pump did not stop in time"
+                    )
                 except BaseException as exc:
                     pump_error = exc
         finally:
@@ -122,7 +124,9 @@ class StreamlinkFfmpegPipeline:
                 self._streamlink = None
         if pump_error is not None and not self._reported_pump_failure:
             self._reported_pump_failure = True
-            raise OSError(f"{self._label} pipeline failed: {pump_error}") from pump_error
+            raise OSError(
+                f"{self._label} pipeline failed: {pump_error}"
+            ) from pump_error
 
     async def read_ffmpeg_stdout(self, size: int) -> bytes:
         if self._ffmpeg is None:

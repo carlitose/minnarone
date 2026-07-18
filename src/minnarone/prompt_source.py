@@ -271,9 +271,7 @@ class PromptSet:
                 )
             for key, body in sections.items():
                 if not body.strip():
-                    raise PromptError(
-                        f"sezione '## {key}' vuota in '{spec.filename}'"
-                    )
+                    raise PromptError(f"sezione '## {key}' vuota in '{spec.filename}'")
             cls._validate_key_specs(spec, sections)
 
         found = find_placeholders(text)
@@ -284,9 +282,7 @@ class PromptSet:
         # l'unione (il posizionamento fine lo fa già `_validate_key_specs`).
         allowed = spec.allowed_placeholders | spec.required_placeholders
         for key_spec in spec.key_specs.values():
-            allowed |= (
-                key_spec.allowed_placeholders | key_spec.required_placeholders
-            )
+            allowed |= key_spec.allowed_placeholders | key_spec.required_placeholders
         unknown = found - allowed
         if unknown:
             raise PromptError(
@@ -323,9 +319,7 @@ class PromptSet:
             key_spec = spec.key_specs[key]
             body = sections[key]  # presenza garantita dal check delle chiavi
             found = find_placeholders(body)
-            allowed = (
-                key_spec.allowed_placeholders | key_spec.required_placeholders
-            )
+            allowed = key_spec.allowed_placeholders | key_spec.required_placeholders
             unknown = found - allowed
             if unknown:
                 raise PromptError(
@@ -469,9 +463,7 @@ SITUATIONS_SPEC = PromptSpec(
         ),
         "chat-mention": _CHAT_SITUATION_KEY_SPEC,
         "chat-continuation": _CHAT_SITUATION_KEY_SPEC,
-        "streamer-mention": KeySpec(
-            allowed_placeholders=HEADER_REF_PLACEHOLDERS
-        ),
+        "streamer-mention": KeySpec(allowed_placeholders=HEADER_REF_PLACEHOLDERS),
         "streamer-continuation": KeySpec(
             allowed_placeholders=HEADER_REF_PLACEHOLDERS,
             required_tokens=("#end_conv",),

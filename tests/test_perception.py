@@ -13,8 +13,13 @@ from minnarone.perception import (
 
 
 def test_roundtrip_preserves_fields():
-    p = Perception(ts=1781057651.73, source=Source.AUDIO, type="speech",
-                   text="ciao", speaker="streamer")
+    p = Perception(
+        ts=1781057651.73,
+        source=Source.AUDIO,
+        type="speech",
+        text="ciao",
+        speaker="streamer",
+    )
     assert Perception.from_json(p.to_json()) == p
 
 

@@ -160,7 +160,9 @@ def test_migrated_tunable_prompts_are_not_hardcoded_in_python() -> None:
         "Modalità suggeritore",  # suggester.md
     ]
     for phrase in forbidden_in_prompt_py:
-        assert phrase not in _PROMPT_PY, f"prompt tunabile ancora hard-coded: {phrase!r}"
+        assert phrase not in _PROMPT_PY, (
+            f"prompt tunabile ancora hard-coded: {phrase!r}"
+        )
 
     forbidden_in_summarizer_py = [
         "Sei un sintetizzatore",  # summarizer.md instruction

@@ -237,8 +237,7 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
         for spec in set_spec.specs:
             origin = (
                 "override"
-                if override_dir is not None
-                and (override_dir / spec.filename).is_file()
+                if override_dir is not None and (override_dir / spec.filename).is_file()
                 else "default"
             )
             try:
@@ -275,7 +274,9 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
         )
         return 1
 
-    where = f"override: {override_dir}" if override_dir else "solo default impacchettati"
+    where = (
+        f"override: {override_dir}" if override_dir else "solo default impacchettati"
+    )
     print(f"ok: {len(checked)} file di prompt validati ({where})")
     for set_name, filename, origin in checked:
         print(f"  [{set_name}] {filename}: {origin}")

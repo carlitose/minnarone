@@ -90,9 +90,7 @@ class FileMemory(Memory):
 
     def _load_facts(self) -> str:
         try:
-            files = sorted(
-                p for p in self._facts_dir.iterdir() if p.is_file()
-            )
+            files = sorted(p for p in self._facts_dir.iterdir() if p.is_file())
         except OSError:
             # Directory assente o non leggibile: blocco vuoto, non crash.
             return ""

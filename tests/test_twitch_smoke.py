@@ -58,9 +58,7 @@ def test_twitch_chat_smoke_requires_channel(tmp_path, capsys):
     assert "--channel" in err
 
 
-def test_twitch_chat_smoke_requires_positive_duration(
-    tmp_path, monkeypatch, capsys
-):
+def test_twitch_chat_smoke_requires_positive_duration(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
     monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
 
@@ -79,9 +77,7 @@ def test_twitch_chat_smoke_requires_positive_duration(
     assert "--duration" in capsys.readouterr().err
 
 
-def test_twitch_chat_smoke_rejects_nonfinite_duration(
-    tmp_path, monkeypatch, capsys
-):
+def test_twitch_chat_smoke_rejects_nonfinite_duration(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
     monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
 
@@ -241,9 +237,7 @@ def test_twitch_chat_smoke_invalid_channel_is_clear_error(
     assert "channel Twitch non valido" in capsys.readouterr().err
 
 
-def test_twitch_chat_smoke_operational_errors_are_clear(
-    tmp_path, monkeypatch, capsys
-):
+def test_twitch_chat_smoke_operational_errors_are_clear(tmp_path, monkeypatch, capsys):
     async def fake_smoke(**kwargs):
         raise OSError("network unreachable")
 
@@ -473,9 +467,7 @@ def test_twitch_smoke_fails_when_requested_video_has_no_events(
     assert "video: nessun evento" in capsys.readouterr().err
 
 
-def test_twitch_smoke_fails_when_stats_contains_failures(
-    tmp_path, monkeypatch, capsys
-):
+def test_twitch_smoke_fails_when_stats_contains_failures(tmp_path, monkeypatch, capsys):
     async def fake_smoke(**kwargs):
         return SmokeStats(chat_events=1, audio_events=1, failures=["audio: boom"])
 
@@ -523,9 +515,7 @@ def test_twitch_smoke_rejects_invalid_audio_chunk_duration(
     assert "--audio-chunk-seconds" in capsys.readouterr().err
 
 
-def test_twitch_smoke_rejects_invalid_video_fps(
-    tmp_path, monkeypatch, capsys
-):
+def test_twitch_smoke_rejects_invalid_video_fps(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
     monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
 
