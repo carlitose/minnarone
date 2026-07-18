@@ -25,12 +25,18 @@ sono utilizzabili con `.env` e distinguono un canale quieto da un guasto media.
       tasti TUI.
 - [ ] Default/override Grok e parametri (`thinking`/`reasoning_effort`) hanno una
       policy corrente, documentata e coperta da test.
+- [ ] Il percorso live valida account, scope e scadenza dei token all'avvio e
+      ogni ora, fallendo verso shadow/stop su revoca, `401` o mismatch.
+- [ ] `announce_ai` governa davvero `ORIGINAL_CHAT`, oppure il flag è
+      documentato come non supportato senza imporre una falsa negazione.
+- [ ] L'inerzia di `retention.perceptions_days` è visibile e il percorso
+      documenta artifact, cancellazione manuale e opt-out finché manca enforcement.
 - [ ] Test mirati, quality e smoke offline passano.
 
 ## Blocked By
 
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md) — done
-- [14-research-public-twitch-safety.md](14-research-public-twitch-safety.md)
+- [14-research-public-twitch-safety.md](done/14-research-public-twitch-safety.md) — done
 - [15-research-runtime-model-profiles.md](15-research-runtime-model-profiles.md)
 
 ## Frontier

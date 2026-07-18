@@ -128,6 +128,32 @@ guida operatore molto lunga.
   ticket 15; intervista persona e golden path passano dai ticket 13, 16 e 17.
   I gate shadow/live sono intenzionali e restano soggetti alla decisione safety
   del ticket 14.
+- **Policy Twitch pubblica verificata (ticket 14, 2026-07-18)**: il primo
+  golden path può restare IRC e shadow-first. IRC richiede User Access Token
+  `chat:read`/`chat:edit` e `NICK` uguale al login dell'account autorizzante; il
+  Chat Bot Badge richiederebbe invece Send Chat Message API, App Access Token,
+  `user:write:chat`, `user:bot` e `channel:bot` (o stato moderatore); il bot non
+  può essere il broadcaster del canale. I budget
+  Minnarone `1/min` e `20/ora` restano scelte conservative sotto i limiti
+  ufficiali.
+- **Disclosure resta operator choice, con floor anti-inganno (ticket 14,
+  2026-07-18)**: Twitch non impone un annuncio AI per messaggio, ma vieta
+  bot/pratiche ingannevoli e richiede identità/scopo comprensibili. Il percorso
+  pubblico `ORIGINAL_CHAT` ignora oggi `announce_ai` e forza non-disclosure; il
+  golden path non deve descrivere il flag come efficace finché il gap non è
+  corretto o documentato.
+- **Token e retention non sono ancora production-safe (ticket 14,
+  2026-07-18)**: Twitch richiede validazione token all'avvio e ogni ora e
+  cancellazione/opt-out dei log chat conservati solo finché necessari. Il
+  runtime controlla solo token non vuoti e `retention.perceptions_days` è
+  inerte; tutorial e onboarding devono mostrare artifact/cancellazione manuale
+  e fallire verso shadow/stop su credenziali invalide.
+- **Permesso broadcaster obbligatorio per il live pubblico (ticket 14,
+  2026-07-18)**: Minnarone usa un account bot dedicato e non coincide con
+  l'installed chatbot che opera tramite l'account del broadcaster. Poiché l'IRC
+  non esprime il grant per-canale richiesto dal modello cloud chatbot, il golden
+  path richiede consenso out-of-band registrato prima del live; allow-list e
+  token del bot non bastano. Senza consenso il percorso termina a shadow.
 
 ## Evidence: First Real Twitch Operator Journey (2026-07-18)
 
@@ -163,8 +189,6 @@ guida operatore molto lunga.
 - Quale modello OpenRouter sia il default pubblico e come validare parametri
   model-specific (`thinking` vs `reasoning_effort`) senza inseguire slug
   hard-coded obsoleti.
-- Quali vincoli pubblici di autorizzazione, disclosure AI, retention e policy
-  Twitch debbano diventare guardrail/documentazione del progetto.
 - Set minimo di documenti per contributori e code agent (`AGENTS.md`,
   `CONTRIBUTING.md`, `SECURITY.md`, architettura rapida) prima del flip.
 
@@ -193,9 +217,11 @@ guida operatore molto lunga.
   assegna i gap P1 ai ticket 15, 16–18 e conserva i gate shadow/live.
 - **Confine persona/facts — risolto**: ticket 13 done; contratto e due scenari
   di accettazione sono pronti come input del prototipo 16.
-- **Policy pubblica**: verificare con fonti primarie autorizzazione
-  bot, disclosure, retention e credenziali prima di presentare il percorso live
-  come golden path pubblico. → ticket 14.
+- **Policy pubblica — risolta per shadow e ticket dipendenti**: fonti, matrice
+  e guardrail sono in `docs/research/public-twitch-bot-safety.md`; ticket 16–18
+  possono procedere. Il consenso broadcaster out-of-band è hard gate per il
+  live IRC raccomandato; senza consenso il percorso termina a shadow. → ticket
+  14 done.
 - **Runtime/model profiles**: modelli e hardware hanno funzionato solo grazie a
   stato locale preesistente; serve una matrice supportata e un'acquisizione
   ripetibile. → ticket 15 (può partire dopo l'inventario 12).
@@ -225,8 +251,9 @@ guida operatore molto lunga.
   matrice gap/severità/owner riportata nella mappa.
 - 13 — done — contratto guidato per persona, soul, facts e descrizione canale
   confermato; nessuna identità inventata, nessuna modifica runtime.
-- 14 — research — policy Twitch/public bot: autorizzazione, disclosure,
-  retention e token boundaries → decision spec prima del golden path live.
+- 14 — done — policy Twitch/public bot verificata: IRC/auth, account/token,
+  rate, disclosure, retention e shadow/live mappati; guardrail e gap consegnati
+  ai ticket 16–18.
 - 15 — research — profili runtime/modelli/hardware e acquisizione ripetibile →
   matrice supportata con costi disco/RAM/VRAM e licenze.
 - 16 — prototype — catalogo nuove skill + confronto skill/docs/templates vs
@@ -240,8 +267,8 @@ guida operatore molto lunga.
 
 ## Next Review
 
-Con 10–13 chiusi, completare la ricerca safety 14 e usare l'inventario 12 per i
-profili runtime 15. Con 14–15 chiusi, prototipare il catalogo/onboarding nel 16,
+Con 10–14 chiusi, usare l'inventario 12 per completare i profili runtime 15.
+Con 14–15 chiusi, prototipare il catalogo/onboarding nel 16,
 poi rendere eseguibili 17–18 e decidere se il 09 va assorbito nel polish. Solo
 quando la nuova frontiera è verde si riapre il ticket 05 con conferma esplicita
 dell'utente e verifica anonima post-flip.

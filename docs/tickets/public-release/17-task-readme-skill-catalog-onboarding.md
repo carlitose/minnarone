@@ -25,6 +25,12 @@ senza contesto privato.
       confini e link funzionante.
 - [ ] Sono presenti golden path progressivi: chat-only shadow, media smoke,
       full multimodal, live attended-only con doppio `p` e `k`.
+- [ ] Il live documenta consenso broadcaster, account bot dedicato, validazione
+      token, disclosure e fallback shadow/stop senza promettere il Chat Bot
+      Badge sul trasporto IRC; distingue inoltre i limiti Twitch dai budget
+      conservativi Minnarone.
+- [ ] La guida dichiara `retention.perceptions_days` inerte ed elenca artifact,
+      cancellazione manuale e opt-out finché manca enforcement runtime.
 - [ ] Config/template pubblici non contengono path personali né credenziali.
 - [ ] `AGENTS.md`/CONTRIBUTING pointers coprono architettura, comandi quality,
       prompt safety, worktree sporco e skill routing.
@@ -32,7 +38,7 @@ senza contesto privato.
 
 ## Blocked By
 
-- [11-task-rename-prompts-skill.md](11-task-rename-prompts-skill.md)
+- [11-task-rename-prompts-skill.md](done/11-task-rename-prompts-skill.md) — done
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md) — done
 - [16-prototype-agent-and-human-onboarding.md](16-prototype-agent-and-human-onboarding.md)
 - [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)

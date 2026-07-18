@@ -2,7 +2,7 @@
 
 ## Parent Spec
 
-[public-release-wayfinder.md](../../specs/public-release-wayfinder.md)
+[public-release-wayfinder.md](../../../specs/public-release-wayfinder.md)
 
 ## Type
 
@@ -16,15 +16,15 @@ parte del golden path pubblico.
 
 ## Acceptance Criteria
 
-- [ ] Fonti primarie Twitch correnti coprono bot/chat, token/scope, rate limit e
+- [x] Fonti primarie Twitch correnti coprono bot/chat, token/scope, rate limit e
       regole applicabili al caso d'uso.
-- [ ] È esplicito cosa è requisito tecnico, policy di piattaforma o scelta etica
+- [x] È esplicito cosa è requisito tecnico, policy di piattaforma o scelta etica
       del progetto.
-- [ ] La posizione corrente `announce_ai`/non-disclosure è confrontata con le
+- [x] La posizione corrente `announce_ai`/non-disclosure è confrontata con le
       fonti e con il rischio di un repo pubblico.
-- [ ] Sono definiti guardrail minimi per shadow/live, autorizzazione streamer,
+- [x] Sono definiti guardrail minimi per shadow/live, autorizzazione streamer,
       account bot dedicato, retention e kill-switch.
-- [ ] Le decisioni confluiscono in una decision spec o nel parent spec e
+- [x] Le decisioni confluiscono in una decision spec o nel parent spec e
       sbloccano i ticket 16–18.
 
 ## Blocked By
@@ -57,3 +57,22 @@ verificata e non implicita.
 - Consulenza legale.
 - Modifica immediata del runtime.
 - Promozione live durante la ricerca.
+
+## Progress
+
+- 2026-07-18 — ricerca completata in
+  [`docs/research/public-twitch-bot-safety.md`](../../../research/public-twitch-bot-safety.md)
+  usando fonti ufficiali Twitch correnti (documentazione risolta via Context7 e
+  verificata sulle pagine primarie). Il report separa requisiti tecnici, policy
+  e scelte del progetto, confronta i gate esistenti e definisce input operativi
+  per i ticket 16–18.
+- Decisioni confermate: disclosure neutrale/operator choice, con floor di
+  policy contro pratiche ingannevoli; consenso broadcaster out-of-band come
+  hard gate per il live IRC con account bot dedicato. Resta unknown la durata
+  numerica di retention, che deve essere scelta in base allo scopo.
+- Nessun runtime avviato, nessun invio Twitch e nessuna modifica a codice o
+  prompt. Esito e priorità sono stati riportati nel parent wayfinder.
+
+## Status
+
+Done — review indipendenti e QA documentale completati.
