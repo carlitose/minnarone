@@ -26,13 +26,22 @@ GitHub, nessun contenuto inatteso in issue/PR pubbliche.
 
 ## Blocked By
 
-- [01-task-license-and-cleanup.md](01-task-license-and-cleanup.md)
-- [02-grilling-screenshots-review.md](02-grilling-screenshots-review.md)
-- [03-grilling-readme-language.md](03-grilling-readme-language.md)
-- [04-task-security-preflight.md](04-task-security-preflight.md)
-- [06-task-fix-failing-tests-on-main.md](06-task-fix-failing-tests-on-main.md)
-- [07-task-fresh-install-verification.md](07-task-fresh-install-verification.md)
-- [08-task-readme-english.md](08-task-readme-english.md)
+- [01-task-license-and-cleanup.md](done/01-task-license-and-cleanup.md)
+- [02-grilling-screenshots-review.md](done/02-grilling-screenshots-review.md)
+- [03-grilling-readme-language.md](done/03-grilling-readme-language.md)
+- [04-task-security-preflight.md](done/04-task-security-preflight.md)
+- [06-task-fix-failing-tests-on-main.md](done/06-task-fix-failing-tests-on-main.md)
+- [07-task-fresh-install-verification.md](done/07-task-fresh-install-verification.md)
+- [08-task-readme-english.md](done/08-task-readme-english.md)
+- [10-grilling-skill-catalog-and-rename.md](done/10-grilling-skill-catalog-and-rename.md)
+- [11-task-rename-prompts-skill.md](done/11-task-rename-prompts-skill.md)
+- [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md)
+- [13-grilling-persona-facts-onboarding.md](done/13-grilling-persona-facts-onboarding.md)
+- [14-research-public-twitch-safety.md](14-research-public-twitch-safety.md)
+- [15-research-runtime-model-profiles.md](15-research-runtime-model-profiles.md)
+- [16-prototype-agent-and-human-onboarding.md](16-prototype-agent-and-human-onboarding.md)
+- [17-task-readme-skill-catalog-onboarding.md](17-task-readme-skill-catalog-onboarding.md)
+- [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
 
 ## Frontier
 
