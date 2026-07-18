@@ -157,7 +157,7 @@ pesi senza conferma separata.
 
 ## Comandi eseguibili per profilo
 
-Sostituire `example-channel` e i file config locali; esportare prima le
+Sostituire `examplechannel` e i file config locali; esportare prima le
 credenziali richieste. I comandi assumono il layout `.local/models` sopra e
 artifact già acquisiti e verificati.
 
@@ -165,9 +165,9 @@ P0 chat-only:
 
 ```bash
 uv sync
-uv run minnarone .local/example-channel/chat.yaml --check
+uv run minnarone .local/examplechannel/chat.yaml --check
 uv run minnarone-twitch-chat-smoke \
-  --channel example-channel --duration 30 \
+  --channel examplechannel --duration 30 \
   --output .smoke/p0-chat
 ```
 
@@ -177,10 +177,10 @@ P1 capture smoke, senza modelli:
 streamlink --version
 ffmpeg -version
 uv run minnarone-twitch-smoke \
-  --channel example-channel --duration 30 --no-chat --audio \
+  --channel examplechannel --duration 30 --no-chat --audio \
   --quality audio_only --output .smoke/p1-audio
 uv run minnarone-twitch-smoke \
-  --channel example-channel --duration 30 --no-chat --video \
+  --channel examplechannel --duration 30 --no-chat --video \
   --video-fps 0.2 --quality 720p --output .smoke/p1-video
 ```
 
@@ -190,7 +190,7 @@ P2 CPU-light audio; i due smoke usano il PCM prodotto da P1:
 uv sync --extra audio --extra tui
 shasum -a 256 \
   .local/models/speaker/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
-uv run minnarone .local/example-channel/cpu-audio.yaml --check
+uv run minnarone .local/examplechannel/cpu-audio.yaml --check
 uv run --extra audio python - <<'PY'
 from pathlib import Path
 from minnarone.asr import AsrConfig, FasterWhisperAsr
@@ -225,7 +225,7 @@ P3 Apple Silicon full; il caption smoke usa il JPEG prodotto da P1:
 ```bash
 system_profiler SPHardwareDataType
 uv sync --extra audio --extra video --extra vlm --extra tui
-uv run minnarone .local/example-channel/apple-full.yaml --check
+uv run minnarone .local/examplechannel/apple-full.yaml --check
 uv run --extra vlm python - <<'PY'
 from PIL import Image
 from minnarone.video import VideoFrame
@@ -245,7 +245,7 @@ P4 CUDA full:
 ```bash
 nvidia-smi
 uv sync --extra audio --extra video --extra vlm --extra tui
-uv run minnarone .local/example-channel/cuda-full.yaml --check
+uv run minnarone .local/examplechannel/cuda-full.yaml --check
 uv run --extra vlm python - <<'PY'
 from PIL import Image
 from minnarone.video import VideoFrame
@@ -272,7 +272,7 @@ llama-server \
 # Terminale B, dopo il caricamento del modello.
 curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/props
-uv run minnarone .local/example-channel/llamacpp-full.yaml --check
+uv run minnarone .local/examplechannel/llamacpp-full.yaml --check
 ```
 
 La variante Qwen2-VL sostituisce i due path Gemma con il GGUF Q4_K_M e il
@@ -284,10 +284,10 @@ impostano `twitch.send.mode: shadow`. Lasciare ogni run attivo per una finestra
 decisa (per esempio 60 secondi), quindi fermarlo con Ctrl-C; non premere `p`:
 
 ```bash
-uv run minnarone .local/example-channel/cpu-audio.yaml --tui
-uv run minnarone .local/example-channel/apple-full.yaml --tui
-uv run minnarone .local/example-channel/cuda-full.yaml --tui
-uv run minnarone .local/example-channel/llamacpp-full.yaml --tui
+uv run minnarone .local/examplechannel/cpu-audio.yaml --tui
+uv run minnarone .local/examplechannel/apple-full.yaml --tui
+uv run minnarone .local/examplechannel/cuda-full.yaml --tui
+uv run minnarone .local/examplechannel/llamacpp-full.yaml --tui
 ```
 
 Su Linux usare `sha256sum` al posto di `shasum -a 256`.
