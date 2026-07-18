@@ -29,9 +29,7 @@ class _FakePerceiver(EventPerceiver):
     payload_type = _Payload
 
     def _perceive_payload(self, payload: _Payload) -> list[Perception]:
-        return [
-            Perception(ts=0.0, source=Source.CHAT, type="msg", text=payload.text)
-        ]
+        return [Perception(ts=0.0, source=Source.CHAT, type="msg", text=payload.text)]
 
 
 def test_wrong_channel_returns_empty():

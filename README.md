@@ -110,12 +110,28 @@ or artifacts.
 uv sync --extra dev
 make quality
 
-# enable the pre-commit git hook tracked in the repo
-git config core.hooksPath .githooks
+# run every hook against the whole repo on demand
+uv run --extra dev pre-commit run --all-files
+
+# make the hooks run automatically at commit — either:
+git config core.hooksPath .githooks   # bridge to .pre-commit-config.yaml
+# ...or the standard pre-commit install:
+uv run --extra dev pre-commit install
 ```
 
-The target runs Ruff, Vulture, Deptry and Pylint limited to `duplicate-code`
-(`R0801`).
+`make quality` runs `ruff format --check`, `ruff check`, Vulture, Deptry and
+Pylint limited to `duplicate-code` (`R0801`, on `src` only — test setup is
+allowed to repeat). The same tools run at commit time via
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml) (local `uv run` hooks;
+`ruff check --fix` and `ruff format` also auto-fix). The `spike/` reference code
+is excluded from all of them.
+
+For contributors and code agents working on the externalized prompts there is a
+repo-local Claude Code skill in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
+it documents the file map and the non-obvious constraints (required
+placeholders, control tokens, the hard-coded security boundary, byte-invariance
+of the packaged defaults) and prescribes the safe flow — edit →
+`minnarone validate-prompts` → targeted tests → preview render.
 
 ### Runtime prerequisites
 
@@ -434,6 +450,85 @@ auto_memory: false      # inerte in MVP
 
 The `retention` and `auto_memory` items are present in the schema but do not alter
 the behavior (v2 extension).
+
+## Prompt files (persona, rules, format)
+
+The **tunable** prompt text (persona, per-style rules, response format, the
+situation variants and the summarizer instruction) lives in external Markdown
+files, not in Python. They ship packaged with the wheel under
+`src/minnarone/prompts/` and are read at startup:
+
+| File | What it is |
+|------|-----------|
+| `rules.md` | Original-chat persona/style rules. Uses `{{channel}}`. |
+| `intro.md` | "Current situation" banner + channel line. Uses `{{channel}}`. |
+| `situations.md` | The 6 situation variants (keyed by `## <key>`). Validated **per section**: `{{user}}`/`{{mention}}` only in `chat-mention`/`chat-continuation`, `{{reason}}` only in `generic`; `#end_conv` required in `idle`, `chat-mention`, `chat-continuation` and `streamer-continuation`. Bodies cite section headers via `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`, `{{header_conversazione_recente}}` (resolved from `headers.md`, allowed in every section). |
+| `headers.md` | The section headers and framing lines of the reaction prompt (keyed by `## <key>`: `regole`, `memoria`, `memoria_suffix`, `situazione`, `chat_recente`, …, plus `riassunto_std`/`conversazione_recente_std`/`situazione_std` for the non-original-chat styles, where the `## ` markdown prefix stays structural). `{{channel}}` required in `cosa_sai` only. In-body references resolve from the same values, so renaming a header here updates every text that cites it. |
+| `format.md` | The `RE:`/`MSG:` response contract. Must keep `RE:`, `MSG:`, `#end_conv`. |
+| `operator.md` | Local-commentator rules. Uses `{{language}}`. |
+| `meeting_synthesizer.md` | Meeting-notes rules. Uses `{{language}}`. |
+| `suggester.md` | Private-suggester rules. Uses `{{language}}`; must keep the `#nothing` control token. |
+| `summarizer.md` | Short-term-memory summarizer text (keyed sections). |
+
+### Overriding the prompts (`prompts_dir`)
+
+Set `prompts_dir` in the config, the same spirit as `soul_path` / `facts_dir`
+(the path is resolved relative to the config file):
+
+```yaml
+prompts_dir: my-prompts   # a directory next to the config file
+```
+
+Resolution is **per file**: for each prompt file, if it exists under
+`prompts_dir` it wins, otherwise the packaged default is used. You can override
+just one file and let the rest fall back. If `prompts_dir` is absent, only the
+packaged defaults are used, so a fresh install works with no configuration.
+
+The loader is **fail-fast**: a missing file, a missing/unknown placeholder, a
+missing control token or an empty required section aborts startup — a tunable
+prompt is never allowed to degrade to empty text. For keyed files
+(`situations.md`, `summarizer.md`) the constraints are enforced **per section**:
+removing `#end_conv` from a single situation, or using a placeholder in a
+section whose render path never supplies it, fails at startup with an error
+naming the file and the section (not at runtime on the first unlucky trigger).
+
+To validate an override without starting the app, run
+`minnarone validate-prompts --prompts-dir my-prompts` (or `--config config.yaml`
+to read `prompts_dir` from the config): exit 0 on success, one line per broken
+file otherwise. The summary lists each file's origin (override vs default) and
+prints an explicit notice when the override is partial — per-file fallback is a
+feature, but a half-translated set should be intentional, not silent.
+
+### Placeholders
+
+Substitution uses double braces `{{name}}`. The whitelisted names are
+`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}` and the
+header references `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`,
+`{{header_conversazione_recente}}` (resolved from `headers.md`). Their
+values come from config/code (trusted data, never perceived content), single
+braces `{ }` and `<...>` survive untouched, and an injected value is never
+re-scanned (no recursive template injection).
+
+`{{channel}}` follows `twitch.channel` from your config file — do not hard-code
+a channel name inside the prompt files.
+
+### Non-Italian / multi-channel
+
+Externalizing the prompts **is** the localization mechanism — there is no i18n
+engine and the project does not ship translated sets. To run a channel in
+another language: copy `src/minnarone/prompts/` to a new directory, rewrite the
+`.md` files in your language (keeping the placeholders and control tokens),
+and point `prompts_dir` at it. No code changes. A minimal, partial example lives
+in [examples/prompts-en/](examples/prompts-en/).
+
+### Security boundary (what you cannot override)
+
+The **anti-injection** and **disclosure** rules are hard-coded in `prompt.py` and
+are intentionally NOT among the editable files, together with the untrusted-data
+fence mechanics. This is deliberate: an editable file must never be able to
+weaken the protection that keeps the agent in character and treats perceived
+content as data, never as commands. A prompt override changes persona, style and
+language; it can never turn off the security rules.
 
 ## Local LLM (llama.cpp)
 

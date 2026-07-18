@@ -1,0 +1,44 @@
+# Hook locali che invocano `uv run --extra dev` (i tool stanno nell'extra `dev`).
+# Stesso set di `make quality` + ruff format. `check-layers` NON incluso:
+# minnarone non è esagonale. `spike/` è escluso ovunque (codice throwaway del
+# ticket 02).
+# Installazione una-tantum: `uv run --extra dev pre-commit install`
+# (oppure `git config core.hooksPath .githooks`, vedi .githooks/pre-commit).
+exclude: '^spike/'
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --extra dev ruff format
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --extra dev ruff check --fix
+        language: system
+        types: [python]
+      - id: vulture
+        name: vulture (dead code)
+        entry: uv run --extra dev vulture
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: deptry
+        name: deptry (deps)
+        entry: uv run --extra dev deptry . --no-ansi
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+      - id: pylint-duplicate
+        name: pylint duplicate-code
+        entry: uv run --extra dev pylint
+        language: system
+        types: [python]
+        # Solo `src`: il check duplicate-code (R0801) ha senso sul codice di
+        # PRODUZIONE. Sui test la ripetizione di setup è fisiologica e persino
+        # desiderabile (test espliciti > test DRY) — come nel repo di
+        # riferimento, che lo lancia sui layer sorgente, non sui test.
+        args: ["src"]
+        pass_filenames: false

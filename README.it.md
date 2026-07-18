@@ -109,12 +109,28 @@ mai in log, errori o artefatti.
 uv sync --extra dev
 make quality
 
-# abilita l'hook git pre-commit tracciato nel repo
-git config core.hooksPath .githooks
+# esegui a richiesta tutti gli hook su tutto il repo
+uv run --extra dev pre-commit run --all-files
+
+# fai partire gli hook automaticamente al commit — in alternativa:
+git config core.hooksPath .githooks   # ponte a .pre-commit-config.yaml
+# ...oppure l'installazione standard di pre-commit:
+uv run --extra dev pre-commit install
 ```
 
-Il target esegue Ruff, Vulture, Deptry e Pylint limitato a `duplicate-code`
-(`R0801`).
+`make quality` esegue `ruff format --check`, `ruff check`, Vulture, Deptry e
+Pylint limitato a `duplicate-code` (`R0801`, solo su `src` — la ripetizione di
+setup nei test è ammessa). Gli stessi tool girano al commit via
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml) (hook locali `uv run`;
+`ruff check --fix` e `ruff format` correggono anche in automatico). Il codice di
+riferimento in `spike/` è escluso da tutti.
+
+Per contributor e code agent che lavorano sui prompt esternalizzati esiste una
+skill Claude Code locale al repo in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
+documenta la mappa dei file e i vincoli non ovvi (placeholder obbligatori,
+token di controllo, il confine di sicurezza cablato, la byte-invarianza dei
+default impacchettati) e prescrive il flusso sicuro — modifica →
+`minnarone validate-prompts` → test mirati → render di anteprima.
 
 ### Prerequisiti runtime
 
@@ -432,6 +448,80 @@ auto_memory: false      # inerte in MVP
 
 I punti `retention` e `auto_memory` sono presenti nello schema ma non alterano
 il comportamento (estensione v2).
+
+## File di prompt (persona, regole, formato)
+
+Il testo di prompt **tunabile** (persona, regole per-stile, formato di risposta,
+le varianti di situazione e l'istruzione del summarizer) vive in file Markdown
+esterni, non nel codice Python. Sono impacchettati nel wheel sotto
+`src/minnarone/prompts/` e letti all'avvio:
+
+| File | Cos'è |
+|------|-------|
+| `rules.md` | Regole persona/stile original-chat. Usa `{{channel}}`. |
+| `intro.md` | Banner "situazione attuale" + riga canale. Usa `{{channel}}`. |
+| `situations.md` | Le 6 varianti di situazione (a chiavi `## <chiave>`). Usa `{{user}}`, `{{mention}}`, `{{reason}}`; deve mantenere il token `#end_conv`. I corpi citano gli header di sezione via `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`, `{{header_conversazione_recente}}` (risolti da `headers.md`, ammessi in ogni sezione). |
+| `headers.md` | Gli header di sezione e le righe di framing del prompt di reazione (a chiavi `## <chiave>`: `regole`, `memoria`, `memoria_suffix`, `situazione`, `chat_recente`, …, più `riassunto_std`/`conversazione_recente_std`/`situazione_std` per gli stili non-original-chat, dove il prefisso markdown `## ` resta strutturale). `{{channel}}` obbligatorio solo in `cosa_sai`. I riferimenti nei corpi si risolvono dagli stessi valori: rinominare un header qui aggiorna ogni testo che lo cita. |
+| `format.md` | Il contratto di risposta `RE:`/`MSG:`. Deve mantenere `RE:`, `MSG:`, `#end_conv`. |
+| `operator.md` | Regole del commentatore locale. Usa `{{language}}`. |
+| `meeting_synthesizer.md` | Regole della sintesi riunione. Usa `{{language}}`. |
+| `suggester.md` | Regole del suggeritore privato. Usa `{{language}}`; deve mantenere il token `#nothing`. |
+| `summarizer.md` | Testo del summarizer della memoria a breve termine (sezioni a chiavi). |
+
+### Sovrascrivere i prompt (`prompts_dir`)
+
+Imposta `prompts_dir` nella config, nello stesso spirito di `soul_path` /
+`facts_dir` (il percorso è relativo al file di config):
+
+```yaml
+prompts_dir: my-prompts   # una directory accanto al file di config
+```
+
+La risoluzione è **per-file**: per ogni file di prompt, se esiste sotto
+`prompts_dir` vince, altrimenti si usa il default impacchettato. Puoi
+sovrascrivere un solo file e lasciare che gli altri cadano sul default. Se
+`prompts_dir` è assente, si usano solo i default impacchettati: un fresh install
+funziona senza configurazione.
+
+Il loader è **fail-fast**: un file mancante, un placeholder mancante o ignoto, un
+token di controllo mancante o una sezione obbligatoria vuota fanno fallire
+l'avvio — un prompt tunabile non può mai degradare a testo vuoto.
+
+Per validare un override senza avviare l'app:
+`minnarone validate-prompts --prompts-dir my-prompts` (oppure `--config
+config.yaml` per leggere `prompts_dir` dalla config): exit 0 se tutto è valido,
+una riga per file rotto altrimenti.
+
+### Placeholder
+
+La sostituzione usa le doppie graffe `{{nome}}`. I nomi in whitelist sono
+`{{channel}}`, `{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}` e i
+riferimenti agli header `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}`,
+`{{header_conversazione_recente}}` (risolti da `headers.md`). I loro
+valori vengono da config/codice (dati fidati, mai contenuto percepito), le graffe
+singole `{ }` e i `<...>` sopravvivono intatti, e un valore iniettato non viene
+mai ri-scansionato (niente injection ricorsiva via template).
+
+`{{channel}}` segue `twitch.channel` del file di config — non cablare un nome di
+canale dentro i file di prompt.
+
+### Canale non italiano / multi-canale
+
+L'esternalizzazione dei prompt **È** il meccanismo di localizzazione — non c'è
+alcun motore i18n e il progetto non fornisce set tradotti. Per un canale in
+un'altra lingua: copia `src/minnarone/prompts/` in una nuova directory, riscrivi
+i `.md` nella tua lingua (mantenendo placeholder e token di controllo) e punta
+`prompts_dir` lì. Nessuna modifica al codice. Un esempio minimo e parziale sta in
+[examples/prompts-en/](examples/prompts-en/).
+
+### Confine di sicurezza (cosa NON puoi sovrascrivere)
+
+Le regole **anti-injection** e di **disclosure** sono cablate in `prompt.py` e
+volutamente NON stanno tra i file editabili, insieme alla meccanica del fence dei
+dati non fidati. È una scelta deliberata: un file editabile non deve mai poter
+indebolire la protezione che tiene l'agente in personaggio e tratta il contenuto
+percepito come dati, mai come comandi. Un override cambia persona, stile e
+lingua; non può mai spegnere le regole di sicurezza.
 
 ## LLM locale (llama.cpp)
 

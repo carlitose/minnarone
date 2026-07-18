@@ -7,10 +7,7 @@ Verifies that:
 """
 
 import asyncio
-import time
 from threading import Event
-
-import pytest
 
 from minnarone.config import TwitchSendConfig, TwitchSendMode
 from minnarone.public_send import PublicSendPolicy
@@ -38,15 +35,14 @@ def _live_config(**kwargs) -> TwitchSendConfig:
 def test_auto_degrade_recorded_with_actor_auto(tmp_path):
     """When the router auto-degrades after failures, the event should have actor=auto."""
     recorder = RunEventRecorder(tmp_path)
-    policy = PublicSendPolicy(
-        _live_config(failure_threshold=2), clock=FakeClock()
-    )
+    policy = PublicSendPolicy(_live_config(failure_threshold=2), clock=FakeClock())
     policy.promote()
 
-    from minnarone.shadow_router import TwitchPublicOutputRouter
     from minnarone.send_commands import SendCommandSurface
+    from minnarone.shadow_router import TwitchPublicOutputRouter
 
-    router = TwitchPublicOutputRouter(
+    # Costruzione esercitata per il side effect (nessun uso diretto nel test).
+    TwitchPublicOutputRouter(
         policy=policy,
         channel="canale",
         event_recorder=recorder,
@@ -59,7 +55,8 @@ def test_auto_degrade_recorded_with_actor_auto(tmp_path):
     import json
 
     # Actually let me test the SendCommandSurface's record with auto actor
-    surface = SendCommandSurface(policy, event_recorder=recorder)
+    # (costruzione esercitata per il side effect, nessun uso diretto).
+    SendCommandSurface(policy, event_recorder=recorder)
 
     # Simulate auto-degrade by calling policy methods directly
     policy.record_failure()

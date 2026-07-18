@@ -41,9 +41,7 @@ def test_self_chat_perception_produces_no_trigger(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     # The bot's own message echoed back by IRC - contains a mention of itself
     chat.perceive("ciao a tutti sono minnarone", speaker="minnabot", ts=1.0)
     triggers = senser.tick()
@@ -58,9 +56,7 @@ def test_self_mention_of_agent_name_produces_no_trigger(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     # The bot mentions its own name in the echoed message
     chat.perceive("ehi minnarone ci sono", speaker="minnabot", ts=1.0)
     assert senser.tick() == []
@@ -78,9 +74,7 @@ def test_self_echo_filter_is_case_insensitive(tmp_path):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
     # bot_identity uppercase, speaker lowercase (and vice versa)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="MinnaBot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="MinnaBot", clock=clock)
     chat.perceive("ciao", speaker="minnabot", ts=1.0)
     assert senser.tick() == []
     chat.perceive("ciao", speaker="MINNABOT", ts=2.0)
@@ -96,9 +90,7 @@ def test_third_party_mention_still_triggers_with_bot_identity_set(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     chat.perceive("ehi minnarone!", speaker="enkk", ts=1.0)
     triggers = senser.tick()
     assert len(triggers) == 1
@@ -129,9 +121,7 @@ def test_self_perception_remains_in_store(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     chat.perceive("messaggio del bot", speaker="minnabot", ts=1.0)
     assert senser.tick() == []  # no trigger
     # But the perception is still in the store
@@ -148,9 +138,7 @@ def test_self_perception_does_not_open_conversation_window(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     # Self message mentioning agent name - would normally open a window
     chat.perceive("ehi minnarone", speaker="minnabot", ts=1.0)
     senser.tick()
@@ -165,9 +153,7 @@ def test_self_perception_does_not_trigger_continuation(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
     # Open a window via third-party mention
     chat.perceive("minnarone ciao", speaker="enkk", ts=1.0)
     assert senser.tick()[0].kind == "mention"
@@ -195,9 +181,7 @@ def test_self_perception_excluded_from_reactor_recent_for_prompt(tmp_path):
     clock = FakeClock(start=0.0)
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)
-    senser = Senser(
-        store, agent_name="Minnarone", bot_identity="minnabot", clock=clock
-    )
+    senser = Senser(store, agent_name="Minnarone", bot_identity="minnabot", clock=clock)
 
     # Record a few perceptions: one from bot, one from third party
     chat.perceive("bot risposta", speaker="minnabot", ts=1.0)

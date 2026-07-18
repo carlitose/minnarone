@@ -404,7 +404,9 @@ def _send_health(state) -> SourceHealth | None:
     if send.kill_switch:
         return SourceHealth("failed", "kill_switch")
     if send.consecutive_failures:
-        return SourceHealth("failed", f"{send.consecutive_failures} consecutive failures")
+        return SourceHealth(
+            "failed", f"{send.consecutive_failures} consecutive failures"
+        )
     if send.last_action is None:
         return SourceHealth("idle")
     if send.last_action == "drop":
@@ -458,7 +460,9 @@ def _missing_video_captions_are_suspicious(state) -> bool:
     active_other_sources = bool(state.chat_messages or state.audio_transcriptions)
     processed_video = state.queue.get("video")
     processed = processed_video is not None and processed_video.processed >= 2
-    return (enough_video or enough_adapter_video) and (active_other_sources or processed)
+    return (enough_video or enough_adapter_video) and (
+        active_other_sources or processed
+    )
 
 
 def _mentions_openrouter(observation) -> bool:
@@ -469,7 +473,10 @@ def _mentions_openrouter(observation) -> bool:
 def _prompt_status(prompt) -> str:
     if prompt is None:
         return "llm=unknown"
-    parts = [f"llm={_compact(str(prompt.status), 16)}", f"model={_compact(str(prompt.model), 48)}"]
+    parts = [
+        f"llm={_compact(str(prompt.status), 16)}",
+        f"model={_compact(str(prompt.model), 48)}",
+    ]
     token_text = _metadata_summary(prompt.token_metadata)
     if token_text:
         parts.append(f"tokens={token_text}")

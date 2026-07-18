@@ -68,21 +68,25 @@ class TwitchStreamAdapter(SourceAdapter):
         video_stream_opener: TwitchVideoStreamOpener | None = None,
         video_frame_decoder: VideoFrameDecoder | None = None,
     ) -> None:
-        built = dict(readers) if readers is not None else self._build_readers(
-            channel=channel,
-            username=username,
-            oauth_token=oauth_token,
-            quality=quality,
-            chat=chat,
-            audio=audio,
-            video=video,
-            audio_chunk_seconds=audio_chunk_seconds,
-            video_fps=video_fps,
-            chat_connect=chat_connect,
-            audio_process_runner=audio_process_runner,
-            video_process_runner=video_process_runner,
-            video_stream_opener=video_stream_opener,
-            video_frame_decoder=video_frame_decoder,
+        built = (
+            dict(readers)
+            if readers is not None
+            else self._build_readers(
+                channel=channel,
+                username=username,
+                oauth_token=oauth_token,
+                quality=quality,
+                chat=chat,
+                audio=audio,
+                video=video,
+                audio_chunk_seconds=audio_chunk_seconds,
+                video_fps=video_fps,
+                chat_connect=chat_connect,
+                audio_process_runner=audio_process_runner,
+                video_process_runner=video_process_runner,
+                video_stream_opener=video_stream_opener,
+                video_frame_decoder=video_frame_decoder,
+            )
         )
         if not built:
             raise ValueError("abilita almeno un canale Twitch")

@@ -40,9 +40,7 @@ async def _drain(adapter: OsCaptureAdapter) -> list[RawEvent]:
 
 def test_channels_reflects_enabled_audio_and_video() -> None:
     config = OsCaptureConfig(audio=True, video=True)
-    adapter = OsCaptureAdapter(
-        config, audio_source=_audio(1), video_source=_video(1)
-    )
+    adapter = OsCaptureAdapter(config, audio_source=_audio(1), video_source=_video(1))
     assert adapter.channels() == {"audio", "video"}
 
 
@@ -85,9 +83,7 @@ def test_both_channels_emit_expected_payload_types() -> None:
     chunks = _audio(2)
     frames = _video(2)
     config = OsCaptureConfig(audio=True, video=True)
-    adapter = OsCaptureAdapter(
-        config, audio_source=chunks, video_source=frames
-    )
+    adapter = OsCaptureAdapter(config, audio_source=chunks, video_source=frames)
 
     events = asyncio.run(_drain(adapter))
 
@@ -193,9 +189,7 @@ def test_backpressure_drops_both_channels_no_channel_is_protected() -> None:
 
 def test_stats_returns_coherent_merge_stats() -> None:
     config = OsCaptureConfig(audio=True, video=True)
-    adapter = OsCaptureAdapter(
-        config, audio_source=_audio(2), video_source=_video(3)
-    )
+    adapter = OsCaptureAdapter(config, audio_source=_audio(2), video_source=_video(3))
 
     async def run() -> MergeStats:
         await adapter.start()

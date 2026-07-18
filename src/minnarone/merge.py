@@ -198,7 +198,9 @@ class MergingSourceAdapter(SourceAdapter):
         # la sua chance: la semantica CancelledError del task è preservata.
         stop_task = asyncio.ensure_future(reader.stop())
         try:
-            await asyncio.wait_for(asyncio.shield(stop_task), timeout=self._cleanup_timeout)
+            await asyncio.wait_for(
+                asyncio.shield(stop_task), timeout=self._cleanup_timeout
+            )
         except TimeoutError:
             self._note_failure(channel, "cleanup timed out")
         except asyncio.CancelledError:
@@ -279,7 +281,9 @@ class MergingSourceAdapter(SourceAdapter):
             return
         seen.append(message)
         previous = self._failures.get(channel)
-        self._failures[channel] = message if previous is None else f"{previous}; {message}"
+        self._failures[channel] = (
+            message if previous is None else f"{previous}; {message}"
+        )
 
     @staticmethod
     def _bump(counter: dict[str, int], channel: str) -> None:

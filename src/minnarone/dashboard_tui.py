@@ -20,7 +20,7 @@ from .dashboard import DashboardState, snapshot
 
 _MISSING_TEXTUAL_MSG = (
     "La dashboard TUI richiede 'textual', che non risulta installato.\n"
-    "Installalo con:  pip install \"minnarone[tui]\"  "
+    'Installalo con:  pip install "minnarone[tui]"  '
     "(oppure: pip install textual).\n"
     "Nota: il modello di snapshot (minnarone.dashboard) funziona senza textual."
 )
@@ -104,9 +104,17 @@ _CONDITIONAL_PANELS = {"SINTETIZZATORE", "SUGGERIMENTI"}
 
 # All possible panel titles in visual order, including conditional ones.
 _ALL_PANEL_TITLES = [
-    "IDLE", "FINESTRA CHAT", "STREAMER", "CHAT", "EVENTI",
-    "MINNARONE", "TRASCRIZIONE", "VIDEO", "MEMORIA",
-    "SINTETIZZATORE", "SUGGERIMENTI",
+    "IDLE",
+    "FINESTRA CHAT",
+    "STREAMER",
+    "CHAT",
+    "EVENTI",
+    "MINNARONE",
+    "TRASCRIZIONE",
+    "VIDEO",
+    "MEMORIA",
+    "SINTETIZZATORE",
+    "SUGGERIMENTI",
 ]
 
 _PROMOTE_CONFIRM_WINDOW = 3.0  # seconds to confirm a promote with second press
@@ -287,7 +295,8 @@ def build_dashboard_app(
                     container.display = title in active_titles
             # Adapt grid rows to visible panel count.
             visible = sum(
-                1 for t in _ALL_PANEL_TITLES
+                1
+                for t in _ALL_PANEL_TITLES
                 if t not in _CONDITIONAL_PANELS or t in active_titles
             )
             rows = max((visible + 2) // 3, 1)

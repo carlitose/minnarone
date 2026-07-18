@@ -7,14 +7,12 @@ Keybinding semantics:
 """
 
 import asyncio
-import time
 
 import pytest
 
 from minnarone.config import TwitchSendConfig, TwitchSendMode
 from minnarone.dashboard import DashboardState, SendDiagnostics
 from minnarone.public_send import PublicSendPolicy
-
 
 textual = pytest.importorskip("textual")
 
@@ -131,9 +129,7 @@ def test_promote_rejected_when_config_not_live():
     from minnarone.send_commands import SendCommandSurface
 
     surface = SendCommandSurface(policy)
-    state = DashboardState(
-        send=SendDiagnostics(mode="shadow")
-    )
+    state = DashboardState(send=SendDiagnostics(mode="shadow"))
     app = build_dashboard_app(lambda: state, send_commands=surface)
 
     async def exercise():
@@ -196,6 +192,7 @@ def test_kill_switch_key_records_event(tmp_path):
     asyncio.run(exercise())
 
     import json
+
     events = [
         json.loads(line)
         for line in recorder.path.read_text(encoding="utf-8").strip().split("\n")
@@ -224,6 +221,7 @@ def test_promote_key_records_event_only_on_confirmation(tmp_path):
     asyncio.run(exercise())
 
     import json
+
     events = [
         json.loads(line)
         for line in recorder.path.read_text(encoding="utf-8").strip().split("\n")
@@ -246,9 +244,7 @@ def test_status_bar_shows_send_state():
 
 
 def test_status_bar_shows_kill_switch_state():
-    state = DashboardState(
-        send=SendDiagnostics(mode="live", kill_switch=True)
-    )
+    state = DashboardState(send=SendDiagnostics(mode="live", kill_switch=True))
     bar = state.render_status_bar()
     assert "send=" in bar
 

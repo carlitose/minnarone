@@ -133,12 +133,13 @@ def test_end_conv_midmessage_collapses_whitespace():
     h = HumanLikeness()
     d = h.process("ciao #end_conv come stai")
     assert d.end_conv is True
-    assert d.message == "ciao come stai"   # niente spazi doppi
+    assert d.message == "ciao come stai"  # niente spazi doppi
     assert d.drop is False
 
 
 def test_invalid_dedup_threshold_raises():
     import pytest
+
     with pytest.raises(ValueError):
         HumanLikeness(dedup_threshold=1.5)
     with pytest.raises(ValueError):

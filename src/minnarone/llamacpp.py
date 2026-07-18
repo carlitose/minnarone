@@ -67,6 +67,7 @@ def _local_transport(
         _local_opener, url=url, headers=headers, body=body, timeout=timeout
     )
 
+
 #: Comando di riferimento per avviare il server (offload totale, reasoning
 #: spento, una richiesta alla volta). Incluso nei messaggi d'errore azionabili.
 #: NOTA CONTESTO: `llama-server` divide `-c` per il numero di slot

@@ -78,6 +78,7 @@ from .perception_queue import (
 )
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
+from .prompt_source import load_prompt_set, load_summarizer_prompt_set
 from .public_send import PublicSendPolicy
 from .reactor import Reactor
 from .run_artifacts import RunSession
@@ -396,10 +397,7 @@ def _build_router(
     TuiPrivateOutputRouter (il display è del pannello TUI, non di stdout).
     """
     if mode is OutputMode.PUBLIC:
-        if (
-            send_config is not None
-            and send_config.mode is not TwitchSendMode.OFF
-        ):
+        if send_config is not None and send_config.mode is not TwitchSendMode.OFF:
             import time
 
             policy = PublicSendPolicy(
@@ -503,6 +501,7 @@ def _lazy_device_audio_source(config: OsCaptureConfig) -> Captured:
     al `--check`: lo si chiama dentro il generatore async, così l'hardware si
     apre soltanto quando la pompa inizia a iterare dentro `start()`.
     """
+
     async def _source() -> AsyncIterator[AudioChunk]:
         async for chunk in make_device_capture_source(
             source_label="system", chunk_seconds=config.audio_chunk_seconds
@@ -721,6 +720,7 @@ def _build_default_video_perceiver(
       condivisa (riusa `config.llamacpp.base_url`).
     Entrambe le costruzioni sono iniettabili per i test.
     """
+
     def build_captioner() -> Captioner:
         if config.vlm.backend == "llamacpp":
             if llamacpp_captioner_factory is not None:
@@ -815,6 +815,18 @@ def build_agent(
     memory = FileMemory(soul_path=config.soul_path, facts_dir=config.facts_dir)
     blocks = memory.load()
 
+    # Prompt-source (ticket 03): un unico set caricato+validato all'avvio
+    # (fail-fast), condiviso da tutti i PromptBuilder. Con `config.prompts_dir`
+    # gli override per-file vincono sui default impacchettati.
+    prompt_set = load_prompt_set(config.prompts_dir)
+
+    # Il canale nel prompt ({{channel}} in rules.md/intro.md) segue
+    # `twitch.channel` quando la sezione twitch è configurata; senza (run
+    # non-Twitch) resta il default del PromptBuilder.
+    prompt_channel_kwargs: dict[str, str] = (
+        {"channel": config.twitch.channel} if config.twitch is not None else {}
+    )
+
     prompt_recorder = PromptObservationRecorder(
         debug_dir=run_session.debug_dir if run_session is not None else None
     )
@@ -828,13 +840,15 @@ def build_agent(
     # questo speaker vengono escluse dai trigger e dalla finestra recente del
     # prompt. Assente (send: off o non-Twitch) → nessun filtro.
     bot_identity: str | None = None
-    if (
-        config.twitch is not None
-        and config.twitch.send.mode is not TwitchSendMode.OFF
-    ):
+    if config.twitch is not None and config.twitch.send.mode is not TwitchSendMode.OFF:
         bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
 
-    summarizer = Summarizer(llm=llm, store=store)
+    # Prompt-set del summarizer (ticket 05): set SEPARATO da quello original-chat
+    # (preoccupazione distinta, NON nel prefisso stabile in cache), caricato e
+    # validato all'avvio (fail-fast) con gli stessi override per-file da
+    # `config.prompts_dir`.
+    summarizer_prompt_set = load_summarizer_prompt_set(config.prompts_dir)
+    summarizer = Summarizer(llm=llm, store=store, prompt_set=summarizer_prompt_set)
     human = HumanLikeness()
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None
@@ -842,10 +856,7 @@ def build_agent(
     # Costruzione del sender: SOLO quando il config dichiara mode: live.
     # off/shadow non costruiscono il sender né leggono il token di scrittura.
     sender: TwitchChatSender | None = None
-    if (
-        config.twitch is not None
-        and config.twitch.send.mode is TwitchSendMode.LIVE
-    ):
+    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
         sender = TwitchChatSender(
             channel=config.twitch.channel,
             username=os.environ["TWITCH_BOT_USERNAME"],
@@ -905,14 +916,16 @@ def build_agent(
             style_stream = MinnaroneOutputStream()
             output_streams[style] = style_stream
             _per_profile_routers[style] = TuiPrivateOutputRouter(
-                style_stream, public_router=public_router,
+                style_stream,
+                public_router=public_router,
             )
         if output_streams:
             active_minnarone_output = next(iter(output_streams.values()))
         else:
             active_minnarone_output = minnarone_output
         out_router = _per_profile_routers.get(_first_style) or TuiPrivateOutputRouter(
-            minnarone_output, public_router=public_router,
+            minnarone_output,
+            public_router=public_router,
         )
     else:
         send_config = config.twitch.send if config.twitch is not None else None
@@ -968,6 +981,8 @@ def build_agent(
             announce_ai=config.disclosure.announce_ai,
             commentator_language=config.commentator.language,
             commentator_style=style,
+            prompt_set=prompt_set,
+            **prompt_channel_kwargs,
         )
 
         style_router = _per_profile_routers.get(style, out_router)
@@ -1006,6 +1021,8 @@ def build_agent(
             announce_ai=config.disclosure.announce_ai,
             commentator_language=config.commentator.language,
             commentator_style=None,
+            prompt_set=prompt_set,
+            **prompt_channel_kwargs,
         )
     first_reactor: Reactor
     if reactors:
@@ -1109,7 +1126,9 @@ def build_agent(
     )
 
 
-def _speaker_diagnostics_from_audio_perceiver(audio_perceiver: object | None) -> object | None:
+def _speaker_diagnostics_from_audio_perceiver(
+    audio_perceiver: object | None,
+) -> object | None:
     if audio_perceiver is None:
         return None
     return getattr(audio_perceiver, "speaker_diagnostics", None)

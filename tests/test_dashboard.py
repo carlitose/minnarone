@@ -66,9 +66,7 @@ def _store(tmp_path):
 
 
 def _chat_perception(text, speaker, ts):
-    return Perception(
-        ts=ts, source=Source.CHAT, type="msg", text=text, speaker=speaker
-    )
+    return Perception(ts=ts, source=Source.CHAT, type="msg", text=text, speaker=speaker)
 
 
 def _audio_perception(text, speaker, ts):
@@ -287,7 +285,9 @@ def test_snapshot_health_gracefully_degrades_when_stats_are_missing():
     assert "queue_depth=0" in state.render_status_bar()
 
 
-def test_snapshot_marks_missing_video_captions_suspicious_after_active_sources(tmp_path):
+def test_snapshot_marks_missing_video_captions_suspicious_after_active_sources(
+    tmp_path,
+):
     store = _store(tmp_path)
     store.append(_chat_perception("ciao chat", "alice", 1.0))
     store.append(_audio_perception("frase dal microfono", "streamer", 2.0))
@@ -765,12 +765,8 @@ def test_dashboard_state_renders_screenshot_faithful_panels():
             _audio_perception("frase trascritta", "streamer", 2.0),
             _video_perception("boss visibile sullo schermo", 3.0),
         ],
-        audio_transcriptions=[
-            _audio_perception("frase trascritta", "streamer", 2.0)
-        ],
-        video_captions=[
-            _video_perception("boss visibile sullo schermo", 3.0)
-        ],
+        audio_transcriptions=[_audio_perception("frase trascritta", "streamer", 2.0)],
+        video_captions=[_video_perception("boss visibile sullo schermo", 3.0)],
         triggers=[
             Trigger(
                 reason="mention",
@@ -823,7 +819,9 @@ def test_source_panels_are_not_starved_by_other_busy_sources(tmp_path):
     for index in range(300):
         store.append(_chat_perception(f"chat intensa {index}", "alice", 3.0 + index))
     for index in range(300):
-        store.append(_audio_perception(f"audio intenso {index}", "streamer", 303.0 + index))
+        store.append(
+            _audio_perception(f"audio intenso {index}", "streamer", 303.0 + index)
+        )
 
     state = snapshot(store=store, recent_perceptions=20)
     panel_text = {panel.title: panel.text for panel in state.render_panels()}
@@ -1197,11 +1195,11 @@ def test_status_bar_includes_send_budget():
 def test_tui_router_captures_shadow_messages_in_minnarone_panel():
     """PUBLIC messages routed through the shadow router appear in the
     MinnaroneOutputStream with [SHADOW] markers for the MINNARONE panel."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.SHADOW,
@@ -1213,7 +1211,9 @@ def test_tui_router_captures_shadow_messages_in_minnarone_panel():
     policy = PublicSendPolicy(config, clock=clock)
     stdout_sink = io.StringIO()
     public_router = TwitchPublicOutputRouter(
-        policy=policy, channel="#test", stream=stdout_sink,
+        policy=policy,
+        channel="#test",
+        stream=stdout_sink,
     )
     stream = MinnaroneOutputStream(clock=clock)
     router = TuiPrivateOutputRouter(stream, public_router=public_router)
@@ -1226,11 +1226,11 @@ def test_tui_router_captures_shadow_messages_in_minnarone_panel():
 
 def test_tui_router_captures_sent_messages_in_minnarone_panel():
     """PUBLIC messages that are SENT (not shadow) appear with [SENT] marker."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.LIVE,
@@ -1248,7 +1248,10 @@ def test_tui_router_captures_sent_messages_in_minnarone_panel():
             pass  # successful send
 
     public_router = TwitchPublicOutputRouter(
-        policy=policy, channel="#test", stream=stdout_sink, sender=FakeSender(),
+        policy=policy,
+        channel="#test",
+        stream=stdout_sink,
+        sender=FakeSender(),
     )
     stream = MinnaroneOutputStream(clock=clock)
     router = TuiPrivateOutputRouter(stream, public_router=public_router)
@@ -1293,11 +1296,11 @@ def test_render_text_omits_send_section_when_no_policy():
 
 def test_tui_router_does_not_capture_dropped_messages():
     """Dropped PUBLIC messages do NOT appear in MinnaroneOutputStream."""
+    import io
+
     from minnarone.config import TwitchSendConfig, TwitchSendMode
     from minnarone.output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
     from minnarone.shadow_router import TwitchPublicOutputRouter
-
-    import io
 
     config = TwitchSendConfig(
         mode=TwitchSendMode.SHADOW,
@@ -1310,7 +1313,9 @@ def test_tui_router_does_not_capture_dropped_messages():
     policy = PublicSendPolicy(config, clock=clock)
     stdout_sink = io.StringIO()
     public_router = TwitchPublicOutputRouter(
-        policy=policy, channel="#test", stream=stdout_sink,
+        policy=policy,
+        channel="#test",
+        stream=stdout_sink,
     )
     stream = MinnaroneOutputStream(clock=clock)
     router = TuiPrivateOutputRouter(stream, public_router=public_router)
@@ -1424,8 +1429,15 @@ def test_render_panels_preserves_base_panels_order_with_new_panels():
 
     # The original 9 titles should appear in their original order.
     base_titles = [
-        "IDLE", "FINESTRA CHAT", "STREAMER", "CHAT", "EVENTI",
-        "MINNARONE", "TRASCRIZIONE", "VIDEO", "MEMORIA",
+        "IDLE",
+        "FINESTRA CHAT",
+        "STREAMER",
+        "CHAT",
+        "EVENTI",
+        "MINNARONE",
+        "TRASCRIZIONE",
+        "VIDEO",
+        "MEMORIA",
     ]
     base_in_result = [t for t in titles if t in base_titles]
     assert base_in_result == base_titles

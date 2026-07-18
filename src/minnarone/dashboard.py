@@ -263,10 +263,7 @@ class DashboardState:
         source = self.chat_messages or [
             p for p in self.perceptions if p.source.value == "chat"
         ]
-        lines = [
-            f"{p.ts:.3f} {format_perception_line(p)}"
-            for p in source
-        ]
+        lines = [f"{p.ts:.3f} {format_perception_line(p)}" for p in source]
         return "\n".join(lines) if lines else "(nessuna chat)"
 
     def _render_events_panel(self) -> str:
@@ -301,10 +298,18 @@ class DashboardState:
         return summary if summary else "(nessuna memoria)"
 
     def _render_synthesizer_panel(self) -> str:
-        return "\n".join(self.synthesizer_messages) if self.synthesizer_messages else "(nessuna sintesi)"
+        return (
+            "\n".join(self.synthesizer_messages)
+            if self.synthesizer_messages
+            else "(nessuna sintesi)"
+        )
 
     def _render_suggester_panel(self) -> str:
-        return "\n".join(self.suggester_messages) if self.suggester_messages else "(nessun suggerimento)"
+        return (
+            "\n".join(self.suggester_messages)
+            if self.suggester_messages
+            else "(nessun suggerimento)"
+        )
 
     def render_prompt_view(self) -> str:
         """Render the latest redacted prompt observation for the TUI prompt tab."""
@@ -336,7 +341,9 @@ class DashboardState:
                 optional_keys=_PROMPT_CACHE_OPTIONAL_METADATA_KEYS,
             )
         )
-        lines.append(f"cost={latest.cost}" if latest.cost is not None else "cost=unknown")
+        lines.append(
+            f"cost={latest.cost}" if latest.cost is not None else "cost=unknown"
+        )
         if latest.error:
             lines.append(f"error={latest.error}")
         lines.extend(["", "== BODY ==", latest.prompt])
@@ -407,10 +414,7 @@ class DashboardState:
         lines.append("== Adapter ==")
         if self.adapter:
             for channel, stats in self.adapter.items():
-                line = (
-                    f"{channel}: produced={stats.produced} "
-                    f"dropped={stats.dropped}"
-                )
+                line = f"{channel}: produced={stats.produced} dropped={stats.dropped}"
                 if stats.failure:
                     line = f"{line} failure={stats.failure}"
                 lines.append(line)
@@ -432,9 +436,7 @@ class DashboardState:
         lines.append("== Failure locali ==")
         if self.failures:
             for failure in self.failures:
-                lines.append(
-                    f"{failure.channel}/{failure.stage}: {failure.message}"
-                )
+                lines.append(f"{failure.channel}/{failure.stage}: {failure.message}")
         else:
             lines.append("(nessuna)")
 
@@ -493,8 +495,7 @@ def _format_schema_metadata(
     lines = [
         f"{label} "
         + " ".join(
-            f"{key}={_canonical_metadata_value(metadata, key)}"
-            for key in required_keys
+            f"{key}={_canonical_metadata_value(metadata, key)}" for key in required_keys
         )
     ]
     optional_parts = [
@@ -506,9 +507,7 @@ def _format_schema_metadata(
         lines[0] = f"{lines[0]} {' '.join(optional_parts)}"
 
     extra_parts = [
-        f"{key}={value}"
-        for key, value in metadata.items()
-        if key not in canonical_keys
+        f"{key}={value}" for key, value in metadata.items() if key not in canonical_keys
     ]
     if extra_parts:
         lines.append(f"{label}_extra " + " ".join(extra_parts))
@@ -603,10 +602,14 @@ def snapshot(
     memory_summary = _current_memory_summary(summarizer)
     send = _send_diagnostics(send_policy)
     synthesizer_messages = _per_profile_messages(
-        output_streams, CommentatorStyle.MEETING_SYNTHESIZER, recent_messages,
+        output_streams,
+        CommentatorStyle.MEETING_SYNTHESIZER,
+        recent_messages,
     )
     suggester_messages = _per_profile_messages(
-        output_streams, CommentatorStyle.SUGGESTER, recent_messages,
+        output_streams,
+        CommentatorStyle.SUGGESTER,
+        recent_messages,
     )
 
     return DashboardState(
@@ -820,7 +823,9 @@ def _send_diagnostics(send_policy) -> SendDiagnostics | None:
     snap = snap_method()
     last = getattr(snap, "last_decision", None)
     return SendDiagnostics(
-        mode=getattr(getattr(snap, "mode", None), "value", str(getattr(snap, "mode", "off"))),
+        mode=getattr(
+            getattr(snap, "mode", None), "value", str(getattr(snap, "mode", "off"))
+        ),
         promoted=getattr(snap, "promoted", False),
         kill_switch=getattr(snap, "kill_switch", False),
         consecutive_failures=getattr(snap, "consecutive_failures", 0),

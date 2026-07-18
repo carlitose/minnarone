@@ -23,6 +23,7 @@ minnarone-oscapture-smoke = "minnarone.oscapture_smoke:main"
 [project.optional-dependencies]
 dev = [
     "deptry>=0.25.1",
+    "pre-commit>=4",
     "pylint>=4.0.6",
     "pytest>=8",
     "ruff>=0.15.19",
@@ -73,6 +74,10 @@ tui = ["textual>=0.50"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minnarone"]
+# I prompt default (.md) sono DATI di package: vanno spediti nel wheel così il
+# fresh install funziona senza override da `prompts_dir` (ticket 03). Reso
+# esplicito qui per non dipendere solo dall'inclusione implicita del package.
+artifacts = ["src/minnarone/prompts/**/*.md"]
 
 # Su Windows il torch di PyPI è CPU-only: per usare CUDA (es. quantizzazione
 # bitsandbytes del VLM) torch/torchvision arrivano dall'indice PyTorch cu126.
@@ -94,6 +99,10 @@ addopts = "-q"
 target-version = "py311"
 line-length = 88
 src = ["src", "tests"]
+# `spike/` è codice throwaway di riferimento (ticket 02): non va lintato né
+# formattato. La produzione vive in `src/` (il loader `prompt_source.py` ha
+# promosso lo spike).
+extend-exclude = ["spike"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B", "I"]
@@ -105,6 +114,10 @@ sort_by_size = true
 
 [tool.deptry]
 known_first_party = ["minnarone"]
+# `spike/` è codice throwaway di riferimento (ticket 02): auto-importa
+# `prompt_externalization` e usa pytest, cose che non riguardano le dipendenze
+# del pacchetto. Escluso dallo scan.
+extend_exclude = ["spike"]
 optional_dependencies_dev_groups = ["dev"]
 package_module_name_map = { textual = ["textual"], "webrtcvad-wheels" = ["webrtcvad"], "faster-whisper" = ["faster_whisper"], "sherpa-onnx" = ["sherpa_onnx"], "sherpa-onnx-core" = ["sherpa_onnx"], pillow = ["PIL"] }
 per_rule_ignores = { DEP002 = ["accelerate", "bitsandbytes", "sherpa-onnx", "sherpa-onnx-core", "torchvision"] }

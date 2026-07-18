@@ -73,9 +73,7 @@ def test_mode_shadow_ignores_allow_list():
 def test_mode_shadow_consumes_budget():
     # Anche lo shadow consuma budget (fedeltà della prova): con 1 msg/min il
     # secondo shadow entro la finestra viene scartato per budget.
-    policy = _policy(
-        TwitchSendConfig(mode=TwitchSendMode.SHADOW, max_per_minute=1)
-    )
+    policy = _policy(TwitchSendConfig(mode=TwitchSendMode.SHADOW, max_per_minute=1))
     first = policy.decide("primo", "canale")
     second = policy.decide("secondo", "canale")
     assert first.action == "shadow"
@@ -212,9 +210,7 @@ def test_budget_minute_window_frees_exactly_at_boundary():
 
 def test_budget_hour_window_frees_exactly_at_boundary():
     clock = FakeClock(start=0.0)
-    policy = _policy(
-        _live_config(max_per_minute=1000, max_per_hour=1), clock
-    )
+    policy = _policy(_live_config(max_per_minute=1000, max_per_hour=1), clock)
     policy.promote()
     assert policy.decide("t0", "canale").action == "send"  # ts=0
     clock.now = 3599.0
@@ -225,9 +221,7 @@ def test_budget_hour_window_frees_exactly_at_boundary():
 
 def test_budget_hour_reason_when_minute_ok():
     clock = FakeClock()
-    policy = _policy(
-        _live_config(max_per_minute=1000, max_per_hour=2), clock
-    )
+    policy = _policy(_live_config(max_per_minute=1000, max_per_hour=2), clock)
     policy.promote()
     clock.now = 0.0
     policy.decide("a", "canale")
@@ -251,9 +245,7 @@ def test_budget_exhaustion_and_recovery():
 
 
 def test_shadow_budget_drop_reason_is_budget_minute():
-    policy = _policy(
-        TwitchSendConfig(mode=TwitchSendMode.SHADOW, max_per_minute=2)
-    )
+    policy = _policy(TwitchSendConfig(mode=TwitchSendMode.SHADOW, max_per_minute=2))
     assert policy.decide("1", "canale").action == "shadow"
     assert policy.decide("2", "canale").action == "shadow"
     third = policy.decide("3", "canale")

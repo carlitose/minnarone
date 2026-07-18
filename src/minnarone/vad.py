@@ -244,9 +244,7 @@ class StreamingVad:
         if len(self._ring) < self._config.padding_frames:
             return False
         matching = sum(
-            1
-            for _frame, is_speech, _ts, _source in self._ring
-            if is_speech is speech
+            1 for _frame, is_speech, _ts, _source in self._ring if is_speech is speech
         )
         return matching >= self._config.threshold_frames
 

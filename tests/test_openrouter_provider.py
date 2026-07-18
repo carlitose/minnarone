@@ -134,7 +134,9 @@ def test_llm_params_cannot_override_model():
 
 
 def test_complete_extracts_message_and_meta():
-    transport = RecordingTransport(_ok_response("bella clip", cached=80, prompt_tokens=100))
+    transport = RecordingTransport(
+        _ok_response("bella clip", cached=80, prompt_tokens=100)
+    )
     provider = OpenRouterProvider(model="x-ai/grok", api_key="k", transport=transport)
     result = asyncio.run(provider.complete("p"))
 
@@ -252,7 +254,9 @@ def test_malformed_body_raises_llm_error():
 def test_missing_api_key_raises_llm_error(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     # api_key non passato e env assente => costruire la richiesta deve fallire pulito
-    provider = OpenRouterProvider(model="m", transport=RecordingTransport(_ok_response()))
+    provider = OpenRouterProvider(
+        model="m", transport=RecordingTransport(_ok_response())
+    )
     with pytest.raises(LLMError):
         asyncio.run(provider.complete("p"))
 
@@ -274,21 +278,27 @@ def _config(provider, params=None):
 
 def test_factory_selects_grok_model(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    provider = build_provider(_config("grok"), transport=RecordingTransport(_ok_response()))
+    provider = build_provider(
+        _config("grok"), transport=RecordingTransport(_ok_response())
+    )
     assert isinstance(provider, OpenRouterProvider)
     assert "grok" in provider.model
 
 
 def test_factory_selects_deepseek_model(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    provider = build_provider(_config("deepseek"), transport=RecordingTransport(_ok_response()))
+    provider = build_provider(
+        _config("deepseek"), transport=RecordingTransport(_ok_response())
+    )
     assert "deepseek" in provider.model
 
 
 def test_factory_switch_changes_model_no_code_change(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
     grok = build_provider(_config("grok"), transport=RecordingTransport(_ok_response()))
-    deepseek = build_provider(_config("deepseek"), transport=RecordingTransport(_ok_response()))
+    deepseek = build_provider(
+        _config("deepseek"), transport=RecordingTransport(_ok_response())
+    )
     assert grok.model != deepseek.model
 
 
@@ -313,7 +323,9 @@ def test_factory_passes_tuning_params_excluding_model(monkeypatch):
 
 def test_factory_unknown_provider_raises():
     with pytest.raises(LLMError):
-        build_provider(_config("mistral-unknown"), transport=RecordingTransport(_ok_response()))
+        build_provider(
+            _config("mistral-unknown"), transport=RecordingTransport(_ok_response())
+        )
 
 
 # --- invarianza prefisso stabile (caching) ---------------------------------

@@ -213,7 +213,8 @@ def test_invalid_trigger_mode_raises(tmp_path):
 
 # --- on_perception trigger mode -----------------------------------------------
 
-from minnarone.perception import Perception, Source
+# Import di sezione intenzionale: dichiarato accanto ai test che lo usano.
+from minnarone.perception import Perception, Source  # noqa: E402
 
 
 def _make_on_perception(tmp_path, clock=None, bot_identity=None):
@@ -233,8 +234,15 @@ def _make_on_perception(tmp_path, clock=None, bot_identity=None):
 
 def test_suggestion_eval_trigger_constructs():
     """suggestion_eval is a valid trigger kind carrying perception and interlocutor."""
-    p = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="hello", speaker="alice")
-    t = Trigger(reason="suggestion_eval", perception=p, kind="suggestion_eval", interlocutor="alice")
+    p = Perception(
+        ts=1.0, source=Source.AUDIO, type="speech", text="hello", speaker="alice"
+    )
+    t = Trigger(
+        reason="suggestion_eval",
+        perception=p,
+        kind="suggestion_eval",
+        interlocutor="alice",
+    )
     assert t.kind == "suggestion_eval"
     assert t.perception is p
     assert t.interlocutor == "alice"
@@ -243,7 +251,13 @@ def test_suggestion_eval_trigger_constructs():
 def test_on_perception_speech_produces_suggestion_eval(tmp_path):
     """Speech perception in on_perception mode emits suggestion_eval trigger."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="let's discuss the agenda", speaker="alice")
+    p = Perception(
+        ts=1.0,
+        source=Source.AUDIO,
+        type="speech",
+        text="let's discuss the agenda",
+        speaker="alice",
+    )
     store.append(p)
     triggers = senser.tick()
     assert len(triggers) == 1
@@ -256,7 +270,13 @@ def test_on_perception_speech_produces_suggestion_eval(tmp_path):
 def test_on_perception_chat_produces_no_trigger(tmp_path):
     """Chat perception in on_perception mode produces no trigger."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone come va", speaker="enkk")
+    p = Perception(
+        ts=1.0,
+        source=Source.CHAT,
+        type="msg",
+        text="ehi minnarone come va",
+        speaker="enkk",
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -265,7 +285,13 @@ def test_on_perception_chat_produces_no_trigger(tmp_path):
 def test_on_perception_video_produces_no_trigger(tmp_path):
     """Video perception in on_perception mode produces no trigger."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.VIDEO, type="caption", text="something on screen", speaker=None)
+    p = Perception(
+        ts=1.0,
+        source=Source.VIDEO,
+        type="caption",
+        text="something on screen",
+        speaker=None,
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -274,7 +300,9 @@ def test_on_perception_video_produces_no_trigger(tmp_path):
 def test_on_perception_event_produces_no_trigger(tmp_path):
     """Event perception in on_perception mode produces no trigger."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.EVENT, type="join", text="user joined", speaker="bob")
+    p = Perception(
+        ts=1.0, source=Source.EVENT, type="join", text="user joined", speaker="bob"
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -284,7 +312,13 @@ def test_on_perception_self_echo_filtered(tmp_path):
     """Self-echo perceptions (bot's own speech) are filtered out in on_perception mode."""
     store, senser, clock = _make_on_perception(tmp_path, bot_identity="Minnarone")
     # Audio perception from the bot itself (self-echo)
-    p = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="I think we should...", speaker="Minnarone")
+    p = Perception(
+        ts=1.0,
+        source=Source.AUDIO,
+        type="speech",
+        text="I think we should...",
+        speaker="Minnarone",
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -294,7 +328,9 @@ def test_on_perception_no_mention_triggers(tmp_path):
     """on_perception mode does not emit mention triggers even with agent name in text."""
     store, senser, clock = _make_on_perception(tmp_path)
     # Chat perception mentioning the agent name: no trigger in this mode
-    p = Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="enkk")
+    p = Perception(
+        ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="enkk"
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -305,7 +341,9 @@ def test_on_perception_no_continuation_triggers(tmp_path):
     store, senser, clock = _make_on_perception(tmp_path)
     senser.note_agent_message(0.0)
     # Chat that would trigger continuation in reactive mode
-    p = Perception(ts=5.0, source=Source.CHAT, type="msg", text="si grazie", speaker="enkk")
+    p = Perception(
+        ts=5.0, source=Source.CHAT, type="msg", text="si grazie", speaker="enkk"
+    )
     store.append(p)
     triggers = senser.tick()
     assert triggers == []
@@ -322,8 +360,12 @@ def test_on_perception_no_idle_triggers(tmp_path):
 def test_on_perception_multiple_speech_one_trigger_each(tmp_path):
     """Multiple speech perceptions produce one trigger each."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p1 = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="first point", speaker="alice")
-    p2 = Perception(ts=2.0, source=Source.AUDIO, type="speech", text="second point", speaker="bob")
+    p1 = Perception(
+        ts=1.0, source=Source.AUDIO, type="speech", text="first point", speaker="alice"
+    )
+    p2 = Perception(
+        ts=2.0, source=Source.AUDIO, type="speech", text="second point", speaker="bob"
+    )
     store.append(p1)
     store.append(p2)
     triggers = senser.tick()
@@ -339,7 +381,9 @@ def test_on_perception_multiple_speech_one_trigger_each(tmp_path):
 def test_on_perception_interlocutor_matches_speaker(tmp_path):
     """Trigger interlocutor matches the perception speaker."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="my idea is", speaker="carol")
+    p = Perception(
+        ts=1.0, source=Source.AUDIO, type="speech", text="my idea is", speaker="carol"
+    )
     store.append(p)
     triggers = senser.tick()
     assert len(triggers) == 1
@@ -350,7 +394,9 @@ def test_on_perception_interlocutor_matches_speaker(tmp_path):
 def test_on_perception_idempotent(tmp_path):
     """Already-consumed perceptions don't re-fire on subsequent ticks."""
     store, senser, clock = _make_on_perception(tmp_path)
-    p = Perception(ts=1.0, source=Source.AUDIO, type="speech", text="hello", speaker="alice")
+    p = Perception(
+        ts=1.0, source=Source.AUDIO, type="speech", text="hello", speaker="alice"
+    )
     store.append(p)
     assert len(senser.tick()) == 1
     # Second tick: no new perceptions, no triggers

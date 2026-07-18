@@ -20,7 +20,9 @@ from .video import VideoFrame
 class FakeSourceAdapter(SourceAdapter):
     """Riproduce una sequenza predefinita di `RawEvent`."""
 
-    def __init__(self, events: list[RawEvent], channels: set[str] | None = None) -> None:
+    def __init__(
+        self, events: list[RawEvent], channels: set[str] | None = None
+    ) -> None:
         self._events = list(events)
         self._channels = channels or {e.channel for e in events}
         self._started = False

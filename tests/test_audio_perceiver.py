@@ -81,14 +81,10 @@ def test_speech_chunk_flows_through_pipeline_to_store(tmp_path):
 def test_operator_tagged_streamer_video_tagged_otherwise(tmp_path):
     # EC02: il parlato dell'operatore (mic) -> streamer; l'audio del video no.
     tagger = FakeSpeakerTagger(streamer_label="mic", other_label="video")
-    perceiver, store = _perceiver(
-        tmp_path, FakeVad(), FakeAsr(text="parola"), tagger
-    )
+    perceiver, store = _perceiver(tmp_path, FakeVad(), FakeAsr(text="parola"), tagger)
 
     perceiver.perceive_chunk(AudioChunk(samples="x", source_label="mic", ts=1.0))
-    perceiver.perceive_chunk(
-        AudioChunk(samples="y", source_label="system", ts=2.0)
-    )
+    perceiver.perceive_chunk(AudioChunk(samples="y", source_label="system", ts=2.0))
 
     stored = store.read_since(0.0)
     by_speaker = {p.speaker for p in stored}
@@ -290,12 +286,16 @@ def test_integration_adapter_events_through_perceiver_land_in_store(tmp_path):
 
 def test_whitespace_only_asr_text_produces_no_perception(tmp_path):
     perceiver, store = _perceiver(
-        tmp_path, FakeVad(always_speech=True), FakeAsr(text="   \n\t"), FakeSpeakerTagger()
+        tmp_path,
+        FakeVad(always_speech=True),
+        FakeAsr(text="   \n\t"),
+        FakeSpeakerTagger(),
     )
-    created = perceiver.perceive_chunk(AudioChunk(samples="parlato", sample_rate=16000,
-                                                  source_label="mic", ts=1.0))
-    assert created == []                       # niente percezione
-    assert store.read_since(0.0) == []         # nulla scritto nello store
+    created = perceiver.perceive_chunk(
+        AudioChunk(samples="parlato", sample_rate=16000, source_label="mic", ts=1.0)
+    )
+    assert created == []  # niente percezione
+    assert store.read_since(0.0) == []  # nulla scritto nello store
 
 
 def test_stop_does_not_pull_extra_chunk(tmp_path):
@@ -304,7 +304,9 @@ def test_stop_does_not_pull_extra_chunk(tmp_path):
     async def counting_source():
         for i in range(5):
             pulled["n"] += 1
-            yield AudioChunk(samples=f"c{i}", sample_rate=16000, source_label="mic", ts=float(i))
+            yield AudioChunk(
+                samples=f"c{i}", sample_rate=16000, source_label="mic", ts=float(i)
+            )
 
     adapter = OSCaptureAdapter(counting_source())
 
@@ -313,9 +315,9 @@ def test_stop_does_not_pull_extra_chunk(tmp_path):
         emitted = []
         async for ev in adapter.events():
             emitted.append(ev)
-            await adapter.stop()   # ferma subito dopo il primo evento
+            await adapter.stop()  # ferma subito dopo il primo evento
         return emitted
 
     emitted = asyncio.run(drive())
-    assert len(emitted) == 1          # un solo evento emesso
-    assert pulled["n"] == 1           # nessun chunk extra estratto dopo lo stop
+    assert len(emitted) == 1  # un solo evento emesso
+    assert pulled["n"] == 1  # nessun chunk extra estratto dopo lo stop

@@ -109,9 +109,7 @@ class HumanLikeness:
 
         if not cleaned:
             # Niente da dire: o era solo il sentinella, o il messaggio era vuoto.
-            return HumanDecision(
-                message="", delay=0.0, drop=True, end_conv=end_conv
-            )
+            return HumanDecision(message="", delay=0.0, drop=True, end_conv=end_conv)
 
         if self._is_near_duplicate(cleaned, recent_self_messages):
             return HumanDecision(

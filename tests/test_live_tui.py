@@ -144,8 +144,10 @@ def test_run_live_tui_keeps_perception_jsonl_persistence_active(tmp_path, monkey
 
     text = session.perception_log_path.read_text(encoding="utf-8")
     assert "ordinary stream chatter" in text
-    assert (session.run_dir / ".minnarone-run").read_text(encoding="utf-8").endswith(
-        ":completed\n"
+    assert (
+        (session.run_dir / ".minnarone-run")
+        .read_text(encoding="utf-8")
+        .endswith(":completed\n")
     )
 
 
@@ -388,9 +390,11 @@ def test_run_live_tui_leaves_run_active_when_shutdown_times_out(tmp_path):
     with pytest.raises(RuntimeError, match="runtime live non arrestato"):
         run_live_tui(agent, build_app=build_app, shutdown_timeout=0.01)
 
-    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
-        encoding="utf-8"
-    ).endswith(":active\n")
+    assert (
+        (agent.run_session.run_dir / ".minnarone-run")
+        .read_text(encoding="utf-8")
+        .endswith(":active\n")
+    )
 
 
 def test_run_live_tui_uses_configured_cleanup_budget_when_timeout_is_implicit():
@@ -502,13 +506,9 @@ def test_run_live_tui_surfaces_app_shutdown_request_failure():
 
     assert provider_failed.is_set()
     assert "live TUI runtime failures" in str(exc_info.value)
+    assert any("runtime exploded" in str(error) for error in exc_info.value.exceptions)
     assert any(
-        "runtime exploded" in str(error)
-        for error in exc_info.value.exceptions
-    )
-    assert any(
-        "call_from_thread rejected" in str(error)
-        for error in exc_info.value.exceptions
+        "call_from_thread rejected" in str(error) for error in exc_info.value.exceptions
     )
 
 
@@ -585,9 +585,11 @@ def test_run_live_tui_invalid_startup_timeout_fails_before_thread_start(tmp_path
     with pytest.raises(ValueError, match="startup_timeout"):
         run_live_tui(agent, build_app=build_app, startup_timeout=0)
 
-    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
-        encoding="utf-8"
-    ).endswith(":completed\n")
+    assert (
+        (agent.run_session.run_dir / ".minnarone-run")
+        .read_text(encoding="utf-8")
+        .endswith(":completed\n")
+    )
 
 
 def test_run_live_tui_marks_run_completed_when_app_construction_fails(tmp_path):
@@ -609,6 +611,8 @@ def test_run_live_tui_marks_run_completed_when_app_construction_fails(tmp_path):
     with pytest.raises(RuntimeError, match="app construction failed"):
         run_live_tui(agent, build_app=build_app)
 
-    assert (agent.run_session.run_dir / ".minnarone-run").read_text(
-        encoding="utf-8"
-    ).endswith(":completed\n")
+    assert (
+        (agent.run_session.run_dir / ".minnarone-run")
+        .read_text(encoding="utf-8")
+        .endswith(":completed\n")
+    )

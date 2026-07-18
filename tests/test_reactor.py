@@ -76,8 +76,12 @@ def test_llm_timeout_skips_turn_no_output(tmp_path):
     llm = FakeLLMProvider(raise_timeout=True)
     router = FakeOutputRouter()
     reactor = Reactor(
-        senser=senser, prompt_builder=builder, llm=llm, router=router,
-        store=store, mode=OutputMode.PUBLIC,
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
     )
     chat.perceive("minnarone!", speaker="enkk", ts=1.0)
 
@@ -110,8 +114,12 @@ def test_llm_timeout_once_then_recovers_next_tick(tmp_path):
     llm = FlakyLLM()
     router = FakeOutputRouter()
     reactor = Reactor(
-        senser=senser, prompt_builder=builder, llm=llm, router=router,
-        store=store, mode=OutputMode.PUBLIC,
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
     )
 
     # primo trigger -> timeout -> turno saltato, nessun output
@@ -144,8 +152,12 @@ def test_generic_llm_error_skips_turn(tmp_path):
     builder = PromptBuilder(FakeMemory().load())
     router = FakeOutputRouter()
     reactor = Reactor(
-        senser=senser, prompt_builder=builder, llm=ErroringLLM(), router=router,
-        store=store, mode=OutputMode.PUBLIC,
+        senser=senser,
+        prompt_builder=builder,
+        llm=ErroringLLM(),
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
     )
     chat.perceive("minnarone!", speaker="enkk", ts=1.0)
 
@@ -262,8 +274,12 @@ def test_continuation_wired_end_to_end_via_reactor(tmp_path):
     llm = FakeLLMProvider(message="rispondo!")
     router = FakeOutputRouter()
     reactor = Reactor(
-        senser=senser, prompt_builder=builder, llm=llm, router=router,
-        store=store, mode=OutputMode.PUBLIC,
+        senser=senser,
+        prompt_builder=builder,
+        llm=llm,
+        router=router,
+        store=store,
+        mode=OutputMode.PUBLIC,
     )
 
     # 1. menzione -> reazione (apre la finestra di enkk e nota il messaggio agente)
@@ -326,9 +342,7 @@ def test_original_chat_reactor_records_reason_and_ts_for_self_messages(tmp_path)
 
     assert llm.last_prompt is not None
     assert "[I TUOI ULTIMI MESSAGGI]" in llm.last_prompt
-    assert (
-        '-30s tu: "ciao a tutti" (rispondevi a: saluto iniziale)' in llm.last_prompt
-    )
+    assert '-30s tu: "ciao a tutti" (rispondevi a: saluto iniziale)' in llm.last_prompt
 
 
 def test_run_loop_reacts_only_when_trigger_fires_then_stops(tmp_path):
@@ -357,7 +371,9 @@ def test_human_likeness_routes_after_injected_delay(tmp_path):
     # applicato via uno sleep asincrono iniettato (deterministico, non reale).
     from minnarone.human import HumanLikeness
 
-    store, chat, llm, router, _reactor = _build(tmp_path, llm_message="ehi ciao a tutti")
+    store, chat, llm, router, _reactor = _build(
+        tmp_path, llm_message="ehi ciao a tutti"
+    )
     slept: list[float] = []
 
     async def fake_sleep(seconds: float) -> None:
@@ -387,7 +403,9 @@ def test_human_likeness_drops_near_duplicate(tmp_path):
     # Un secondo messaggio quasi-identico al primo viene scartato (non inviato).
     from minnarone.human import HumanLikeness
 
-    store, chat, llm, router, _reactor = _build(tmp_path, llm_message="ciao a tutti come va")
+    store, chat, llm, router, _reactor = _build(
+        tmp_path, llm_message="ciao a tutti come va"
+    )
 
     async def fake_sleep(seconds: float) -> None:
         pass
@@ -499,9 +517,10 @@ def test_reactor_passes_defensive_recent_self_messages_to_prompt_builder(tmp_pat
     # Il Reactor passa una copia difensiva dei record self-message: una mutazione
     # del builder non deve corrompere lo stato interno. I record trasportano il
     # testo (qui senza reason, path non-original-chat).
-    assert [
-        [record.text for record in snapshot] for snapshot in builder.snapshots
-    ] == [[], ["first reply"]]
+    assert [[record.text for record in snapshot] for snapshot in builder.snapshots] == [
+        [],
+        ["first reply"],
+    ]
     assert reactor.recent_messages() == ["first reply", "second reply"]
 
 
@@ -610,9 +629,7 @@ def test_original_chat_reactor_routes_normalized_display_text(tmp_path):
 
     asyncio.run(reactor.run_once())
 
-    assert router.sent == [
-        ("RE: boss fight\nMSG: bella giocata", OutputMode.PRIVATE)
-    ]
+    assert router.sent == [("RE: boss fight\nMSG: bella giocata", OutputMode.PRIVATE)]
     assert recorder.outputs == [
         ("RE: boss fight\nMSG: bella giocata", OutputMode.PRIVATE)
     ]
@@ -642,9 +659,7 @@ def test_operator_commentary_reactor_leaves_re_msg_text_unnormalized(tmp_path):
 
     asyncio.run(reactor.run_once())
 
-    assert router.sent == [
-        ("re : boss fight\nmsg : bella giocata", OutputMode.PRIVATE)
-    ]
+    assert router.sent == [("re : boss fight\nmsg : bella giocata", OutputMode.PRIVATE)]
 
 
 def test_original_chat_end_conv_stays_visible_and_closes_window(tmp_path):
@@ -840,9 +855,7 @@ def test_nothing_sentinel_suppresses_routing(tmp_path):
 
 def test_nothing_sentinel_tolerates_whitespace(tmp_path):
     """'  #nothing  ' (with whitespace) still suppresses routing."""
-    store, chat, llm, router, reactor = _build(
-        tmp_path, llm_message="  #nothing  "
-    )
+    store, chat, llm, router, reactor = _build(tmp_path, llm_message="  #nothing  ")
     chat.perceive("minnarone ci sei?", speaker="enkk", ts=1.0)
 
     asyncio.run(reactor.run_once())

@@ -16,9 +16,7 @@ from minnarone.dashboard import DashboardState
 def _result(accepted: bool, reason: str, cluster_id: int | None = None):
     from minnarone.speaker_commands import MarkStreamerResult
 
-    return MarkStreamerResult(
-        accepted=accepted, reason=reason, cluster_id=cluster_id
-    )
+    return MarkStreamerResult(accepted=accepted, reason=reason, cluster_id=cluster_id)
 
 
 class _RecordingSurface:
@@ -168,8 +166,6 @@ def test_run_live_tui_no_speaker_commands_when_tagger_cannot_mark():
     class DiagnosticsOnly:  # no marking capability (older/console tagger)
         pass
 
-    received = _run_and_capture(
-        _fake_agent(speaker_diagnostics=DiagnosticsOnly())
-    )
+    received = _run_and_capture(_fake_agent(speaker_diagnostics=DiagnosticsOnly()))
     assert len(received) == 1
     assert received[0] is None

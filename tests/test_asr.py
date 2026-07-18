@@ -74,9 +74,10 @@ def test_faster_whisper_asr_transcribes_pcm_utterance_with_fake_model():
     assert call["beam_size"] == 3
     assert call["condition_on_previous_text"] is False
     audio = call["audio"]
-    assert getattr(audio, "typecode", None) == "f" or str(
-        getattr(audio, "dtype", "")
-    ) == "float32"
+    assert (
+        getattr(audio, "typecode", None) == "f"
+        or str(getattr(audio, "dtype", "")) == "float32"
+    )
     assert list(audio) == pytest.approx([-1.0, 0.0, 32767 / 32768])
 
 

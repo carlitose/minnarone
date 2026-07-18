@@ -43,9 +43,9 @@ class PerceptionStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._recent: deque[Perception] = deque(maxlen=_TAIL_CACHE_SIZE)
-        self._recent_by_source_type: defaultdict[
-            tuple[str, str], deque[Perception]
-        ] = defaultdict(lambda: deque(maxlen=_TAIL_CACHE_SIZE))
+        self._recent_by_source_type: defaultdict[tuple[str, str], deque[Perception]] = (
+            defaultdict(lambda: deque(maxlen=_TAIL_CACHE_SIZE))
+        )
         self._prime_recent()
 
     @property
@@ -177,15 +177,15 @@ class PerceptionStore:
             if source is not None and type is not None:
                 keyed = list(self._recent_by_source_type[(source, type)])
                 return keyed[-n:]
-        return [
-            p for p in self._read_all() if _matches_perception(p, source, type)
-        ][-n:]
+        return [p for p in self._read_all() if _matches_perception(p, source, type)][
+            -n:
+        ]
 
     def _remember_recent(self, perception: Perception) -> None:
         self._recent.append(perception)
-        self._recent_by_source_type[
-            (perception.source.value, perception.type)
-        ].append(perception)
+        self._recent_by_source_type[(perception.source.value, perception.type)].append(
+            perception
+        )
 
 
 def _matches_perception(

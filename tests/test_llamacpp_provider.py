@@ -84,9 +84,7 @@ def test_provider_is_llm_provider():
 
 def test_complete_posts_to_local_endpoint_without_auth_and_without_model():
     transport = RecordingTransport(_ok_response())
-    provider = LlamaCppProvider(
-        base_url="http://127.0.0.1:8080", transport=transport
-    )
+    provider = LlamaCppProvider(base_url="http://127.0.0.1:8080", transport=transport)
 
     asyncio.run(provider.complete("PROMPT TESTO"))
 
@@ -115,9 +113,7 @@ def test_complete_works_without_openrouter_api_key(monkeypatch):
 
 def test_base_url_trailing_slash_is_normalized():
     transport = RecordingTransport(_ok_response())
-    provider = LlamaCppProvider(
-        base_url="http://127.0.0.1:9001/", transport=transport
-    )
+    provider = LlamaCppProvider(base_url="http://127.0.0.1:9001/", transport=transport)
     asyncio.run(provider.complete("p"))
     assert transport.calls[0]["url"] == "http://127.0.0.1:9001/v1/chat/completions"
 
@@ -169,9 +165,7 @@ def test_params_cannot_override_prompt_messages():
 
 def test_model_param_is_not_sent_in_body():
     transport = RecordingTransport(_ok_response())
-    provider = LlamaCppProvider(
-        transport=transport, params={"model": "qualsiasi-slug"}
-    )
+    provider = LlamaCppProvider(transport=transport, params={"model": "qualsiasi-slug"})
     asyncio.run(provider.complete("p"))
     sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
     assert "model" not in sent
@@ -211,7 +205,13 @@ def test_503_while_loading_raises_llm_error():
     # Contratto verificato (ticket 03): 503 con body {"error": {...}} mentre
     # il modello sta caricando.
     body = json.dumps(
-        {"error": {"code": 503, "message": "Loading model", "type": "unavailable_error"}}
+        {
+            "error": {
+                "code": 503,
+                "message": "Loading model",
+                "type": "unavailable_error",
+            }
+        }
     ).encode("utf-8")
     transport = RecordingTransport(HttpResponse(status=503, body=body))
     provider = LlamaCppProvider(transport=transport)
@@ -227,9 +227,7 @@ def test_transport_timeout_raises_llm_timeout():
 
 
 def test_malformed_response_raises_llm_error():
-    transport = RecordingTransport(
-        HttpResponse(status=200, body=b'{"choices": []}')
-    )
+    transport = RecordingTransport(HttpResponse(status=200, body=b'{"choices": []}'))
     provider = LlamaCppProvider(transport=transport)
     with pytest.raises(LLMError):
         asyncio.run(provider.complete("p"))
@@ -516,9 +514,7 @@ def _forbid_network_probe(url, timeout):
 
 def test_cli_check_llamacpp_passes_without_network(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setattr(
-        llamacpp_module, "_urllib_health_probe", _forbid_network_probe
-    )
+    monkeypatch.setattr(llamacpp_module, "_urllib_health_probe", _forbid_network_probe)
 
     code = main([str(_llamacpp_yaml_config(tmp_path)), "--check"])
 

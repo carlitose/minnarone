@@ -25,46 +25,27 @@ from .cadence import CadenceLoop
 from .llm import LLMError, LLMProvider
 from .perception import Perception, Source
 from .prompt_observation import prompt_observation_context
+from .prompt_source import PromptSet, load_summarizer_prompt_set
 from .store import PerceptionStore
 
 # Quante percezioni recenti riassumere. La memoria a breve termine è una vista
 # scorrevole della sessione, non l'intero log.
 _DEFAULT_WINDOW = 50
 
-# Istruzione del "sintetizzatore": riassunto ROLLING/incrementale. Il testo
-# core (istruzione, "Riassunto attuale:", "Eventi recenti:", "Aggiorna il
-# riassunto.") è fedele alla trascrizione degli screenshot (ticket 01).
-#
-# RICOSTRUZIONE (best-effort): la riga che chiede di strutturare la risposta in
-# STREAM / CONVERSAZIONI CON LO STREAMER / CONVERSAZIONI IN CHAT NON è confermata
-# parola-per-parola dalla trascrizione (gli screenshot mostrano quelle
-# sotto-sezioni nell'OUTPUT `[MEMORIA]`, ma non è certo che sia il PROMPT a
-# dettarle). La aggiungiamo qui perché è ciò che riproduce l'output osservato;
-# va riconfermata con uno screenshot ad alta risoluzione.
-_PROMPT_INSTRUCTION = (
-    "Sei un sintetizzatore. Mantieni un riassunto breve in italiano di come sta\n"
-    "evolvendo la live: cosa fa e dice lo streamer, di cosa parla la chat, "
-    "l'atmosfera.\n"
-    "Integra i nuovi eventi, tieni cio' che e' ancora rilevante e scarta il vecchio.\n"
-    "Solo il riassunto, niente preamboli.\n"
-    "Struttura il riassunto in tre sotto-sezioni: STREAM (cosa succede nello "
-    "stream),\n"
-    "CONVERSAZIONI CON LO STREAMER (scambi con lo streamer), CONVERSAZIONI IN "
-    "CHAT\n"
-    "(con chi ha parlato minnarone e di cosa).\n"
-)
+# File del prompt-set che contiene il testo tunabile del summarizer (ticket 05):
+# istruzione rolling, placeholder neutro, etichette di gruppo per fonte e
+# intestazioni di scaffolding. Servito dal loader (`prompt_source`) con
+# fail-fast; override per-file via `prompts_dir`.
+_SUMMARIZER_FILE = "summarizer.md"
 
-# Placeholder neutro per il primissimo giro, quando non c'è ancora un riassunto
-# precedente da reiniettare: evita di lasciare una riga vuota sotto
-# "Riassunto attuale:".
-_EMPTY_SUMMARY_PLACEHOLDER = "(ancora niente: e' l'inizio della sessione)"
-
-# Ordine e intestazione dei gruppi "Eventi recenti", per fonte. Un gruppo senza
-# eventi viene omesso del tutto (niente intestazione vuota).
-_SOURCE_GROUPS: tuple[tuple[Source, str], ...] = (
-    (Source.AUDIO, "STREAMER ha detto:"),
-    (Source.VIDEO, "SCHERMO:"),
-    (Source.CHAT, "CHAT:"),
+# Ordine dei gruppi "Eventi recenti" + CHIAVE dell'etichetta nel prompt-set. La
+# MAPPATURA fonte→etichetta resta CABLATA qui (audio→streamer, video→schermo,
+# chat→chat): solo il TESTO dell'etichetta è esternalizzato nel file. Un gruppo
+# senza eventi viene omesso del tutto (niente intestazione vuota).
+_SOURCE_LABEL_KEYS: tuple[tuple[Source, str], ...] = (
+    (Source.AUDIO, "label_streamer"),
+    (Source.VIDEO, "label_schermo"),
+    (Source.CHAT, "label_chat"),
 )
 
 
@@ -77,10 +58,19 @@ class Summarizer:
         llm: LLMProvider,
         store: PerceptionStore,
         window: int = _DEFAULT_WINDOW,
+        prompt_set: PromptSet | None = None,
     ) -> None:
         self._llm = llm
         self._store = store
         self._window = window
+        # Prompt-set del summarizer (default impacchettati + override). Come per
+        # `PromptBuilder`, se non iniettato si caricano SOLO i default nel wheel;
+        # `app.py` inietta il set costruito da `config.prompts_dir`. La
+        # validazione fail-fast avviene qui alla costruzione: un `summarizer.md`
+        # malformato/incompleto solleva `PromptError` all'avvio, non a runtime.
+        self._prompts = (
+            prompt_set if prompt_set is not None else load_summarizer_prompt_set()
+        )
         self._summary = ""
         # La cadenza è delegata a un CadenceLoop interno (creato in `run()`,
         # quando si conosce l'intervallo). Lo skip-turno su LLMError — timeout
@@ -97,35 +87,44 @@ class Summarizer:
         """Compone il prompt rolling: istruzione + riassunto precedente + eventi.
 
         Il riassunto precedente (`self._summary`) è reiniettato sotto
-        "Riassunto attuale:", così il sintetizzatore AGGIORNA invece di rifare da
-        zero; al primissimo giro (vuoto) si usa un placeholder neutro. Gli eventi
-        recenti sono raggruppati per fonte (STREAMER/SCHERMO/CHAT); i gruppi
+        l'intestazione del riassunto corrente, così il sintetizzatore AGGIORNA
+        invece di rifare da zero; al primissimo giro (vuoto) si usa il
+        placeholder neutro. Testo (istruzione, intestazioni, placeholder) dal
+        prompt-set. Gli eventi recenti sono raggruppati per fonte; i gruppi
         senza eventi sono omessi.
         """
-        previous = self._summary.strip() or _EMPTY_SUMMARY_PLACEHOLDER
+        section = self._prompts.section
+        previous = self._summary.strip() or section(
+            _SUMMARIZER_FILE, "empty_placeholder"
+        )
         events = self._render_events(perceptions)
+        instruction = section(_SUMMARIZER_FILE, "instruction")
+        current_header = section(_SUMMARIZER_FILE, "current_summary_header")
+        events_header = section(_SUMMARIZER_FILE, "recent_events_header")
+        update = section(_SUMMARIZER_FILE, "update_instruction")
         return (
-            f"{_PROMPT_INSTRUCTION}\n"
-            f"Riassunto attuale:\n{previous}\n\n"
-            f"Eventi recenti:\n{events}\n\n"
-            "Aggiorna il riassunto.\n"
+            f"{instruction}\n\n"
+            f"{current_header}\n{previous}\n\n"
+            f"{events_header}\n{events}\n\n"
+            f"{update}\n"
         )
 
-    @staticmethod
-    def _render_events(perceptions: list[Perception]) -> str:
+    def _render_events(self, perceptions: list[Perception]) -> str:
         """Raggruppa le percezioni per fonte in blocchi STREAMER/SCHERMO/CHAT.
 
         Renderer DEDICATO del summarizer (non riusa `format_recent_line` né
         `format_perception_line`): ogni evento è una riga `- ...`. Per la CHAT si
         antepone lo speaker (`- <utente>: <testo>`), per audio/video basta il
         testo perché l'intestazione del gruppo già indica la fonte. Un gruppo
-        senza eventi è omesso interamente.
+        senza eventi è omesso interamente. La mappa fonte→etichetta è cablata
+        (`_SOURCE_LABEL_KEYS`); il testo dell'etichetta viene dal prompt-set.
         """
         blocks: list[str] = []
-        for source, header in _SOURCE_GROUPS:
+        for source, label_key in _SOURCE_LABEL_KEYS:
             group = [p for p in perceptions if p.source is source]
             if not group:
                 continue
+            header = self._prompts.section(_SUMMARIZER_FILE, label_key)
             lines = [Summarizer._render_event_line(p) for p in group]
             blocks.append(header + "\n" + "\n".join(lines))
         return "\n".join(blocks)

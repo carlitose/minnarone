@@ -17,15 +17,14 @@ from minnarone.public_send import (
     ACTION_DROP,
     ACTION_SEND,
     ACTION_SHADOW,
-    PolicySnapshot,
     REASON_BUDGET_MINUTE,
     REASON_KILL_SWITCH,
     REASON_OK,
+    PolicySnapshot,
     SendDecision,
 )
 from minnarone.shadow_router import TwitchPublicOutputRouter
 from minnarone.twitch_chat_sender import TwitchSendConnectionError, TwitchSendError
-
 
 # --- Fakes per isolamento del router ----------------------------------------
 
@@ -257,9 +256,11 @@ def test_private_mode_does_not_record_send_event():
 
 # --- 5. RunEventRecorder.record_send_decision --------------------------------
 
-import json
+# Import di sezione intenzionali: il file è organizzato per slice, ogni
+# sezione dichiara accanto ai test ciò che usa.
+import json  # noqa: E402
 
-from minnarone.run_events import RunEventRecorder
+from minnarone.run_events import RunEventRecorder  # noqa: E402
 
 
 def test_run_event_recorder_records_send_decision(tmp_path):
@@ -282,10 +283,11 @@ def test_run_event_recorder_records_send_decision(tmp_path):
 
 # --- 6. App wiring: selezione del router dalla config -----------------------
 
-from minnarone.app import build_agent
-from minnarone.config import Config, TwitchConfig, TwitchSendConfig, TwitchSendMode
-from minnarone.console import ConsoleOutputRouter
-from minnarone.output import CommentatorStyle
+# Import di sezione intenzionali (vedi sezione 5).
+from minnarone.app import build_agent  # noqa: E402
+from minnarone.config import Config  # noqa: E402
+from minnarone.console import ConsoleOutputRouter  # noqa: E402
+from minnarone.output import CommentatorStyle  # noqa: E402
 
 
 def _fake_transport(*, url, headers, body, timeout):
@@ -368,13 +370,13 @@ def test_public_twitch_send_off_also_uses_original_chat_prompt_style(
 
 # --- 8. Reactor bookkeeping: shadow nota, drop no ---------------------------
 
-from minnarone.fakes import FakeOutputRouter
-from minnarone.llm import LLMProvider, LLMResult
-from minnarone.perception import Perception, Source
-from minnarone.prompt import PromptBuilder
-from minnarone.reactor import Reactor
-from minnarone.senser import Senser
-from minnarone.store import PerceptionStore
+# Import di sezione intenzionali (vedi sezione 5).
+from minnarone.llm import LLMProvider, LLMResult  # noqa: E402
+from minnarone.perception import Perception, Source  # noqa: E402
+from minnarone.prompt import PromptBuilder  # noqa: E402
+from minnarone.reactor import Reactor  # noqa: E402
+from minnarone.senser import Senser  # noqa: E402
+from minnarone.store import PerceptionStore  # noqa: E402
 
 
 class _FakeLLM(LLMProvider):
@@ -427,7 +429,13 @@ def test_shadow_message_appears_in_recent_messages(tmp_path):
     """A shadow decision should update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     router = _shadow_router_for_reactor(
         decision=SendDecision(ACTION_SHADOW, REASON_OK),
@@ -445,7 +453,13 @@ def test_dropped_message_does_not_appear_in_recent_messages(tmp_path):
     """A drop decision should NOT update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     router = _shadow_router_for_reactor(
         decision=SendDecision(ACTION_DROP, REASON_BUDGET_MINUTE),
@@ -466,7 +480,13 @@ def test_end_conv_public_does_not_shadow(tmp_path):
     """#end_conv should close the window without generating a shadow message."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     buf = io.StringIO()
     router = TwitchPublicOutputRouter(
@@ -746,7 +766,13 @@ def test_sent_message_appears_in_recent_messages(tmp_path):
     """A sent message should update the reactor's own-message history."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     sender = FakeSender()
     policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
@@ -770,7 +796,13 @@ def test_failed_send_updates_bookkeeping_conservatively(tmp_path):
     """A failed send updates bookkeeping as if sent (conservative per PRD)."""
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     store.append(
-        Perception(ts=1.0, source=Source.CHAT, type="msg", text="ehi minnarone", speaker="user1")
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="ehi minnarone",
+            speaker="user1",
+        )
     )
     sender = FakeSender(fail=TwitchSendConnectionError("connection lost"))
     policy = SpyPolicy(SendDecision(ACTION_SEND, REASON_OK))
@@ -828,6 +860,7 @@ def test_live_config_wires_sender_into_router(tmp_path, monkeypatch):
 
     async def fake_connect():
         from tests.test_twitch_chat_sender import _FakeIRCStream
+
         return _FakeIRCStream()
 
     agent = build_agent(
@@ -872,6 +905,7 @@ def test_agent_starts_and_stops_cleanly_with_sender(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
     from dataclasses import replace
+
     from minnarone.fakes import FakeSourceAdapter
 
     cfg = Config.load(
@@ -909,8 +943,9 @@ def test_agent_surfaces_sender_stop_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:fake-write")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
-    import pytest
     from dataclasses import replace
+
+    import pytest
 
     class FailingStopSender(FakeSender):
         async def stop(self) -> None:

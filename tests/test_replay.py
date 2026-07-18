@@ -101,8 +101,7 @@ def test_replay_redacts_secrets_from_saved_perceptions_before_rendering(tmp_path
             ts=3.0,
             source=Source.VIDEO,
             type="caption",
-            text="frame=YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="
-            + ("A" * 128),
+            text="frame=YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=" + ("A" * 128),
         ),
     ]
     (run_dir / "perceptions.jsonl").write_text(
@@ -130,7 +129,9 @@ def test_replay_loads_latest_prompt_capture_from_run_directory(tmp_path):
     prompt_dir.mkdir(parents=True)
     (run_dir / "perceptions.jsonl").write_text("", encoding="utf-8")
     for index, prompt in enumerate(("old prompt", "latest prompt"), start=1):
-        (prompt_dir / f"prompt-{index:06d}-20260629T10300{index}000000Z.json").write_text(
+        (
+            prompt_dir / f"prompt-{index:06d}-20260629T10300{index}000000Z.json"
+        ).write_text(
             json.dumps(
                 {
                     "prompt": prompt,
@@ -266,9 +267,7 @@ def test_replay_keeps_source_tails_independent_of_global_tail(tmp_path):
     state = load_replay_state(run_dir, recent_perceptions=2)
 
     assert [p.text for p in state.perceptions] == ["chat 1", "chat 2"]
-    assert [p.text for p in state.audio_transcriptions] == [
-        "audio outside global tail"
-    ]
+    assert [p.text for p in state.audio_transcriptions] == ["audio outside global tail"]
     assert [p.text for p in state.video_captions] == ["video outside global tail"]
 
 

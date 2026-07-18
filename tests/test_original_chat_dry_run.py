@@ -105,8 +105,7 @@ def _seed_fake_multimodal_context(runtime: OriginalChatDryRun) -> None:
 
 def _stream_texts(runtime: OriginalChatDryRun) -> list[tuple[str, OutputMode]]:
     return [
-        (message.text, message.mode)
-        for message in runtime.stream.recent_messages()
+        (message.text, message.mode) for message in runtime.stream.recent_messages()
     ]
 
 

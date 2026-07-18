@@ -133,7 +133,9 @@ class PromptObservationRecorder:
             raise ValueError("retention_limit must be an integer >= 1")
         self._retention_limit = retention_limit
         self._observations: deque[PromptObservation] = deque(maxlen=retention_limit)
-        self._prompt_dir = Path(debug_dir) / "prompts" if debug_dir is not None else None
+        self._prompt_dir = (
+            Path(debug_dir) / "prompts" if debug_dir is not None else None
+        )
         self._sequence = 0
 
     def record(self, observation: PromptObservation) -> None:
@@ -181,7 +183,9 @@ class ObservedLLMProvider(LLMProvider):
     ) -> None:
         self._provider = provider
         self._recorder = recorder
-        self.model = model or str(getattr(provider, "model", provider.__class__.__name__))
+        self.model = model or str(
+            getattr(provider, "model", provider.__class__.__name__)
+        )
         self._clock = clock or _utcnow
 
     async def complete(self, prompt: str) -> LLMResult:

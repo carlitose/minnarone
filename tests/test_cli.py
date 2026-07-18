@@ -213,9 +213,11 @@ def test_cli_tui_marks_run_completed_when_agent_build_fails(
     assert code == 2
     assert "build failed" in capsys.readouterr().err
     session = captured["run_session"]
-    assert (session.run_dir / ".minnarone-run").read_text(
-        encoding="utf-8"
-    ).endswith(":completed\n")
+    assert (
+        (session.run_dir / ".minnarone-run")
+        .read_text(encoding="utf-8")
+        .endswith(":completed\n")
+    )
 
 
 def test_cli_tui_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch):
@@ -408,10 +410,7 @@ def test_load_dotenv_file_ignores_malformed(tmp_path, monkeypatch):
     monkeypatch.delenv("DOTENV_OK", raising=False)
     env = tmp_path / ".env"
     env.write_text(
-        "senza uguale\n"
-        "=valore-senza-chiave\n"
-        "CHIAVE CON SPAZI=x\n"
-        "DOTENV_OK=bene\n",
+        "senza uguale\n=valore-senza-chiave\nCHIAVE CON SPAZI=x\nDOTENV_OK=bene\n",
         encoding="utf-8",
     )
 
@@ -448,9 +447,170 @@ def _twitch_chat_config(tmp_path):
     return cfg
 
 
-def test_cli_check_reads_twitch_credentials_from_dotenv(
-    tmp_path, capsys, monkeypatch
-):
+# --- validate-prompts (validazione prompt-set senza avviare l'app) ----------
+
+
+def test_cli_validate_prompts_default_set_ok(capsys):
+    """Senza override i default impacchettati devono validare con exit 0."""
+    code = main(["validate-prompts"])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "ok" in out.lower()
+    # Il riepilogo elenca i file controllati (entrambi i set) con l'origine.
+    assert "situations.md" in out
+    assert "summarizer.md" in out
+    assert "default" in out
+
+
+def test_cli_validate_prompts_reports_override_origin(tmp_path, capsys):
+    """Un file valido nella dir di override è riportato con origine 'override'."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    intro = (files("minnarone.prompts") / "intro.md").read_text(encoding="utf-8")
+    (override / "intro.md").write_text(intro, encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "intro.md" in out
+    assert "override" in out
+
+
+def test_cli_validate_prompts_partial_override_notice(tmp_path, capsys):
+    """Un override PARZIALE è segnalato esplicitamente (decisione FU-02).
+
+    Niente strict-set bloccante: il fallback per-file resta, ma il riepilogo
+    rende visibile il mix override/default (es. set inglese a metà).
+    """
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    intro = (files("minnarone.prompts") / "intro.md").read_text(encoding="utf-8")
+    (override / "intro.md").write_text(intro, encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "override parziale" in out
+    # 9 file totali (8 original-chat incluso headers.md + summarizer).
+    assert "1 file da override, 8 dal default" in out
+
+
+def test_cli_validate_prompts_full_override_has_no_partial_notice(tmp_path, capsys):
+    """Se TUTTI i file vengono dall'override la nota di parzialità non appare."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    pkg = files("minnarone.prompts")
+    for name in (
+        "format.md",
+        "rules.md",
+        "intro.md",
+        "situations.md",
+        "headers.md",
+        "operator.md",
+        "meeting_synthesizer.md",
+        "suggester.md",
+        "summarizer.md",
+    ):
+        (override / name).write_text(
+            (pkg / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "override parziale" not in out
+
+
+def test_cli_validate_prompts_broken_section_names_file_and_section(tmp_path, capsys):
+    """`#end_conv` mancante in UNA sezione: l'errore nomina file E sezione."""
+    from importlib.resources import files
+
+    override = tmp_path / "prompts"
+    override.mkdir()
+    default = (files("minnarone.prompts") / "situations.md").read_text(encoding="utf-8")
+    (override / "situations.md").write_text(
+        default.replace(
+            "## idle",
+            "## idle\nSe non hai nulla da dire taci.\n\n## _idle_originale",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+    assert "sezione 'idle'" in err
+    assert "#end_conv" in err
+
+
+def test_cli_validate_prompts_broken_override_returns_nonzero(tmp_path, capsys):
+    """Un override rotto (senza #end_conv né chiavi) fallisce nominando il file."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "situations.md").write_text(
+        "## idle\nsituazione senza token di fine\n", encoding="utf-8"
+    )
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+
+
+def test_cli_validate_prompts_reports_all_broken_files(tmp_path, capsys):
+    """Più file rotti → una riga di errore per ciascuno (non solo il primo)."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "situations.md").write_text("## idle\nsenza token\n", encoding="utf-8")
+    (override / "rules.md").write_text("regole senza canale\n", encoding="utf-8")
+
+    code = main(["validate-prompts", "--prompts-dir", str(override)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "situations.md" in err
+    assert "rules.md" in err
+
+
+def test_cli_validate_prompts_config_reads_prompts_dir(tmp_path, capsys):
+    """`--config` legge `prompts_dir` dal YAML (risolto rispetto al config)."""
+    override = tmp_path / "prompts"
+    override.mkdir()
+    (override / "summarizer.md").write_text(
+        "## instruction\nsolo una\n", encoding="utf-8"
+    )
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("prompts_dir: prompts\n", encoding="utf-8")
+
+    code = main(["validate-prompts", "--config", str(cfg)])
+
+    assert code != 0
+    err = capsys.readouterr().err
+    assert "summarizer.md" in err
+
+
+def test_cli_validate_prompts_missing_config_returns_config_error(tmp_path, capsys):
+    code = main(["validate-prompts", "--config", str(tmp_path / "assente.yaml")])
+
+    assert code == 2
+    assert "config" in capsys.readouterr().err.lower()
+
+
+def test_cli_check_reads_twitch_credentials_from_dotenv(tmp_path, capsys, monkeypatch):
     # Ambiente pulito: le credenziali arrivano SOLO dal .env accanto al config.
     monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
     monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)

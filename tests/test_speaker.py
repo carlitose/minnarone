@@ -28,9 +28,7 @@ def test_clusterer_updates_matching_centroid_and_creates_new_speaker():
     )
 
     assert clusterer.assign([1.0, 0.0], duration_seconds=1.0).label == "altro"
-    assert (
-        clusterer.assign([0.98, 0.2], duration_seconds=1.0).label == "altro"
-    )
+    assert clusterer.assign([0.98, 0.2], duration_seconds=1.0).label == "altro"
     assert clusterer.assign([0.0, 1.0], duration_seconds=1.0).label == "altro"
 
     stats = clusterer.stats()
@@ -341,9 +339,7 @@ def test_sherpa_backend_uses_documented_stream_flow_with_fake_extractor(tmp_path
     assert FakeSherpa.created_config.provider == "cpu"
     assert FakeSherpa.created_config.num_threads == 2
     assert FakeSherpa.stream.sample_rate == 16_000
-    assert list(FakeSherpa.stream.waveform) == pytest.approx(
-        [-1.0, 0.0, 32767 / 32768]
-    )
+    assert list(FakeSherpa.stream.waveform) == pytest.approx([-1.0, 0.0, 32767 / 32768])
     assert FakeSherpa.stream.finished is True
     assert embedding == pytest.approx((0.6, 0.8))
 

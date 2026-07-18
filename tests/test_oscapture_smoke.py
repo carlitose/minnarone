@@ -366,7 +366,9 @@ def test_cli_rejects_invalid_monitor(tmp_path, capsys):
 
 
 def test_cli_rejects_invalid_vad_mode(tmp_path, capsys):
-    code = main(_base_args(tmp_path) + ["--audio", "--vad-diagnostic", "--vad-mode", "5"])
+    code = main(
+        _base_args(tmp_path) + ["--audio", "--vad-diagnostic", "--vad-mode", "5"]
+    )
     assert code == 2
     assert "--vad-mode" in capsys.readouterr().err
 

@@ -121,9 +121,7 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
                 text="video nel pannello",
             )
         ],
-        windows={
-            "alice": ConversationWindow("alice", opened_at=1.0, last_seen=1.0)
-        },
+        windows={"alice": ConversationWindow("alice", opened_at=1.0, last_seen=1.0)},
         messages=["Minnarone osserva"],
         memory_summary="memoria fake",
         channel="minnarone",
@@ -146,7 +144,8 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
         async with app.run_test(size=(100, 30)):
             widgets = [w for w in app.query(".dashboard-panel") if w.display]
             content_widgets = [
-                w for w in app.query(".dashboard-panel-content")
+                w
+                for w in app.query(".dashboard-panel-content")
                 if w.parent is not None and w.parent.display
             ]
             assert [widget.border_title for widget in widgets] == app.panel_titles
@@ -457,9 +456,7 @@ def test_tui_shows_sintetizzatore_panel_when_active():
             titles = [w.border_title for w in visible]
             assert "SINTETIZZATORE" in titles
             # Content should show the message.
-            content = app.query_one(
-                "#panel-sintetizzatore .dashboard-panel-content"
-            )
+            content = app.query_one("#panel-sintetizzatore .dashboard-panel-content")
             return str(content.content)
 
     rendered = asyncio.run(exercise_app())
@@ -482,9 +479,7 @@ def test_tui_shows_suggerimenti_panel_when_active():
             visible = [w for w in app.query(".dashboard-panel") if w.display]
             titles = [w.border_title for w in visible]
             assert "SUGGERIMENTI" in titles
-            content = app.query_one(
-                "#panel-suggerimenti .dashboard-panel-content"
-            )
+            content = app.query_one("#panel-suggerimenti .dashboard-panel-content")
             return str(content.content)
 
     rendered = asyncio.run(exercise_app())

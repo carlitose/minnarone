@@ -684,6 +684,66 @@ Both blocks are injected into the original-chat prompt's
 Facts are manually authored for now. There is no auto-memory, fact extraction
 from live streams, or cross-session update workflow in this local dry-run seed.
 
+### Prompt Files and Overrides
+
+The tunable prompt text (persona rules, response format, situation variants,
+per-style rules and the summarizer instruction) is not in the code: it lives in
+external Markdown files packaged with the wheel under `src/minnarone/prompts/`
+and read at startup. This is separate from `soul`/`facts` memory: `soul`/`facts`
+are the agent's identity and knowledge (loaded via `FileMemory`, degrading
+gracefully), while the prompt files are the behavior/persona/format text (loaded
+fail-fast).
+
+Packaged prompt files:
+
+- `rules.md` — original-chat persona/style (placeholder `{{channel}}`).
+- `intro.md` — the current-situation banner (placeholder `{{channel}}`).
+- `situations.md` — the 6 keyed situation variants (`{{user}}`, `{{mention}}`,
+  `{{reason}}`; keeps the `#end_conv` control token). Bodies cite section
+  headers via `{{header_*}}` placeholders resolved from `headers.md`.
+- `headers.md` — the keyed section headers and framing lines of the reaction
+  prompt (`{{channel}}` in `cosa_sai` only). Renaming a header here also
+  updates every body text that cites it via `{{header_*}}`.
+- `format.md` — the `RE:`/`MSG:` response contract (keeps `RE:`, `MSG:`,
+  `#end_conv`).
+- `operator.md`, `meeting_synthesizer.md`, `suggester.md` — per-style rules
+  (`{{language}}`; the suggester keeps the `#nothing` control token).
+- `summarizer.md` — the short-term-memory summarizer text (keyed sections).
+
+To override, set `prompts_dir` in the config, resolved relative to the config
+file, exactly like `soul_path` / `facts_dir`:
+
+```yaml
+prompts_dir: my-prompts
+```
+
+Resolution is per file: if a file exists under `prompts_dir` it wins, otherwise
+the packaged default is used. Omitting `prompts_dir` uses only the packaged
+defaults, so a fresh install works with no configuration. The loader is
+fail-fast — a missing file, a missing/unknown placeholder, a missing control
+token or an empty required section aborts startup rather than degrading to
+empty text.
+
+Placeholders use double braces `{{name}}`; the whitelist is `{{channel}}`,
+`{{language}}`, `{{user}}`, `{{mention}}`, `{{reason}}`, plus the header
+references `{{header_memoria}}`, `{{header_tuoi_ultimi_messaggi}}` and
+`{{header_conversazione_recente}}` (resolved from `headers.md`). Values come from
+config/code (trusted data), single braces `{ }` and `<...>` survive untouched,
+and injected values are never re-scanned.
+
+**Non-Italian channel.** Externalizing the prompts is the localization
+mechanism; there is no i18n engine and no translated sets are shipped. Copy
+`src/minnarone/prompts/` to a new directory, rewrite the `.md` in your language
+(keeping placeholders and control tokens), and point `prompts_dir` at it — no
+code changes. A minimal, partial English example is in
+`examples/prompts-en/`.
+
+**Security boundary.** The anti-injection and disclosure rules are hard-coded in
+`prompt.py` and are intentionally NOT among the editable files, together with the
+untrusted-data fence. An override can change persona, style and language, but it
+can never weaken the protection that keeps the agent in character and treats
+perceived content as data, never as commands.
+
 ## Full Commentator Run Workflow
 
 Run the full local commentator in layers. Do not start with every model enabled

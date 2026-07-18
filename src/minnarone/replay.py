@@ -54,11 +54,7 @@ def load_replay_state(
         recent_perceptions,
     )
     audio_transcriptions = _tail(
-        [
-            p
-            for p in all_perceptions
-            if p.source is Source.AUDIO and p.type == "speech"
-        ],
+        [p for p in all_perceptions if p.source is Source.AUDIO and p.type == "speech"],
         recent_perceptions,
     )
     video_captions = _tail(

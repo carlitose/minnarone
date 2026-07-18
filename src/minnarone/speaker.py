@@ -50,9 +50,7 @@ class SpeakerEmbeddingConfig:
                     )
                 model_path = Path(model_path).expanduser()
             else:
-                raise SpeakerConfigError(
-                    "model_path deve essere un percorso non vuoto"
-                )
+                raise SpeakerConfigError("model_path deve essere un percorso non vuoto")
         provider = _non_empty_string(self.provider, "provider")
         num_threads = _positive_int(self.num_threads, "num_threads")
         dimension = _positive_int(self.dimension, "dimension")
@@ -222,9 +220,7 @@ class OnlineSpeakerClusterer:
             ),
         )
 
-    def _best_cluster(
-        self, vector: tuple[float, ...]
-    ) -> tuple[_Cluster | None, float]:
+    def _best_cluster(self, vector: tuple[float, ...]) -> tuple[_Cluster | None, float]:
         best_cluster: _Cluster | None = None
         best_similarity = -1.0
         for cluster in self._clusters:
@@ -331,7 +327,9 @@ class SherpaOnnxSpeakerEmbeddingBackend:
     def embed(self, segment: SpeechSegment) -> tuple[float, ...]:
         """Extract and normalize one speaker embedding from a VAD utterance."""
         if segment.sample_rate != 16_000:
-            raise SpeakerEmbeddingError("SpeechSegment.sample_rate deve essere 16000 Hz")
+            raise SpeakerEmbeddingError(
+                "SpeechSegment.sample_rate deve essere 16000 Hz"
+            )
         try:
             waveform = pcm_s16le_to_float32(segment.samples)
         except AsrInputError as exc:

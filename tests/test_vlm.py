@@ -8,7 +8,11 @@ import types
 
 import pytest
 
-from minnarone.video import VideoFrame
+# L'extra `vlm` è opzionale: senza `transformers` questi test si SKIPPANO
+# (stesso idioma di test_tui_transitions.py per `textual`).
+pytest.importorskip("transformers")
+
+from minnarone.video import VideoFrame  # noqa: E402
 
 
 class _FakeImage:
@@ -362,7 +366,9 @@ def test_frame_to_image_accepts_existing_image_without_writing_files():
 
     image = _FakeImage("already-image")
 
-    converted = frame_to_pil_image(VideoFrame(pixels=image), image_module=_FakeImageModule())
+    converted = frame_to_pil_image(
+        VideoFrame(pixels=image), image_module=_FakeImageModule()
+    )
 
     assert converted is image
     assert image.converted_to == "RGB"
