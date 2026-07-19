@@ -1,0 +1,41 @@
+# Golden path P0: Twitch chat-only shadow in Italian.
+# Copy this file plus soul.md and facts/ to a gitignored local directory.
+# Secrets belong in .env; never place OAuth tokens or API keys in YAML.
+
+mode: public
+soul_path: soul.md
+facts_dir: facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: examplechannel
+  quality: best
+  chat: true
+  audio: false
+  video: false
+  send:
+    mode: shadow
+    allowed_channels: []
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+
+commentator:
+  language: it
+
+llm_params:
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low
+
+disclosure:
+  # Choose an honest channel/account disclosure before any attended live run.
+  announce_ai: true
+
+retention:
+  # Reserved/inert: choose a policy and delete local artifacts manually.
+  perceptions_days: 7
+
+auto_memory: false

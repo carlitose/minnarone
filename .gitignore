@@ -31,14 +31,16 @@ perceptions.jsonl
 
 # Tool caches e materiale personale (non fanno parte del repo)
 .agents/
-# ...tranne la skill `minnarone-prompts`, che è tooling DEL repo e va versionata (il
-# symlink .claude/skills/minnarone-prompts punta qui). Carve-out mirato: il resto di
-# .agents/ resta ignorato (materiale locale/personale).
+# ...tranne le skill pubbliche di Minnarone, che sono tooling DEL repo e vanno
+# versionate (i symlink .claude/skills/* puntano qui). Carve-out mirato: il resto
+# di .agents/ resta ignorato (materiale locale/personale).
 !.agents/
 .agents/*
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/minnarone-prompts/
+!.agents/skills/minnarone-twitch-onboarding/
+!.agents/skills/minnarone-runtime-doctor/
 .tokensave/
 .ruff_cache/
 wiki/

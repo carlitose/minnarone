@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minnarone Runtime Doctor"
+  short_description: "Check runtime profiles before Twitch shadow"
+  default_prompt: "Use $minnarone-runtime-doctor to check this Minnarone profile before a shadow run."

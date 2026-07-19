@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minnarone Twitch Onboarding"
+  short_description: "Prepare a confirmed Twitch shadow workspace"
+  default_prompt: "Use $minnarone-twitch-onboarding to prepare a confirmed, sanitized Twitch shadow workspace."
