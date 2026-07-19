@@ -32,6 +32,8 @@ senza contesto privato.
 - [ ] La guida dichiara `retention.perceptions_days` inerte ed elenca artifact,
       cancellazione manuale e opt-out finché manca enforcement runtime.
 - [ ] Config/template pubblici non contengono path personali né credenziali.
+- [ ] I golden config italiani usano CAM++ English VoxCeleb con
+      `dimension: 512` e spiegano che il vecchio zh-cn 192-dim non è il default.
 - [ ] `AGENTS.md`/CONTRIBUTING pointers coprono architettura, comandi quality,
       prompt safety, worktree sporco e skill routing.
 - [ ] Percorso umano e code-agent vengono verificati da clone pulito.

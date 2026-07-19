@@ -2,7 +2,7 @@
 
 ## Parent Spec
 
-[public-release-wayfinder.md](../../specs/public-release-wayfinder.md)
+[public-release-wayfinder.md](../../../specs/public-release-wayfinder.md)
 
 ## Type
 
@@ -16,13 +16,13 @@ dipendenze, modelli, disco/RAM/VRAM, licenze e comandi di verifica.
 
 ## Acceptance Criteria
 
-- [ ] Ogni profilo dichiara canali abilitati, extra `uv`, tool di sistema,
+- [x] Ogni profilo dichiara canali abilitati, extra `uv`, tool di sistema,
       modello/i, dimensioni indicative e hardware minimo/raccomandato.
-- [ ] I modelli consigliati hanno fonte, licenza, checksum/versione o strategia
+- [x] I modelli consigliati hanno fonte, licenza, checksum/versione o strategia
       di pinning verificabile.
-- [ ] È risolto il rischio del modello speaker `zh-cn` usato su audio italiano.
-- [ ] Nessun esempio pubblico richiede path assoluti dell'autore.
-- [ ] È deciso se download/setup vive in docs, script, `doctor` o skill.
+- [x] È risolto il rischio del modello speaker `zh-cn` usato su audio italiano.
+- [x] Nessun esempio pubblico richiede path assoluti dell'autore.
+- [x] È deciso se download/setup vive in docs, script, `doctor` o skill.
 
 ## Blocked By
 
@@ -53,3 +53,20 @@ non può ricostruire questo stato dal README in modo lineare.
 - Scaricare e committare pesi nel repository.
 - Garantire tutte le GPU/OS.
 - Ottimizzazione prestazionale profonda dei modelli.
+
+## Progress
+
+- 2026-07-18 — creata la matrice in
+  [`docs/research/runtime-model-profiles.md`](../../../research/runtime-model-profiles.md):
+  sei profili progressivi con canali, extra, tool, modelli, budget hardware e
+  smoke di accettazione.
+- Registrati owner, licenze, revision e SHA-256 per faster-whisper, CAM++
+  English VoxCeleb, Qwen2-VL, llama.cpp e GGUF/mmproj di riferimento.
+- Il profilo italiano passa dal CAM++ zh-cn 192-dim al VoxCeleb English
+  512-dim, soglia iniziale 0.5 già validata HITL; resta tuning per dominio.
+- Scelta: docs + manifest versionato e prototipo `minnarone-runtime-doctor` nel
+  ticket 16; nessun download multi-GB implicito.
+
+## Status
+
+Done — review indipendenti e QA documentale completati.

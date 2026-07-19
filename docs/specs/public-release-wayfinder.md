@@ -154,6 +154,13 @@ guida operatore molto lunga.
   non esprime il grant per-canale richiesto dal modello cloud chatbot, il golden
   path richiede consenso out-of-band registrato prima del live; allow-list e
   token del bot non bastano. Senza consenso il percorso termina a shadow.
+- **Ticket 15 — profili runtime definiti** (2026-07-18): sei profili
+  progressivi separano chat-only, capture, CPU audio, Apple Silicon, CUDA e
+  llama.cpp; ogni profilo dichiara extra, tool, modelli, budget e smoke.
+- **Modelli ripetibili (ticket 15)**: ASR, CAM++ English 512, Qwen2-VL-2B e
+  GGUF/mmproj hanno owner, licenza, revision e SHA-256; il vecchio CAM++ zh-cn
+  192 non è più raccomandato per italiano. Il ticket 16 proverà docs + manifest
+  + `minnarone-runtime-doctor`, senza download multi-GB impliciti.
 
 ## Evidence: First Real Twitch Operator Journey (2026-07-18)
 
@@ -183,9 +190,6 @@ guida operatore molto lunga.
 - Se l'onboarding pubblico debba restare docs/templates oppure includere un
   comando guidato (`minnarone init`/`doctor`) che crea config + soul + facts e
   verifica credenziali, dipendenze e modelli.
-- Quali profili runtime supportare ufficialmente (chat-only, CPU-light,
-  Apple-Silicon, CUDA, llama.cpp) e come acquisire modelli compatibili senza
-  path assoluti, licenze ambigue o download impliciti di molti GB.
 - Quale modello OpenRouter sia il default pubblico e come validare parametri
   model-specific (`thinking` vs `reasoning_effort`) senza inseguire slug
   hard-coded obsoleti.
@@ -222,9 +226,8 @@ guida operatore molto lunga.
   possono procedere. Il consenso broadcaster out-of-band è hard gate per il
   live IRC raccomandato; senza consenso il percorso termina a shadow. → ticket
   14 done.
-- **Runtime/model profiles**: modelli e hardware hanno funzionato solo grazie a
-  stato locale preesistente; serve una matrice supportata e un'acquisizione
-  ripetibile. → ticket 15 (può partire dopo l'inventario 12).
+- **Runtime/model profiles — risolto per il prototipo**: ticket 15 done; sei
+  profili e un manifest di artifact pinned sono pronti come input del ticket 16.
 - **Onboarding guidato e nuove skill**: scegliere tramite prototipo minimo il
   confine tra skill repo-local, docs/templates e `init/doctor`; non costruire
   interfacce definitive prima delle decisioni 10, 13–15. → ticket 16.
@@ -254,8 +257,8 @@ guida operatore molto lunga.
 - 14 — done — policy Twitch/public bot verificata: IRC/auth, account/token,
   rate, disclosure, retention e shadow/live mappati; guardrail e gap consegnati
   ai ticket 16–18.
-- 15 — research — profili runtime/modelli/hardware e acquisizione ripetibile →
-  matrice supportata con costi disco/RAM/VRAM e licenze.
+- 15 — done — profili runtime/modelli/hardware e acquisizione ripetibile;
+  matrice, budget, licenze, revision e digest consegnati al prototipo 16.
 - 16 — prototype — catalogo nuove skill + confronto skill/docs/templates vs
   `minnarone init/doctor` → prova reversibile e scelta dell'interfaccia minima
   per code agent e utente normale.
@@ -267,8 +270,7 @@ guida operatore molto lunga.
 
 ## Next Review
 
-Con 10–14 chiusi, usare l'inventario 12 per completare i profili runtime 15.
-Con 14–15 chiusi, prototipare il catalogo/onboarding nel 16,
+Con 10–15 chiusi, prototipare il catalogo/onboarding nel 16,
 poi rendere eseguibili 17–18 e decidere se il 09 va assorbito nel polish. Solo
 quando la nuova frontiera è verde si riapre il ticket 05 con conferma esplicita
 dell'utente e verifica anonima post-flip.

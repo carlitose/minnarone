@@ -24,6 +24,8 @@ che porta sia un code agent sia un utente normale a una shadow run corretta.
 - [ ] Il flusso applica i guardrail del ticket 14 e i profili del ticket 15.
 - [ ] Il prototipo termina a shadow e verifica account bot dedicato, consenso
       broadcaster, disclosure e artifact/retention senza promuovere live.
+- [ ] Il runtime doctor prova P0, P2 e almeno uno fra P3–P5, verifica digest e
+      revision del manifest e rifiuta mismatch speaker 192/512.
 - [ ] Un test comparativo registra passaggi, errori evitati e duplicazione tra
       skill, CLI e docs; la scelta finale è esplicita.
 
@@ -33,7 +35,7 @@ che porta sia un code agent sia un utente normale a una shadow run corretta.
 - [11-task-rename-prompts-skill.md](done/11-task-rename-prompts-skill.md) — done
 - [13-grilling-persona-facts-onboarding.md](done/13-grilling-persona-facts-onboarding.md) — done
 - [14-research-public-twitch-safety.md](done/14-research-public-twitch-safety.md) — done
-- [15-research-runtime-model-profiles.md](15-research-runtime-model-profiles.md)
+- [15-research-runtime-model-profiles.md](done/15-research-runtime-model-profiles.md) — done
 
 ## Frontier
 

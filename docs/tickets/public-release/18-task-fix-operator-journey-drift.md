@@ -31,13 +31,15 @@ sono utilizzabili con `.env` e distinguono un canale quieto da un guasto media.
       documentato come non supportato senza imporre una falsa negazione.
 - [ ] L'inerzia di `retention.perceptions_days` è visibile e il percorso
       documenta artifact, cancellazione manuale e opt-out finché manca enforcement.
+- [ ] Guida ed examples migrano la raccomandazione speaker italiana da CAM++
+      zh-cn 192-dim a English VoxCeleb 512-dim con soglia iniziale 0.5.
 - [ ] Test mirati, quality e smoke offline passano.
 
 ## Blocked By
 
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md) — done
 - [14-research-public-twitch-safety.md](done/14-research-public-twitch-safety.md) — done
-- [15-research-runtime-model-profiles.md](15-research-runtime-model-profiles.md)
+- [15-research-runtime-model-profiles.md](done/15-research-runtime-model-profiles.md) — done
 
 ## Frontier
 
