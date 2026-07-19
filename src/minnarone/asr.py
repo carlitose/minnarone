@@ -59,9 +59,9 @@ class AsrConfig:
             or not isinstance(self.beam_size, int)
             or self.beam_size < 1
         ):
-            raise AsrConfigError("beam_size deve essere un intero >= 1")
+            raise AsrConfigError("beam_size must be an integer >= 1")
         if not isinstance(self.condition_on_previous_text, bool):
-            raise AsrConfigError("condition_on_previous_text deve essere booleano")
+            raise AsrConfigError("condition_on_previous_text must be boolean")
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "device", device)
         object.__setattr__(self, "compute_type", compute_type)
@@ -103,7 +103,7 @@ class FasterWhisperAsr:
     def transcribe(self, segment: SpeechSegment) -> str:
         """Transcribe one VAD utterance and return normalized segment text."""
         if segment.sample_rate != 16_000:
-            raise AsrInputError("SpeechSegment.sample_rate deve essere 16000 Hz")
+            raise AsrInputError("SpeechSegment.sample_rate must be 16000 Hz")
         audio = pcm_s16le_to_float32(segment.samples)
         with _faster_whisper_progress_disabled():
             segments, _info = self._model.transcribe(
@@ -124,10 +124,10 @@ class FasterWhisperAsr:
 def pcm_s16le_to_float32(samples: object) -> object:
     """Convert mono signed 16-bit little-endian PCM bytes to float32 samples."""
     if not isinstance(samples, (bytes, bytearray, memoryview)):
-        raise AsrInputError("SpeechSegment.samples deve essere PCM bytes-like")
+        raise AsrInputError("SpeechSegment.samples must be PCM bytes-like")
     raw = bytes(samples)
     if len(raw) % 2:
-        raise AsrInputError("SpeechSegment.samples deve essere 16-bit aligned")
+        raise AsrInputError("SpeechSegment.samples must be 16-bit aligned")
     floats = array(
         "f",
         (value / 32768.0 for (value,) in struct.iter_unpack("<h", raw)),
@@ -144,8 +144,8 @@ def _default_model_factory(model: str, *, device: str, compute_type: str) -> obj
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise AsrModelSetupError(
-            "faster-whisper non installato: installa l'extra ASR locale "
-            "o il pacchetto 'faster-whisper' prima di abilitare twitch.audio"
+            "faster-whisper is not installed: install the local ASR extra "
+            "or the 'faster-whisper' package before enabling twitch.audio"
         ) from exc
     return WhisperModel(model, device=device, compute_type=compute_type)
 
@@ -186,5 +186,5 @@ def _faster_whisper_progress_disabled():
 
 def _non_empty_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise AsrConfigError(f"{field_name} deve essere una stringa non vuota")
+        raise AsrConfigError(f"{field_name} must be a non-empty string")
     return value.strip()

@@ -45,12 +45,10 @@ class SpeakerEmbeddingConfig:
                 model_path = model_path.expanduser()
             elif isinstance(model_path, str):
                 if not model_path.strip():
-                    raise SpeakerConfigError(
-                        "model_path deve essere un percorso non vuoto"
-                    )
+                    raise SpeakerConfigError("model_path must be a non-empty path")
                 model_path = Path(model_path).expanduser()
             else:
-                raise SpeakerConfigError("model_path deve essere un percorso non vuoto")
+                raise SpeakerConfigError("model_path must be a non-empty path")
         provider = _non_empty_string(self.provider, "provider")
         num_threads = _positive_int(self.num_threads, "num_threads")
         dimension = _positive_int(self.dimension, "dimension")
@@ -78,11 +76,11 @@ class SpeakerClusteringConfig:
             self.min_update_seconds, "min_update_seconds"
         )
         if not 0.0 <= threshold <= 1.0:
-            raise SpeakerConfigError("threshold deve essere compreso tra 0 e 1")
+            raise SpeakerConfigError("threshold must be between 0 and 1")
         if warmup_seconds < 0:
-            raise SpeakerConfigError("warmup_seconds deve essere >= 0")
+            raise SpeakerConfigError("warmup_seconds must be >= 0")
         if min_update_seconds < 0:
-            raise SpeakerConfigError("min_update_seconds deve essere >= 0")
+            raise SpeakerConfigError("min_update_seconds must be >= 0")
         object.__setattr__(self, "threshold", threshold)
         object.__setattr__(self, "warmup_seconds", warmup_seconds)
         object.__setattr__(self, "min_update_seconds", min_update_seconds)
@@ -297,11 +295,11 @@ class SherpaOnnxSpeakerEmbeddingBackend:
         self._config = config
         if config.model_path is None:
             raise SpeakerEmbeddingError(
-                "speaker embedding model_path mancante: configura un file ONNX"
+                "speaker embedding model_path is missing: configure an ONNX file"
             )
         if not config.model_path.is_file():
             raise SpeakerEmbeddingError(
-                f"speaker embedding model non trovato: {config.model_path}"
+                f"speaker embedding model not found: {config.model_path}"
             )
         module = sherpa_module or _import_sherpa_onnx()
         try:
@@ -327,9 +325,7 @@ class SherpaOnnxSpeakerEmbeddingBackend:
     def embed(self, segment: SpeechSegment) -> tuple[float, ...]:
         """Extract and normalize one speaker embedding from a VAD utterance."""
         if segment.sample_rate != 16_000:
-            raise SpeakerEmbeddingError(
-                "SpeechSegment.sample_rate deve essere 16000 Hz"
-            )
+            raise SpeakerEmbeddingError("SpeechSegment.sample_rate must be 16000 Hz")
         try:
             waveform = pcm_s16le_to_float32(segment.samples)
         except AsrInputError as exc:
@@ -340,7 +336,7 @@ class SherpaOnnxSpeakerEmbeddingBackend:
             stream.accept_waveform(sample_rate=segment.sample_rate, waveform=waveform)
             stream.input_finished()
             if not self._extractor.is_ready(stream):
-                raise SpeakerEmbeddingError("sherpa-onnx stream non pronto")
+                raise SpeakerEmbeddingError("sherpa-onnx stream is not ready")
             embedding = self._extractor.compute(stream)
         except SpeakerEmbeddingError:
             raise
@@ -351,10 +347,10 @@ class SherpaOnnxSpeakerEmbeddingBackend:
 
         normalized = _normalize(embedding)
         if normalized is None:
-            raise SpeakerEmbeddingError("sherpa-onnx ha prodotto embedding vuoto")
+            raise SpeakerEmbeddingError("sherpa-onnx produced an empty embedding")
         if len(normalized) != self._config.dimension:
             raise SpeakerEmbeddingError(
-                "dimensione speaker embedding inattesa: "
+                "unexpected speaker embedding dimension: "
                 f"{len(normalized)} != {self._config.dimension}"
             )
         return normalized
@@ -422,33 +418,33 @@ def _dot(left: Sequence[float], right: Sequence[float]) -> float:
 
 def _finite_float(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise SpeakerConfigError(f"{field_name} deve essere numerico")
+        raise SpeakerConfigError(f"{field_name} must be numeric")
     try:
         parsed = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise SpeakerConfigError(f"{field_name} deve essere numerico") from exc
+        raise SpeakerConfigError(f"{field_name} must be numeric") from exc
     if not math.isfinite(parsed):
-        raise SpeakerConfigError(f"{field_name} deve essere finito")
+        raise SpeakerConfigError(f"{field_name} must be finite")
     return parsed
 
 
 def _positive_int(value: object, field_name: str) -> int:
     if isinstance(value, bool):
-        raise SpeakerConfigError(f"{field_name} deve essere un intero >= 1")
+        raise SpeakerConfigError(f"{field_name} must be an integer >= 1")
     if isinstance(value, float) and not value.is_integer():
-        raise SpeakerConfigError(f"{field_name} deve essere un intero >= 1")
+        raise SpeakerConfigError(f"{field_name} must be an integer >= 1")
     try:
         parsed = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise SpeakerConfigError(f"{field_name} deve essere un intero >= 1") from exc
+        raise SpeakerConfigError(f"{field_name} must be an integer >= 1") from exc
     if parsed < 1:
-        raise SpeakerConfigError(f"{field_name} deve essere un intero >= 1")
+        raise SpeakerConfigError(f"{field_name} must be an integer >= 1")
     return parsed
 
 
 def _non_empty_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise SpeakerConfigError(f"{field_name} deve essere una stringa non vuota")
+        raise SpeakerConfigError(f"{field_name} must be a non-empty string")
     return value.strip()
 
 
@@ -457,6 +453,6 @@ def _import_sherpa_onnx() -> object:
         return __import__("sherpa_onnx")
     except ImportError as exc:
         raise SpeakerEmbeddingError(
-            "sherpa-onnx non installato: installa il pacchetto 'sherpa-onnx' "
-            "prima di abilitare lo speaker embedding locale"
+            "sherpa-onnx is not installed: install the 'sherpa-onnx' package "
+            "before enabling local speaker embedding"
         ) from exc

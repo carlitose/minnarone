@@ -52,11 +52,11 @@ class MergingSourceAdapter(SourceAdapter):
         cleanup_timeout: float = 5.0,
     ) -> None:
         if not readers:
-            raise ValueError("serve almeno un reader")
+            raise ValueError("at least one reader is required")
         if queue_size <= 0:
-            raise ValueError("queue_size deve essere > 0")
+            raise ValueError("queue_size must be > 0")
         if cleanup_timeout <= 0:
-            raise ValueError("cleanup_timeout deve essere > 0")
+            raise ValueError("cleanup_timeout must be > 0")
         self._readers = dict(readers)
         self._validate_reader_channels()
         self._priority = frozenset(priority_channels)
@@ -165,8 +165,8 @@ class MergingSourceAdapter(SourceAdapter):
             exposed = reader.channels()
             if exposed != {channel}:
                 raise ValueError(
-                    f"il reader del canale {channel!r} espone {exposed!r}, "
-                    f"deve esporre solo {{{channel!r}}}"
+                    f"reader for channel {channel!r} exposes {exposed!r}; "
+                    f"it must expose only {{{channel!r}}}"
                 )
 
     async def _drain_reader(self, channel: str, reader: SourceAdapter) -> None:

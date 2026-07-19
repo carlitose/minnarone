@@ -79,11 +79,11 @@ class HumanLikeness:
         dedup_threshold: float = _DEFAULT_DEDUP_THRESHOLD,
     ) -> None:
         if typing_speed <= 0:
-            raise ValueError("typing_speed deve essere > 0")
+            raise ValueError("typing_speed must be > 0")
         if min_delay > max_delay:
-            raise ValueError("min_delay non può superare max_delay")
+            raise ValueError("min_delay cannot exceed max_delay")
         if not 0.0 <= dedup_threshold <= 1.0:
-            raise ValueError("dedup_threshold deve essere in [0.0, 1.0]")
+            raise ValueError("dedup_threshold must be in [0.0, 1.0]")
         self._typing_speed = typing_speed
         self._min_delay = min_delay
         self._max_delay = max_delay

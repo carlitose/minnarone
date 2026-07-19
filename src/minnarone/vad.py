@@ -35,31 +35,29 @@ class VadConfig:
             or not isinstance(self.mode, int)
             or self.mode not in range(4)
         ):
-            raise VadInputError("mode deve essere un intero tra 0 e 3")
+            raise VadInputError("mode must be an integer between 0 and 3")
         if (
             isinstance(self.frame_ms, bool)
             or not isinstance(self.frame_ms, int)
             or self.frame_ms not in {10, 20, 30}
         ):
-            raise VadInputError("frame_ms deve essere 10, 20 o 30")
+            raise VadInputError("frame_ms must be 10, 20, or 30")
         if (
             isinstance(self.padding_ms, bool)
             or not isinstance(self.padding_ms, int)
             or self.padding_ms <= 0
         ):
-            raise VadInputError("padding_ms deve essere > 0")
+            raise VadInputError("padding_ms must be > 0")
         if self.padding_ms < self.frame_ms:
-            raise VadInputError("padding_ms deve essere >= frame_ms")
+            raise VadInputError("padding_ms must be >= frame_ms")
         if not math.isfinite(self.max_utterance_seconds):
-            raise VadInputError("max_utterance_seconds deve essere finito")
+            raise VadInputError("max_utterance_seconds must be finite")
         if self.max_utterance_seconds <= 0:
-            raise VadInputError("max_utterance_seconds deve essere > 0")
+            raise VadInputError("max_utterance_seconds must be > 0")
         if self.max_utterance_seconds < self.padding_ms / 1000:
-            raise VadInputError(
-                "max_utterance_seconds deve essere >= padding_ms / 1000"
-            )
+            raise VadInputError("max_utterance_seconds must be >= padding_ms / 1000")
         if self.sample_rate != 16_000:
-            raise VadInputError("sample_rate deve essere 16000 Hz")
+            raise VadInputError("sample_rate must be 16000 Hz")
 
     @property
     def frame_bytes(self) -> int:
@@ -105,10 +103,10 @@ class PcmFrameSplitter:
     def push(self, pcm: bytes | bytearray | memoryview) -> list[bytes]:
         """Return complete frames, carrying any incomplete trailing bytes."""
         if not isinstance(pcm, (bytes, bytearray, memoryview)):
-            raise VadInputError("samples deve essere PCM bytes-like")
+            raise VadInputError("samples must be PCM bytes-like")
         raw = bytes(pcm)
         if len(raw) % 2:
-            raise VadInputError("samples deve essere PCM mono 16-bit sample-aligned")
+            raise VadInputError("samples must be sample-aligned 16-bit mono PCM")
         data = self._pending + raw
         frame_bytes = self._config.frame_bytes
         complete_bytes = (len(data) // frame_bytes) * frame_bytes
@@ -146,7 +144,7 @@ class StreamingVad:
     def segments(self, chunk: AudioChunk) -> list[SpeechSegment]:
         """Return completed speech utterances from this PCM chunk."""
         if chunk.sample_rate != self._config.sample_rate:
-            raise VadInputError("AudioChunk.sample_rate deve essere 16000 Hz")
+            raise VadInputError("AudioChunk.sample_rate must be 16000 Hz")
         if self._next_frame_ts is None:
             self._next_frame_ts = chunk.ts
 
@@ -266,7 +264,7 @@ class WebRtcVadDetector:
             import webrtcvad
         except ImportError as exc:  # pragma: no cover - exercised by packaging.
             raise RuntimeError(
-                "dipendenza runtime mancante: installa webrtcvad-wheels"
+                "missing runtime dependency: install webrtcvad-wheels"
             ) from exc
         self._vad = webrtcvad.Vad()
         self._vad.set_mode(self._config.mode)

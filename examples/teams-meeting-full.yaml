@@ -1,56 +1,56 @@
-# Preset pronto all'uso: assistente meeting COMPLETO su Teams via cattura SO.
+# Ready-to-use preset: FULL Teams meeting assistant through OS capture.
 #
-# Osserva audio e schermo della macchina locale (una call Teams) e produce
-# commenti (operator), riassunti periodici (sintetizzatore) e suggerimenti
-# contestuali (suggeritore) PRIVATI per il solo operatore. Tutti e tre i
-# profili girano in parallelo con Reactor indipendenti. Nessun output pubblico,
-# nessuna chat esterna. Le credenziali/API key restano FUORI da questo file:
-# il provider LLM legge la chiave dall'ambiente (es. OPENROUTER_API_KEY).
+# Observe local-machine audio and screen (a Teams call) and produce comments
+# (operator), periodic summaries (synthesizer), and contextual suggestions
+# (suggester), PRIVATE for the operator only. All three profiles run in
+# parallel with independent Reactors. There is no public output or external
+# chat. Credentials/API keys stay OUT of this file: the LLM provider reads the
+# key from the environment (for example OPENROUTER_API_KEY).
 #
-# Profili attivi:
-#   - operator: commenti proattivi ogni 30s di inattività
-#   - meeting_synthesizer: riassunto strutturato ogni 180s
-#   - suggester: suggerimenti contestuali su ogni percezione audio
+# Active profiles:
+#   - operator: proactive comments every 30s of inactivity
+#   - meeting_synthesizer: structured summary every 180s
+#   - suggester: contextual suggestions on every audio perception
 #
-# NOTA COSTI: tre profili = tre flussi di LLM call indipendenti. Su un
-# meeting di 1 ora, aspettarsi circa 20 call sintetizzatore + 50-100 call
-# suggeritore + N call operator. Vedi docs/meeting-assistant-operator.md.
+# COST NOTE: three profiles = three independent LLM call streams. For a
+# one-hour meeting, expect roughly 20 synthesizer calls + 50-100 suggester
+# calls + N operator calls. See docs/meeting-assistant-operator.md.
 #
-# Validazione a secco (nessun hardware aperto, nessuna rete):
+# Dry-run validation (no hardware opened, no network):
 #   python -m minnarone examples/teams-meeting-full.yaml --check
 
-mode: private              # obbligatorio con commentator profiles attivi (solo output locale)
-soul_path: original-chat-memory/soul.md  # identità dell'agente (relativo a questo file)
-facts_dir: original-chat-memory/facts    # cartella dei fatti per interlocutore/canale
-adapter: os_capture        # sorgente: cattura audio/video a livello di sistema operativo
-llm_provider: grok         # provider LLM; la API key arriva dall'ambiente
-agent_name: minnarone      # nome che l'agente riconosce come rivolto a sé
+mode: private              # required with active commentator profiles (local output only)
+soul_path: original-chat-memory/soul.md  # agent identity (relative to this file)
+facts_dir: original-chat-memory/facts    # facts directory by interlocutor/channel
+adapter: os_capture        # source: OS-level audio/video capture
+llm_provider: grok         # LLM provider; the API key comes from the environment
+agent_name: minnarone      # name the agent recognizes as addressing itself
 
-# Cosa catturare dalla macchina locale durante la call Teams. Valori
-# conservativi coerenti con la policy di backpressure dell'ADR: fps basso e
-# chunk audio piccoli per non saturare la work queue delle percezioni.
+# What to capture from the local machine during the Teams call. Conservative
+# values follow the ADR backpressure policy: low fps and small audio chunks
+# avoid saturating the perception work queue.
 os_capture:
-  audio: true              # cattura l'audio di sistema (voce dei partecipanti)
-  video: true              # cattura lo schermo (slide, volti, testo condiviso)
-  audio_chunk_seconds: 1.0 # dimensione del chunk audio (secondi)
-  video_fps: 1.0           # frame al secondo campionati dallo schermo (basso di proposito)
-  monitor: 1               # indice del monitor da catturare (>= 1)
+  audio: true              # capture system audio (participant voices)
+  video: true              # capture the screen (slides, faces, shared text)
+  audio_chunk_seconds: 1.0 # audio chunk size in seconds
+  video_fps: 1.0           # screen frames per second (intentionally low)
+  monitor: 1               # monitor index to capture (>= 1)
 
-# Modalità commentatore completa: commenti + riassunti + suggerimenti privati.
+# Full commentator mode: private comments + summaries + suggestions.
 commentator:
-  language: it             # lingua condivisa da tutti i profili
+  language: it             # language shared by all profiles
   profiles:
     operator:
-      idle_interval: 30.0  # commento proattivo se non arrivano trigger (secondi)
+      idle_interval: 30.0  # proactive comment without triggers, in seconds
     meeting_synthesizer:
-      interval_s: 180      # riassunto ogni 3 minuti (regolabile: 120-300s consigliato)
-    suggester: {}           # suggerimenti contestuali, nessun parametro specifico
+      interval_s: 180      # summary every 3 minutes (recommended range: 120-300s)
+    suggester: {}           # contextual suggestions; no specific parameters
 
-senser_interval: 0.5       # cadenza del Senser (secondi)
-idle_interval: 150.0       # fallback proattivo globale in assenza di trigger (secondi)
-summarizer_interval: 30.0  # cadenza del Summarizer (memoria a breve termine)
-recent_chat_window: 20     # quante percezioni recenti includere nel prompt
-perception_queue_size: 32  # tetto della work queue percezioni (backpressure)
+senser_interval: 0.5       # Senser cadence in seconds
+idle_interval: 150.0       # global proactive fallback without triggers, in seconds
+summarizer_interval: 30.0  # Summarizer cadence (short-term memory)
+recent_chat_window: 20     # recent perceptions included in the prompt
+perception_queue_size: 32  # perception work-queue cap (backpressure)
 perception_shutdown_timeout: 5.0
 
 llm_params:
@@ -58,9 +58,9 @@ llm_params:
   reasoning:
     effort: low            # low | medium | high
 
-# Vision captioning locale (Qwen2-VL). Il prompt di default del backend è
-# pensato per stream Twitch e porta il modello a inventare contesto Twitch:
-# per una call Teams serve un prompt neutro orientato al contenuto a schermo.
+# Local vision captioning (Qwen2-VL). The backend default prompt targets Twitch
+# streams and can make the model invent Twitch context; a Teams call needs a
+# neutral prompt focused on visible screen content.
 vlm:
   language: it
   prompt: >-
@@ -69,9 +69,9 @@ vlm:
     Mention only observable people, windows, UI, and readable text.
     Do not speculate.
 
-# --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
+# --- v2 extension points (present but inert in the MVP) ---
 disclosure:
-  announce_ai: false       # se l'agente dichiara di essere un'AI
+  announce_ai: false       # whether the agent discloses that it is AI
 
 retention:
-  perceptions_days: 7      # riservato/inerte: elimina gli artefatti manualmente
+  perceptions_days: 7      # reserved/inert: delete artifacts manually

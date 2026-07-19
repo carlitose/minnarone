@@ -214,7 +214,7 @@ def test_events_drain_completed_run_without_restarting_readers():
 
 
 def test_injected_reader_must_expose_only_its_mapping_channel():
-    with pytest.raises(ValueError, match="canale 'chat'"):
+    with pytest.raises(ValueError, match="channel 'chat'"):
         MergingSourceAdapter(readers={"chat": _FakeReader("audio", [])})
 
 

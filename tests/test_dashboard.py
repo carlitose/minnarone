@@ -382,7 +382,7 @@ def test_technical_event_lines_still_show_dropped_queue_counts():
         }
     )
 
-    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTS"]
 
     assert "audio/queue: dropped=2" in event_text
     assert "video/queue: dropped=1" in event_text
@@ -515,7 +515,7 @@ def test_dashboard_failure_redaction_handles_base64_like_tokens():
 
     state = snapshot(perception_queue=FakeQueue())
 
-    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTS"]
     status = state.render_status_bar()
 
     combined = f"{event_text}\n{status}"
@@ -544,7 +544,7 @@ def test_dashboard_failure_redaction_covers_twitch_send_write_token():
 
     state = snapshot(perception_queue=FakeQueue())
 
-    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTS"]
     status = state.render_status_bar()
 
     combined = f"{event_text}\n{status}"
@@ -691,7 +691,7 @@ def test_events_include_senser_triggers_and_redacted_openrouter_failures(tmp_pat
 
     state = snapshot(store=store, senser=senser, prompt_recorder=recorder)
 
-    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTS"]
     assert "mention <- alice" in event_text
     assert "llm/openrouter" in event_text
     assert "OpenRouter ha risposto con status 401" in event_text
@@ -791,25 +791,50 @@ def test_dashboard_state_renders_screenshot_faithful_panels():
 
     assert [panel.title for panel in panels] == [
         "IDLE",
-        "FINESTRA CHAT",
+        "CHAT WINDOW",
         "STREAMER",
         "CHAT",
-        "EVENTI",
+        "EVENTS",
         "MINNARONE",
-        "TRASCRIZIONE",
+        "TRANSCRIPTION",
         "VIDEO",
-        "MEMORIA",
+        "MEMORY",
     ]
     panel_text = {panel.title: panel.text for panel in panels}
-    assert "alice aperta" in panel_text["FINESTRA CHAT"]
-    assert "messaggio live della chat" not in panel_text["FINESTRA CHAT"]
+    assert "alice open since" in panel_text["CHAT WINDOW"]
+    assert "messaggio live della chat" not in panel_text["CHAT WINDOW"]
     assert "messaggio live della chat" in panel_text["CHAT"]
-    assert "streamer aperta" in panel_text["STREAMER"]
-    assert "mention <- alice" in panel_text["EVENTI"]
+    assert "streamer open since" in panel_text["STREAMER"]
+    assert "mention <- alice" in panel_text["EVENTS"]
     assert "Commento privato di Minnarone" in panel_text["MINNARONE"]
-    assert "streamer: frase trascritta" in panel_text["TRASCRIZIONE"]
+    assert "streamer: frase trascritta" in panel_text["TRANSCRIPTION"]
     assert "boss visibile sullo schermo" in panel_text["VIDEO"]
-    assert "Alice sta chiedendo aiuto" in panel_text["MEMORIA"]
+    assert "Alice sta chiedendo aiuto" in panel_text["MEMORY"]
+
+
+def test_dashboard_empty_state_and_text_output_use_english_copy():
+    state = DashboardState()
+
+    assert [(panel.title, panel.text) for panel in state.render_panels()] == [
+        ("IDLE", "(no idle)"),
+        ("CHAT WINDOW", "(no chat window)"),
+        ("STREAMER", "(no streamer window)"),
+        ("CHAT", "(no chat)"),
+        ("EVENTS", "(no events)"),
+        ("MINNARONE", "(none)"),
+        ("TRANSCRIPTION", "(no transcription)"),
+        ("VIDEO", "frames=0 sampled=0 captioned=0 failed=0"),
+        ("MEMORY", "(no memory)"),
+    ]
+    assert state.render_prompt_view() == "(no prompt captured)"
+
+    rendered = state.render_text()
+    assert "== Perceptions ==" in rendered
+    assert "== Triggers/Events ==" in rendered
+    assert "== Local failures ==" in rendered
+    assert "== Open windows ==" in rendered
+    assert "== Percezioni ==" not in rendered
+    assert "== Failure locali ==" not in rendered
 
 
 def test_source_panels_are_not_starved_by_other_busy_sources(tmp_path):
@@ -826,7 +851,7 @@ def test_source_panels_are_not_starved_by_other_busy_sources(tmp_path):
     state = snapshot(store=store, recent_perceptions=20)
     panel_text = {panel.title: panel.text for panel in state.render_panels()}
 
-    assert "audio intenso 299" in panel_text["TRASCRIZIONE"]
+    assert "audio intenso 299" in panel_text["TRANSCRIPTION"]
     assert "video ancora rilevante" in panel_text["VIDEO"]
     assert "chat intensa 299" in panel_text["CHAT"]
 
@@ -1361,9 +1386,9 @@ def test_render_panels_includes_sintetizzatore_when_active():
     panels = state.render_panels()
     titles = [p.title for p in panels]
 
-    assert "SINTETIZZATORE" in titles
+    assert "SYNTHESIZER" in titles
     panel_text = {p.title: p.text for p in panels}
-    assert "Sintesi del discorso." in panel_text["SINTETIZZATORE"]
+    assert "Sintesi del discorso." in panel_text["SYNTHESIZER"]
 
 
 def test_render_panels_includes_suggerimenti_when_active():
@@ -1375,9 +1400,9 @@ def test_render_panels_includes_suggerimenti_when_active():
     panels = state.render_panels()
     titles = [p.title for p in panels]
 
-    assert "SUGGERIMENTI" in titles
+    assert "SUGGESTIONS" in titles
     panel_text = {p.title: p.text for p in panels}
-    assert "Suggerimento strategico." in panel_text["SUGGERIMENTI"]
+    assert "Suggerimento strategico." in panel_text["SUGGESTIONS"]
 
 
 def test_render_panels_excludes_sintetizzatore_when_inactive():
@@ -1387,7 +1412,7 @@ def test_render_panels_excludes_sintetizzatore_when_inactive():
     panels = state.render_panels()
     titles = [p.title for p in panels]
 
-    assert "SINTETIZZATORE" not in titles
+    assert "SYNTHESIZER" not in titles
 
 
 def test_render_panels_excludes_suggerimenti_when_inactive():
@@ -1397,7 +1422,7 @@ def test_render_panels_excludes_suggerimenti_when_inactive():
     panels = state.render_panels()
     titles = [p.title for p in panels]
 
-    assert "SUGGERIMENTI" not in titles
+    assert "SUGGESTIONS" not in titles
 
 
 def test_render_panels_includes_both_new_panels_when_both_active():
@@ -1410,11 +1435,11 @@ def test_render_panels_includes_both_new_panels_when_both_active():
     panels = state.render_panels()
     titles = [p.title for p in panels]
 
-    assert "SINTETIZZATORE" in titles
-    assert "SUGGERIMENTI" in titles
+    assert "SYNTHESIZER" in titles
+    assert "SUGGESTIONS" in titles
     # The base 9 panels are still present.
     assert "MINNARONE" in titles
-    assert "MEMORIA" in titles
+    assert "MEMORY" in titles
 
 
 def test_render_panels_preserves_base_panels_order_with_new_panels():
@@ -1430,20 +1455,20 @@ def test_render_panels_preserves_base_panels_order_with_new_panels():
     # The original 9 titles should appear in their original order.
     base_titles = [
         "IDLE",
-        "FINESTRA CHAT",
+        "CHAT WINDOW",
         "STREAMER",
         "CHAT",
-        "EVENTI",
+        "EVENTS",
         "MINNARONE",
-        "TRASCRIZIONE",
+        "TRANSCRIPTION",
         "VIDEO",
-        "MEMORIA",
+        "MEMORY",
     ]
     base_in_result = [t for t in titles if t in base_titles]
     assert base_in_result == base_titles
     # New panels come after the base ones.
-    assert titles.index("SINTETIZZATORE") > titles.index("MEMORIA")
-    assert titles.index("SUGGERIMENTI") > titles.index("SINTETIZZATORE")
+    assert titles.index("SYNTHESIZER") > titles.index("MEMORY")
+    assert titles.index("SUGGESTIONS") > titles.index("SYNTHESIZER")
 
 
 def test_snapshot_populates_per_profile_messages_from_output_streams():
@@ -1522,9 +1547,9 @@ def test_render_text_includes_per_profile_sections():
 
     rendered = state.render_text()
 
-    assert "== SINTETIZZATORE ==" in rendered
+    assert "== SYNTHESIZER ==" in rendered
     assert "Sintesi." in rendered
-    assert "== SUGGERIMENTI ==" in rendered
+    assert "== SUGGESTIONS ==" in rendered
     assert "Suggerimento." in rendered
 
 
@@ -1534,5 +1559,5 @@ def test_render_text_omits_per_profile_sections_when_empty():
 
     rendered = state.render_text()
 
-    assert "== SINTETIZZATORE ==" not in rendered
-    assert "== SUGGERIMENTI ==" not in rendered
+    assert "== SYNTHESIZER ==" not in rendered
+    assert "== SUGGESTIONS ==" not in rendered

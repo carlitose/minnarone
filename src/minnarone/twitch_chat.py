@@ -295,7 +295,7 @@ def _speaker_from_prefix(prefix: str | None) -> str | None:
 def _normalize_channel(channel: str) -> str:
     normalized = channel.strip().lstrip("#").lower()
     if not _TWITCH_CHANNEL_RE.fullmatch(normalized):
-        raise ValueError("channel Twitch non valido")
+        raise ValueError("invalid Twitch channel")
     return normalized
 
 

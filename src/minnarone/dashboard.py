@@ -220,29 +220,27 @@ class DashboardState:
         """
         panels = [
             DashboardPanel("IDLE", self._render_idle_panel()),
-            DashboardPanel("FINESTRA CHAT", self._render_chat_window_panel()),
+            DashboardPanel("CHAT WINDOW", self._render_chat_window_panel()),
             DashboardPanel("STREAMER", self._render_streamer_panel()),
             DashboardPanel("CHAT", self._render_chat_panel()),
-            DashboardPanel("EVENTI", self._render_events_panel()),
+            DashboardPanel("EVENTS", self._render_events_panel()),
             DashboardPanel("MINNARONE", self._render_minnarone_panel()),
-            DashboardPanel("TRASCRIZIONE", self._render_transcription_panel()),
+            DashboardPanel("TRANSCRIPTION", self._render_transcription_panel()),
             DashboardPanel("VIDEO", self._render_video_panel()),
-            DashboardPanel("MEMORIA", self._render_memory_panel()),
+            DashboardPanel("MEMORY", self._render_memory_panel()),
         ]
         if self.synthesizer_messages:
             panels.append(
-                DashboardPanel("SINTETIZZATORE", self._render_synthesizer_panel())
+                DashboardPanel("SYNTHESIZER", self._render_synthesizer_panel())
             )
         if self.suggester_messages:
-            panels.append(
-                DashboardPanel("SUGGERIMENTI", self._render_suggester_panel())
-            )
+            panels.append(DashboardPanel("SUGGESTIONS", self._render_suggester_panel()))
         return panels
 
     def _render_idle_panel(self) -> str:
         idle_triggers = [t for t in self.triggers if t.kind == "idle_comment"]
         if not idle_triggers:
-            return "(nessun idle)"
+            return "(no idle)"
         return "\n".join(f"{t.kind} <- {t.interlocutor or '-'}" for t in idle_triggers)
 
     def _render_chat_window_panel(self) -> str:
@@ -251,12 +249,12 @@ class DashboardState:
             for who, window in self.windows.items()
             if who != STREAMER
         ]
-        return "\n".join(lines) if lines else "(nessuna finestra chat)"
+        return "\n".join(lines) if lines else "(no chat window)"
 
     def _render_streamer_panel(self) -> str:
         window = self.windows.get(STREAMER)
         if window is None:
-            return "(nessuna finestra streamer)"
+            return "(no streamer window)"
         return _format_window(window)
 
     def _render_chat_panel(self) -> str:
@@ -264,7 +262,7 @@ class DashboardState:
             p for p in self.perceptions if p.source.value == "chat"
         ]
         lines = [f"{p.ts:.3f} {format_perception_line(p)}" for p in source]
-        return "\n".join(lines) if lines else "(nessuna chat)"
+        return "\n".join(lines) if lines else "(no chat)"
 
     def _render_events_panel(self) -> str:
         lines = [
@@ -272,17 +270,17 @@ class DashboardState:
             for t in self.triggers
         ]
         lines.extend(_technical_event_lines(self))
-        return "\n".join(lines) if lines else "(nessun evento)"
+        return "\n".join(lines) if lines else "(no events)"
 
     def _render_minnarone_panel(self) -> str:
-        return "\n".join(self.messages) if self.messages else "(nessuno)"
+        return "\n".join(self.messages) if self.messages else "(none)"
 
     def _render_transcription_panel(self) -> str:
         lines = [
             f"{p.ts:.3f} {p.speaker or '?'}: {p.text}"
             for p in self.audio_transcriptions
         ]
-        return "\n".join(lines) if lines else "(nessuna trascrizione)"
+        return "\n".join(lines) if lines else "(no transcription)"
 
     def _render_video_panel(self) -> str:
         diagnostics = (
@@ -295,27 +293,27 @@ class DashboardState:
 
     def _render_memory_panel(self) -> str:
         summary = self.memory_summary.strip()
-        return summary if summary else "(nessuna memoria)"
+        return summary if summary else "(no memory)"
 
     def _render_synthesizer_panel(self) -> str:
         return (
             "\n".join(self.synthesizer_messages)
             if self.synthesizer_messages
-            else "(nessuna sintesi)"
+            else "(no synthesis)"
         )
 
     def _render_suggester_panel(self) -> str:
         return (
             "\n".join(self.suggester_messages)
             if self.suggester_messages
-            else "(nessun suggerimento)"
+            else "(no suggestions)"
         )
 
     def render_prompt_view(self) -> str:
         """Render the latest redacted prompt observation for the TUI prompt tab."""
         latest = self.latest_prompt
         if latest is None:
-            return "(nessun prompt catturato)"
+            return "(no prompt captured)"
         latest = sanitize_observation(latest)
 
         lines = [
@@ -357,20 +355,20 @@ class DashboardState:
         """
         lines: list[str] = []
 
-        lines.append("== Percezioni ==")
+        lines.append("== Perceptions ==")
         if self.perceptions:
             for p in self.perceptions:
                 lines.append(f"[{p.source.value}] {format_perception_line(p)}")
         else:
-            lines.append("(nessuna)")
+            lines.append("(none)")
 
-        lines.append("== Trigger/Eventi ==")
+        lines.append("== Triggers/Events ==")
         if self.triggers:
             for t in self.triggers:
                 who = t.interlocutor if t.interlocutor else "-"
                 lines.append(f"{t.kind} <- {who}")
         else:
-            lines.append("(nessuno)")
+            lines.append("(none)")
 
         lines.append("== Audio ==")
         if self.audio_transcriptions:
@@ -378,7 +376,7 @@ class DashboardState:
                 speaker = p.speaker or "?"
                 lines.append(f"{p.ts:.3f} {speaker}: {p.text}")
         else:
-            lines.append("(nessun transcript)")
+            lines.append("(no transcript)")
 
         lines.append("== Speaker ==")
         lines.append(
@@ -396,7 +394,7 @@ class DashboardState:
                     f"updates={cluster.updates}"
                 )
         else:
-            lines.append("(nessun cluster)")
+            lines.append("(no clusters)")
 
         lines.append("== Video ==")
         lines.append(
@@ -409,7 +407,7 @@ class DashboardState:
             for p in self.video_captions:
                 lines.append(f"{p.ts:.3f} {p.text}")
         else:
-            lines.append("(nessuna caption)")
+            lines.append("(no captions)")
 
         lines.append("== Adapter ==")
         if self.adapter:
@@ -419,7 +417,7 @@ class DashboardState:
                     line = f"{line} failure={stats.failure}"
                 lines.append(line)
         else:
-            lines.append("(nessun adapter)")
+            lines.append("(no adapters)")
 
         lines.append("== Queue ==")
         if self.queue:
@@ -431,27 +429,27 @@ class DashboardState:
                     f"depth={stats.queue_depth}"
                 )
         else:
-            lines.append("(nessuna queue)")
+            lines.append("(no queue)")
 
-        lines.append("== Failure locali ==")
+        lines.append("== Local failures ==")
         if self.failures:
             for failure in self.failures:
                 lines.append(f"{failure.channel}/{failure.stage}: {failure.message}")
         else:
-            lines.append("(nessuna)")
+            lines.append("(none)")
 
-        lines.append("== Finestre aperte ==")
+        lines.append("== Open windows ==")
         if self.windows:
             for who in self.windows:
                 lines.append(who)
         else:
-            lines.append("(nessuna)")
+            lines.append("(none)")
 
         lines.append("== MINNARONE ==")
         if self.messages:
             lines.extend(self.messages)
         else:
-            lines.append("(nessuno)")
+            lines.append("(none)")
 
         if self.send is not None:
             lines.append("== Send ==")
@@ -467,11 +465,11 @@ class DashboardState:
                 lines.append("last=(none)")
 
         if self.synthesizer_messages:
-            lines.append("== SINTETIZZATORE ==")
+            lines.append("== SYNTHESIZER ==")
             lines.extend(self.synthesizer_messages)
 
         if self.suggester_messages:
-            lines.append("== SUGGERIMENTI ==")
+            lines.append("== SUGGESTIONS ==")
             lines.extend(self.suggester_messages)
 
         return "\n".join(lines)
@@ -479,8 +477,8 @@ class DashboardState:
 
 def _format_window(window: ConversationWindow) -> str:
     return (
-        f"{window.interlocutor} aperta "
-        f"da {window.opened_at:.3f}; ultimo={window.last_seen:.3f}"
+        f"{window.interlocutor} open since "
+        f"{window.opened_at:.3f}; last={window.last_seen:.3f}"
     )
 
 

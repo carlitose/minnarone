@@ -115,7 +115,7 @@ def test_sender_rejects_invalid_channel():
     async def connect():
         raise AssertionError("should not connect")
 
-    with pytest.raises(ValueError, match="channel Twitch non valido"):
+    with pytest.raises(ValueError, match="invalid Twitch channel"):
         TwitchChatSender(
             channel="",
             username="bot",

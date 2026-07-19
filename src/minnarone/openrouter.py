@@ -93,20 +93,20 @@ def _normalize_reasoning_params(
     legacy = [key for key in ("thinking", "reasoning_effort") if key in normalized]
     if legacy:
         raise LLMError(
-            f"llm_params.{legacy[0]} non è supportato: usa "
+            f"llm_params.{legacy[0]} is not supported: use "
             "llm_params.reasoning: {effort: low|medium|high}"
         )
     reasoning = normalized.get("reasoning")
     if reasoning is not None:
         if not isinstance(reasoning, Mapping):
-            raise LLMError("llm_params.reasoning deve essere una mappa")
+            raise LLMError("llm_params.reasoning must be a mapping")
         if set(reasoning) != {"effort"}:
             raise LLMError(
-                "llm_params.reasoning per Grok 4.5 accetta solo la chiave effort"
+                "llm_params.reasoning for Grok 4.5 accepts only the effort key"
             )
         effort = reasoning.get("effort")
         if effort not in _REASONING_EFFORTS:
-            raise LLMError("llm_params.reasoning.effort deve essere low, medium o high")
+            raise LLMError("llm_params.reasoning.effort must be low, medium, or high")
     return normalized
 
 
@@ -119,11 +119,9 @@ def _validate_timeout(value: object) -> float:
     try:
         timeout = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        raise LLMError(
-            f"timeout non valido: {value!r} (deve essere un numero > 0)"
-        ) from None
+        raise LLMError(f"invalid timeout: {value!r} (must be a number > 0)") from None
     if not timeout > 0:
-        raise LLMError(f"timeout non valido: {timeout!r} (deve essere > 0)")
+        raise LLMError(f"invalid timeout: {timeout!r} (must be > 0)")
     return timeout
 
 
@@ -225,8 +223,8 @@ class OpenRouterProvider(LLMProvider):
         key = self._api_key or os.environ.get("OPENROUTER_API_KEY")
         if not key:
             raise LLMError(
-                "OPENROUTER_API_KEY mancante: imposta la variabile d'ambiente "
-                "o passa api_key al provider"
+                "OPENROUTER_API_KEY is missing: set the environment variable "
+                "or pass api_key to the provider"
             )
         return key
 
@@ -270,7 +268,7 @@ class OpenRouterProvider(LLMProvider):
             # Messaggio FISSO: non interpoliamo il testo dell'eccezione, che
             # potrebbe echeggiare header (incl. il Bearer token). La causa
             # resta disponibile via chaining.
-            raise LLMError(f"errore trasporto {self._LABEL}") from exc
+            raise LLMError(f"{self._LABEL} transport error") from exc
 
         return self._parse_response(response)
 
@@ -278,17 +276,17 @@ class OpenRouterProvider(LLMProvider):
     def _parse_response(cls, response: HttpResponse) -> LLMResult:
         if response.status != 200:
             raise LLMError(
-                f"{cls._LABEL} ha risposto con status {response.status}: "
+                f"{cls._LABEL} returned status {response.status}: "
                 f"{response.body[:200]!r}"
             )
         try:
             data = json.loads(response.body.decode("utf-8"))
             message = data["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError) as exc:
-            raise LLMError(f"risposta {cls._LABEL} malformata: {exc}") from exc
+            raise LLMError(f"malformed {cls._LABEL} response: {exc}") from exc
 
         if not isinstance(message, str):
-            raise LLMError(f"contenuto del messaggio {cls._LABEL} non testuale")
+            raise LLMError(f"{cls._LABEL} message content is not text")
 
         return LLMResult(message=message, meta=_extract_meta(data))
 
@@ -357,9 +355,9 @@ def build_provider(
         model = _DEFAULT_MODELS.get(config.llm_provider)
         if model is None:
             raise LLMError(
-                f"llm_provider sconosciuto: {config.llm_provider!r} "
-                f"(ammessi: {sorted([*_DEFAULT_MODELS, 'llamacpp'])} "
-                "o specifica llm_params.model)"
+                f"unknown llm_provider: {config.llm_provider!r} "
+                f"(allowed: {sorted([*_DEFAULT_MODELS, 'llamacpp'])} "
+                "or specify llm_params.model)"
             )
 
     return OpenRouterProvider(model=model, transport=transport, params=params)

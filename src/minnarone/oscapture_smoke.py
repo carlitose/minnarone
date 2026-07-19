@@ -112,7 +112,7 @@ async def run_oscapture_smoke(
                 max_utterance_seconds=vad_max_utterance_seconds,
             )
     elif enable_vad_diagnostic:
-        raise ValueError("diagnostica VAD richiede audio abilitato")
+        raise ValueError("VAD diagnostics require audio to be enabled")
     if enable_video:
         validate_video_fps(video_fps)
         frame_source = (
@@ -137,40 +137,40 @@ async def run_oscapture_smoke(
 def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Cattura audio/video del SO locale su artifact smoke bounded.",
+        description="Capture local OS audio/video to bounded smoke artifacts.",
     )
     parser.add_argument(
         "--duration",
         type=float,
         required=True,
-        help="durata della cattura in secondi",
+        help="capture duration in seconds",
     )
     parser.add_argument(
         "--output",
         required=True,
-        help="directory degli artifact smoke da scrivere",
+        help="smoke artifact directory to write",
     )
     parser.add_argument(
         "--audio",
         action="store_true",
-        help="abilita cattura audio dal dispositivo di loopback",
+        help="enable audio capture from the loopback device",
     )
     parser.add_argument(
         "--video",
         action="store_true",
-        help="abilita cattura schermo dal monitor selezionato",
+        help="enable screen capture from the selected monitor",
     )
     parser.add_argument(
         "--monitor",
         type=int,
         default=1,
-        help="indice del monitor da catturare (>= 1)",
+        help="index of the monitor to capture (>= 1)",
     )
     parser.add_argument(
         "--sample-rate",
         type=int,
         default=16_000,
-        help="sample rate della sorgente audio device",
+        help="sample rate of the audio device source",
     )
     add_common_smoke_arguments(parser)
     return parser.parse_args(list(argv))
@@ -179,30 +179,30 @@ def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
 def _validate_args(args: argparse.Namespace) -> str | None:
     """Valida gli argomenti; ritorna un messaggio d'errore o None se validi."""
     if not math.isfinite(args.duration) or args.duration <= 0:
-        return "--duration deve essere > 0"
+        return "--duration must be > 0"
     if not math.isfinite(args.audio_chunk_seconds) or args.audio_chunk_seconds <= 0:
-        return "--audio-chunk-seconds deve essere > 0"
+        return "--audio-chunk-seconds must be > 0"
     if not math.isfinite(args.video_fps) or args.video_fps <= 0:
-        return "--video-fps deve essere > 0"
+        return "--video-fps must be > 0"
     if args.monitor < 1:
-        return "--monitor deve essere >= 1"
+        return "--monitor must be >= 1"
     if args.sample_rate <= 0:
-        return "--sample-rate deve essere > 0"
+        return "--sample-rate must be > 0"
     if args.max_audio_samples < 0:
-        return "--max-audio-samples deve essere >= 0"
+        return "--max-audio-samples must be >= 0"
     if args.max_video_frames < 0:
-        return "--max-video-frames deve essere >= 0"
+        return "--max-video-frames must be >= 0"
     if args.vad_mode not in {0, 1, 2, 3}:
-        return "--vad-mode deve essere 0, 1, 2 o 3"
+        return "--vad-mode must be 0, 1, 2, or 3"
     if args.vad_frame_ms not in {10, 20, 30}:
-        return "--vad-frame-ms deve essere 10, 20 o 30"
+        return "--vad-frame-ms must be 10, 20, or 30"
     if args.vad_padding_ms <= 0:
-        return "--vad-padding-ms deve essere > 0"
+        return "--vad-padding-ms must be > 0"
     if (
         not math.isfinite(args.vad_max_utterance_seconds)
         or args.vad_max_utterance_seconds <= 0
     ):
-        return "--vad-max-utterance-seconds deve essere > 0"
+        return "--vad-max-utterance-seconds must be > 0"
     return None
 
 
@@ -211,9 +211,9 @@ def _smoke_failures(
 ) -> list[str]:
     failures = list(stats.failures)
     if enable_audio and stats.audio_events == 0:
-        failures.append("audio: nessun evento catturato")
+        failures.append("audio: no events captured")
     if enable_video and stats.video_events == 0:
-        failures.append("video: nessun evento catturato")
+        failures.append("video: no events captured")
     return failures
 
 
@@ -233,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     enable_audio = bool(args.audio or args.vad_diagnostic)
     enable_video = bool(args.video)
     if not enable_audio and not enable_video:
-        print("abilita almeno audio o video", file=sys.stderr)
+        print("enable at least audio or video", file=sys.stderr)
         return 2
 
     try:
@@ -257,17 +257,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     except ValueError as exc:
-        print(f"configurazione cattura SO non valida: {exc}", file=sys.stderr)
+        print(f"invalid OS capture configuration: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
         print(
-            f"smoke cattura SO fallito: errore di dispositivo ({exc})",
+            f"OS capture smoke failed: device error ({exc})",
             file=sys.stderr,
         )
         return 1
     except TimeoutError as exc:
         print(
-            f"smoke cattura SO fallito: timeout operativo ({exc})",
+            f"OS capture smoke failed: operational timeout ({exc})",
             file=sys.stderr,
         )
         return 1
@@ -278,7 +278,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         enable_video=enable_video,
     )
     if failures:
-        print("smoke cattura SO fallito: " + "; ".join(failures), file=sys.stderr)
+        print("OS capture smoke failed: " + "; ".join(failures), file=sys.stderr)
         return 1
 
     print(

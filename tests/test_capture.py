@@ -9,10 +9,15 @@ sorgente sia sincrona sia asincrona — una volta sola, non per ogni canale.
 from __future__ import annotations
 
 import asyncio
+import builtins
 from dataclasses import dataclass
+
+import pytest
 
 from minnarone.capture import (
     StreamCaptureAdapter,
+    make_device_capture_source,
+    make_device_screen_capture_source,
     os_audio_capture,
     os_screen_capture,
 )
@@ -111,3 +116,40 @@ def test_os_screen_capture_constructor():
     adapter = os_screen_capture([_Payload("a", 1.0)])
     assert isinstance(adapter, StreamCaptureAdapter)
     assert adapter.channels() == {"video"}
+
+
+def test_missing_audio_capture_extra_has_english_install_guidance(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "soundcard":
+            raise ImportError("soundcard unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(anext(make_device_capture_source()))
+
+    assert str(exc_info.value) == (
+        "system audio capture is unavailable: install the os-capture extra "
+        "(soundcard + numpy)"
+    )
+
+
+def test_missing_screen_capture_extra_has_english_install_guidance(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "mss":
+            raise ImportError("mss unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(anext(make_device_screen_capture_source()))
+
+    assert str(exc_info.value) == (
+        "screen capture is unavailable: install the os-capture extra (mss + numpy)"
+    )

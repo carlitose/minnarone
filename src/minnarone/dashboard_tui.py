@@ -19,10 +19,10 @@ from collections.abc import Callable
 from .dashboard import DashboardState, snapshot
 
 _MISSING_TEXTUAL_MSG = (
-    "La dashboard TUI richiede 'textual', che non risulta installato.\n"
-    'Installalo con:  pip install "minnarone[tui]"  '
-    "(oppure: pip install textual).\n"
-    "Nota: il modello di snapshot (minnarone.dashboard) funziona senza textual."
+    "The TUI dashboard requires 'textual', which is not installed.\n"
+    'Install it with:  pip install "minnarone[tui]"  '
+    "(or: pip install textual).\n"
+    "Note: the snapshot model (minnarone.dashboard) works without textual."
 )
 
 _DASHBOARD_CSS = """
@@ -100,21 +100,21 @@ def _require_textual():
 # Panel titles that appear only when the corresponding profile is active.
 # Compose creates widgets for all of them, but starts them hidden (display=False).
 # _render_snapshot() shows/hides them based on the current DashboardState.
-_CONDITIONAL_PANELS = {"SINTETIZZATORE", "SUGGERIMENTI"}
+_CONDITIONAL_PANELS = {"SYNTHESIZER", "SUGGESTIONS"}
 
 # All possible panel titles in visual order, including conditional ones.
 _ALL_PANEL_TITLES = [
     "IDLE",
-    "FINESTRA CHAT",
+    "CHAT WINDOW",
     "STREAMER",
     "CHAT",
-    "EVENTI",
+    "EVENTS",
     "MINNARONE",
-    "TRASCRIZIONE",
+    "TRANSCRIPTION",
     "VIDEO",
-    "MEMORIA",
-    "SINTETIZZATORE",
-    "SUGGERIMENTI",
+    "MEMORY",
+    "SYNTHESIZER",
+    "SUGGESTIONS",
 ]
 
 _PROMOTE_CONFIRM_WINDOW = 3.0  # seconds to confirm a promote with second press
@@ -158,7 +158,7 @@ def build_dashboard_app(
             Binding(
                 "s",
                 "mark_streamer",
-                "Marca streamer",
+                "Mark streamer",
                 show=speaker_commands is not None,
             ),
         ]
@@ -181,7 +181,7 @@ def build_dashboard_app(
 
         def compose(self) -> ComposeResult:
             yield Header()
-            self._status_bar = Static("(in attesa)", id="status-bar", markup=False)
+            self._status_bar = Static("(waiting)", id="status-bar", markup=False)
             yield self._status_bar
             with TabbedContent(initial="dashboard-tab", id="main-tabs"):
                 with TabPane("DASHBOARD", id="dashboard-tab"):
@@ -198,7 +198,7 @@ def build_dashboard_app(
                                     container.display = False
                                 self._panel_containers[title] = container
                                 content = Static(
-                                    "(in attesa)",
+                                    "(waiting)",
                                     classes="dashboard-panel-content",
                                     markup=False,
                                 )
@@ -207,7 +207,7 @@ def build_dashboard_app(
                 with TabPane("PROMPT", id="prompt-tab"):
                     with VerticalScroll(id="prompt-view", can_focus=True):
                         self._prompt_content = Static(
-                            "(nessun prompt)",
+                            "(no prompt)",
                             id="prompt-content",
                             markup=False,
                         )
@@ -320,9 +320,9 @@ def _mark_streamer_feedback(result: object) -> str:
     """Format a mark-streamer outcome for the status bar."""
     if getattr(result, "accepted", False):
         cluster_id = getattr(result, "cluster_id", None)
-        return f"streamer marcato (cluster {cluster_id})"
-    reason = getattr(result, "reason", "") or "rifiutato"
-    return f"marcatura streamer rifiutata: {reason}"
+        return f"streamer marked (cluster {cluster_id})"
+    reason = getattr(result, "reason", "") or "rejected"
+    return f"streamer marking rejected: {reason}"
 
 
 def run_dashboard(

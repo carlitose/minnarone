@@ -7,8 +7,9 @@ import pytest
 
 from minnarone.app import build_agent
 from minnarone.config import Config
+from minnarone.dashboard_tui import DashboardSnapshotNotReady
 from minnarone.fakes import FakeSourceAdapter
-from minnarone.live_tui import run_live_tui
+from minnarone.live_tui import _ObservabilitySnapshotBridge, run_live_tui
 from minnarone.run_artifacts import create_run_session
 from minnarone.source import RawEvent
 
@@ -45,6 +46,16 @@ def _write_config(tmp_path):
         encoding="utf-8",
     )
     return cfg
+
+
+def test_snapshot_bridge_reports_english_startup_placeholder():
+    bridge = _ObservabilitySnapshotBridge(lambda: "dashboard-state")
+
+    with pytest.raises(
+        DashboardSnapshotNotReady,
+        match="live observability snapshot is not yet available",
+    ):
+        bridge.provider()
 
 
 class _FakeLiveAgent:
@@ -348,7 +359,7 @@ def test_run_live_tui_bounds_agent_that_stalls_during_cleanup():
         return FakeApp(provider)
 
     started_at = time.monotonic()
-    with pytest.raises(RuntimeError, match="runtime live non arrestato"):
+    with pytest.raises(RuntimeError, match="live runtime did not stop"):
         run_live_tui(agent, build_app=build_app, shutdown_timeout=0.01)
 
     assert time.monotonic() - started_at < 0.15
@@ -387,7 +398,7 @@ def test_run_live_tui_leaves_run_active_when_shutdown_times_out(tmp_path):
     def build_app(provider):
         return FakeApp(provider)
 
-    with pytest.raises(RuntimeError, match="runtime live non arrestato"):
+    with pytest.raises(RuntimeError, match="live runtime did not stop"):
         run_live_tui(agent, build_app=build_app, shutdown_timeout=0.01)
 
     assert (

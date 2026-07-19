@@ -1,33 +1,33 @@
-# Config di esempio dell'agente (scenario streamer pubblico).
-# Campi MVP operativi + punti v2 presenti ma INERTI.
+# Example agent configuration (public streamer scenario).
+# Operational MVP fields plus v2 extension points that remain INERT.
 
-mode: public               # "public" | "private" (private operativa in v2)
-soul_path: soul.md         # identità dell'agente
-facts_dir: facts           # cartella dei fatti per interlocutore/canale
-adapter: os_capture        # adapter sorgente (MVP: cattura a livello SO)
-llm_provider: grok         # "grok" | "deepseek" (impl. reale in slice 02)
+mode: public               # "public" | "private" (private becomes operational in v2)
+soul_path: soul.md         # agent identity
+facts_dir: facts           # facts directory by interlocutor/channel
+adapter: os_capture        # source adapter (MVP: OS-level capture)
+llm_provider: grok         # "grok" | "deepseek" (real implementation in slice 02)
 
-# Sezione richiesta quando adapter == os_capture: descrive cosa catturare
-# dalla macchina locale (es. una call Teams). L'adapter live arriva in v2.
+# Required when adapter == os_capture: describes what to capture from the local
+# machine (for example a Teams call). The live adapter arrives in v2.
 os_capture:
-  audio: true              # cattura l'audio di sistema
-  video: true              # cattura lo schermo
-  audio_chunk_seconds: 1.0 # dimensione del chunk audio (secondi)
-  video_fps: 1.0           # frame al secondo campionati dallo schermo
-  monitor: 1               # indice del monitor da catturare (>= 1)
+  audio: true              # capture system audio
+  video: true              # capture the screen
+  audio_chunk_seconds: 1.0 # audio chunk size in seconds
+  video_fps: 1.0           # frames per second sampled from the screen
+  monitor: 1               # monitor index to capture (>= 1)
 
-senser_interval: 0.5       # cadenza del Senser (secondi)
-idle_interval: 150.0       # commento proattivo in assenza di trigger (secondi)
-recent_chat_window: 15     # quanti messaggi di chat recenti nel prompt
+senser_interval: 0.5       # Senser cadence in seconds
+idle_interval: 150.0       # proactive comment without triggers, in seconds
+recent_chat_window: 15     # recent chat messages included in the prompt
 
 llm_params:
   model: x-ai/grok-4.5
   reasoning:
     effort: low            # low | medium | high
 
-# --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
+# --- v2 extension points (present but inert in the MVP) ---
 disclosure:
-  announce_ai: false       # se l'agente dichiara di essere un'AI
+  announce_ai: false       # whether the agent discloses that it is AI
 
 retention:
-  perceptions_days: 7      # riservato/inerte: elimina gli artefatti manualmente
+  perceptions_days: 7      # reserved/inert: delete artifacts manually

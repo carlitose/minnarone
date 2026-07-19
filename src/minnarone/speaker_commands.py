@@ -58,18 +58,18 @@ class SpeakerCommandSurface:
             if not callable(mark):
                 return MarkStreamerResult(
                     accepted=False,
-                    reason="speaker tagging non disponibile",
+                    reason="speaker tagging is unavailable",
                 )
             cluster_id = mark()
             if cluster_id is None:
                 return MarkStreamerResult(
                     accepted=False,
-                    reason="nessuna utterance da marcare",
+                    reason="no utterance is available to mark",
                 )
             self._record(cluster_id)
             return MarkStreamerResult(
                 accepted=True,
-                reason="streamer marcato",
+                reason="streamer marked",
                 cluster_id=cluster_id,
             )
 

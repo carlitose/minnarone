@@ -75,7 +75,7 @@ def test_oauth_token_normalization_accepts_prefixed_and_plain_values():
 
 
 def test_reader_rejects_empty_or_invalid_channel_before_connecting():
-    with pytest.raises(ValueError, match="channel Twitch non valido"):
+    with pytest.raises(ValueError, match="invalid Twitch channel"):
         TwitchChatReader(channel="#", username="bot_user", oauth_token="abc")
 
 

@@ -132,8 +132,8 @@ class PrivateNotImplementedRouter(OutputRouter):
 
     async def route(self, message: str, mode: OutputMode) -> None:
         raise PrivateModeNotImplemented(
-            "modalità 'private' (whisper) non implementata nell'MVP: "
-            "il canale di output privato arriva in v2 dietro OutputRouter"
+            "'private' mode (whisper) is not implemented in the MVP: "
+            "the private output channel arrives in v2 behind OutputRouter"
         )
 
 
@@ -505,9 +505,9 @@ def _required_twitch_chat_credentials() -> tuple[str, str]:
         missing.append("TWITCH_OAUTH_TOKEN")
     if missing:
         raise ConfigError(
-            "credenziali Twitch chat mancanti o vuote: imposta "
+            "missing or empty Twitch chat credentials: set "
             + ", ".join(missing)
-            + " (il token deve contenere un valore, non solo il prefisso)"
+            + " (the token must contain a value, not only the prefix)"
         )
     return os.environ["TWITCH_BOT_USERNAME"], os.environ["TWITCH_OAUTH_TOKEN"]
 
@@ -524,10 +524,10 @@ def _required_twitch_send_credentials() -> None:
     # effetti; il valore serve solo al controllo e non viene mai propagato.
     if _twitch_token_is_effectively_empty(os.environ.get(TWITCH_SEND_TOKEN_ENV_VAR)):
         raise ConfigError(
-            "credenziali Twitch send mancanti o vuote: esporta "
-            f"{TWITCH_SEND_TOKEN_ENV_VAR} (token Twitch con scope di "
-            "scrittura, distinto dal token di lettura, con un valore reale "
-            "e non solo il prefisso)"
+            "missing or empty Twitch send credentials: export "
+            f"{TWITCH_SEND_TOKEN_ENV_VAR} (a Twitch token with write scope, "
+            "separate from the read token, with a real value and not only "
+            "the prefix)"
         )
 
 
@@ -543,8 +543,8 @@ def _require_media_perceiver(
     """
     if enabled and perceiver is None:
         raise ConfigError(
-            f"{channel_key} richiede un backend locale non cablato nel runtime "
-            f"main: iniettalo o disabilita il canale"
+            f"{channel_key} requires a local backend that is not wired into the "
+            f"main runtime: inject it or disable the channel"
         )
 
 

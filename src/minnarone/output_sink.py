@@ -32,7 +32,7 @@ class MinnaroneOutputStream:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if max_messages <= 0:
-            raise ValueError("max_messages deve essere > 0")
+            raise ValueError("max_messages must be > 0")
         self._messages: deque[MinnaroneOutputMessage] = deque(maxlen=max_messages)
         self._clock = clock
 

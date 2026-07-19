@@ -127,7 +127,7 @@ def test_live_guard_fails_closed_when_read_token_is_inside_safety_margin():
         transport=transport,
     )
 
-    with pytest.raises(TwitchTokenValidationError, match="read token.*scadenza"):
+    with pytest.raises(TwitchTokenValidationError, match="read token.*expiry"):
         asyncio.run(guard.validate_startup())
 
 
@@ -360,7 +360,7 @@ def test_validate_twitch_token_rejects_malformed_identity_metadata_without_secre
         del token, timeout
         return TwitchValidateResponse(status=200, body=json.dumps(payload).encode())
 
-    with pytest.raises(TwitchTokenValidationError, match="malformat") as caught:
+    with pytest.raises(TwitchTokenValidationError, match="malformed") as caught:
         validate_twitch_token(
             "oauth:never-print-me",
             expected_login="minnarone_bot",
@@ -402,7 +402,7 @@ def test_validate_twitch_token_rejects_malformed_identity_metadata_without_secre
                 "user_id": "123",
                 "expires_in": 0,
             },
-            "scaduto",
+            "expired",
         ),
     ],
 )
@@ -577,5 +577,5 @@ def test_hourly_read_token_failure_stops_the_guard():
         assert await guard.validate_startup() is True
         await guard.monitor(on_send_invalid=lambda: asyncio.sleep(0))
 
-    with pytest.raises(TwitchTokenValidationError, match="read token Twitch"):
+    with pytest.raises(TwitchTokenValidationError, match="Twitch read token"):
         asyncio.run(run())

@@ -89,7 +89,7 @@ class TwitchStreamAdapter(SourceAdapter):
             )
         )
         if not built:
-            raise ValueError("abilita almeno un canale Twitch")
+            raise ValueError("enable at least one Twitch channel")
         # Validazione dei canali con il messaggio Twitch-specifico PRIMA di
         # delegare: il motore neutro validerebbe con un altro testo.
         self._validate_reader_channels(built)
@@ -159,7 +159,7 @@ class TwitchStreamAdapter(SourceAdapter):
         readers: dict[str, SourceAdapter] = {}
         if chat:
             if username is None or oauth_token is None:
-                raise ValueError("credenziali Twitch chat mancanti")
+                raise ValueError("missing Twitch chat credentials")
             readers["chat"] = TwitchChatReader(
                 channel=channel,
                 username=username,
@@ -188,7 +188,7 @@ class TwitchStreamAdapter(SourceAdapter):
         for channel, reader in readers.items():
             if reader.channels() != {channel}:
                 raise ValueError(
-                    f"reader {channel!r} deve esporre solo il canale {channel!r}"
+                    f"reader {channel!r} must expose only channel {channel!r}"
                 )
 
 

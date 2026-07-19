@@ -66,7 +66,7 @@ def _urllib_validate_transport(*, token: str, timeout: float) -> TwitchValidateR
         return TwitchValidateResponse(status=exc.code, body=exc.read())
     except (TimeoutError, urllib.error.URLError, OSError) as exc:
         raise TwitchTokenValidationError(
-            "validazione token Twitch non raggiungibile"
+            "Twitch token validation is unreachable"
         ) from exc
 
 
@@ -83,17 +83,19 @@ def validate_twitch_token(
     if raw_token.startswith("oauth:"):
         raw_token = raw_token[len("oauth:") :]
     if not raw_token:
-        raise TwitchTokenValidationError("token Twitch vuoto")
+        raise TwitchTokenValidationError("Twitch token is empty")
 
     response = (transport or _urllib_validate_transport)(
         token=raw_token,
         timeout=timeout,
     )
     if response.status == 401:
-        raise TwitchTokenValidationError("token Twitch invalido o revocato (HTTP 401)")
+        raise TwitchTokenValidationError(
+            "Twitch token is invalid or revoked (HTTP 401)"
+        )
     if response.status != 200:
         raise TwitchTokenValidationError(
-            f"validazione token Twitch fallita (HTTP {response.status})"
+            f"Twitch token validation failed (HTTP {response.status})"
         )
     try:
         payload = json.loads(response.body.decode("utf-8"))
@@ -104,7 +106,7 @@ def validate_twitch_token(
         expires_in = payload["expires_in"]
     except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
         raise TwitchTokenValidationError(
-            "risposta di validazione token Twitch malformata"
+            "malformed Twitch token validation response"
         ) from exc
 
     if (
@@ -113,24 +115,26 @@ def validate_twitch_token(
         or not isinstance(user_id, str)
         or not user_id.strip()
     ):
-        raise TwitchTokenValidationError("metadata identità token Twitch malformati")
+        raise TwitchTokenValidationError("malformed Twitch token identity metadata")
     if not isinstance(login, str) or login.lower() != expected_login.strip().lower():
         raise TwitchTokenValidationError(
-            "account del token Twitch diverso da TWITCH_BOT_USERNAME"
+            "Twitch token account does not match TWITCH_BOT_USERNAME"
         )
     if not isinstance(scopes, list) or not all(
         isinstance(scope, str) for scope in scopes
     ):
-        raise TwitchTokenValidationError("scope del token Twitch malformati")
+        raise TwitchTokenValidationError("malformed Twitch token scopes")
     missing = sorted(set(required_scopes) - set(scopes))
     if missing:
-        raise TwitchTokenValidationError("scope Twitch mancanti: " + ", ".join(missing))
+        raise TwitchTokenValidationError("missing Twitch scopes: " + ", ".join(missing))
     if (
         not isinstance(expires_in, int)
         or isinstance(expires_in, bool)
         or expires_in <= 0
     ):
-        raise TwitchTokenValidationError("token Twitch scaduto o expires_in non valido")
+        raise TwitchTokenValidationError(
+            "Twitch token expired or expires_in is invalid"
+        )
     return ValidatedTwitchToken(
         login=login.lower(),
         scopes=frozenset(scopes),
@@ -153,7 +157,7 @@ class TwitchLiveTokenGuard:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         if not math.isfinite(interval) or interval <= 0:
-            raise ValueError("interval deve essere positivo e finito")
+            raise ValueError("interval must be positive and finite")
         self._username = username
         self._read_token = read_token
         self._send_token = send_token
@@ -187,7 +191,7 @@ class TwitchLiveTokenGuard:
             self._ensure_outside_expiry_margin(token)
             return token
         except TwitchTokenValidationError as exc:
-            raise TwitchTokenValidationError(f"read token Twitch: {exc}") from exc
+            raise TwitchTokenValidationError(f"Twitch read token: {exc}") from exc
 
     async def _validate_send(self) -> ValidatedTwitchToken:
         try:
@@ -197,7 +201,7 @@ class TwitchLiveTokenGuard:
             self._ensure_outside_expiry_margin(token)
             return token
         except TwitchTokenValidationError as exc:
-            raise TwitchTokenValidationError(f"send token Twitch: {exc}") from exc
+            raise TwitchTokenValidationError(f"Twitch send token: {exc}") from exc
 
     @staticmethod
     def _expiry_safety_margin(token: ValidatedTwitchToken) -> float:
@@ -209,7 +213,7 @@ class TwitchLiveTokenGuard:
     def _ensure_outside_expiry_margin(self, token: ValidatedTwitchToken) -> None:
         if token.expires_in <= self._expiry_safety_margin(token):
             raise TwitchTokenValidationError(
-                "token Twitch già dentro il margine di sicurezza della scadenza"
+                "Twitch token is already inside the expiry safety margin"
             )
 
     def _next_deadline(self, token: ValidatedTwitchToken, *, anchor: float) -> float:
@@ -228,7 +232,7 @@ class TwitchLiveTokenGuard:
         except TwitchTokenValidationError as exc:
             self._send_disabled = True
             self._send_deadline = None
-            logger.warning("invio Twitch disabilitato: %s", exc)
+            logger.warning("Twitch sending disabled: %s", exc)
             return False
         self._send_deadline = self._next_deadline(send, anchor=send_started_at)
         return True
@@ -240,7 +244,7 @@ class TwitchLiveTokenGuard:
     ) -> None:
         """Revalidate hourly; read failure stops the run, send failure disarms it."""
         if self._read_deadline is None:
-            raise RuntimeError("validate_startup deve precedere monitor")
+            raise RuntimeError("validate_startup must run before monitor")
         while True:
             deadlines = [self._read_deadline]
             if not self._send_disabled and self._send_deadline is not None:
@@ -267,7 +271,7 @@ class TwitchLiveTokenGuard:
                 except TwitchTokenValidationError as exc:
                     self._send_disabled = True
                     self._send_deadline = None
-                    logger.warning("invio Twitch disabilitato: %s", exc)
+                    logger.warning("Twitch sending disabled: %s", exc)
                     await on_send_invalid()
                 else:
                     self._send_deadline = self._next_deadline(

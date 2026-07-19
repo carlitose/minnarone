@@ -81,13 +81,13 @@ class VideoPerceptionConfig:
             or not isinstance(self.sample_every, int)
             or self.sample_every < 1
         ):
-            raise VideoConfigError("sample_every deve essere un intero >= 1")
+            raise VideoConfigError("sample_every must be an integer >= 1")
         threshold = _finite_float(
             self.dedup_change_threshold,
             "dedup_change_threshold",
         )
         if not 0.0 <= threshold < 1.0:
-            raise VideoConfigError("dedup_change_threshold deve essere >= 0 e < 1")
+            raise VideoConfigError("dedup_change_threshold must be >= 0 and < 1")
         object.__setattr__(self, "dedup_change_threshold", threshold)
 
 
@@ -149,7 +149,7 @@ class ByteFrameDeduper:
     def __init__(self, *, change_threshold: float = 0.0) -> None:
         threshold = _finite_float(change_threshold, "change_threshold")
         if not 0.0 <= threshold < 1.0:
-            raise ValueError("change_threshold deve essere >= 0 e < 1")
+            raise ValueError("change_threshold must be >= 0 and < 1")
         self._change_threshold = threshold
         self._last: _FrameFingerprint | None = None
 
@@ -357,11 +357,11 @@ class VideoPerceiver(EventPerceiver):
 
 def _finite_float(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise VideoConfigError(f"{field_name} deve essere numerico")
+        raise VideoConfigError(f"{field_name} must be numeric")
     try:
         parsed = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise VideoConfigError(f"{field_name} deve essere numerico") from exc
+        raise VideoConfigError(f"{field_name} must be numeric") from exc
     if not math.isfinite(parsed):
-        raise VideoConfigError(f"{field_name} deve essere finito")
+        raise VideoConfigError(f"{field_name} must be finite")
     return parsed
