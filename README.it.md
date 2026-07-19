@@ -126,7 +126,7 @@ setup nei test è ammessa). Gli stessi tool girano al commit via
 riferimento in `spike/` è escluso da tutti.
 
 Per contributor e code agent che lavorano sui prompt esternalizzati esiste una
-skill Claude Code locale al repo in [`.claude/skills/prompts/`](.claude/skills/prompts/SKILL.md):
+skill Claude Code locale al repo in [`.claude/skills/minnarone-prompts/`](.claude/skills/minnarone-prompts/SKILL.md):
 documenta la mappa dei file e i vincoli non ovvi (placeholder obbligatori,
 token di controllo, il confine di sicurezza cablato, la byte-invarianza dei
 default impacchettati) e prescrive il flusso sicuro — modifica →

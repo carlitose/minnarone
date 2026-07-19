@@ -1,10 +1,10 @@
 """Preview the reaction prompt with a chosen prompt-set (default or override).
 
-Support script for the `prompts` skill (TRY mode).
+Support script for the `minnarone-prompts` skill (TRY mode).
 
 Usage (from the repo root):
 
-    uv run python .claude/skills/prompts/preview_prompt.py [PROMPTS_DIR]
+    uv run python .claude/skills/minnarone-prompts/preview_prompt.py [PROMPTS_DIR]
 
 With no argument it uses ONLY the packaged defaults (`src/minnarone/prompts/`).
 With PROMPTS_DIR it applies per-file precedence: files present in the dir win,

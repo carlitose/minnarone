@@ -60,7 +60,7 @@ Chiudere i quattro debiti lasciati aperti dall'esternalizzazione dei prompt
 ## Not Yet Specified
 
 - **Set di skills esatto (punto 3b)** — assunzione di lavoro da confermare col
-  ticket: una skill `prompts` (o 2-3 piccole) che copra: *validate* (carica e
+  ticket: una skill `minnarone-prompts` (o 2-3 piccole) che copra: *validate* (carica e
   valida un set/override con l'entry-point reale), *edit* (flusso guidato:
   modifica → valida → test render → diff vs default), *try* (costruisce il
   prompt con un set e lo mostra / smoke run dell'app). Prerequisito tecnico: un
@@ -99,7 +99,7 @@ Chiudere i quattro debiti lasciati aperti dall'esternalizzazione dei prompt
 | 03 | task | Header esternalizzati con riferimenti via placeholder | `headers.md` + corpi che citano header via `{{header_*}}`; set inglese completo possibile |
 | 04 | task | Fix 35 errori ruff pre-esistenti | `uv run ruff check src tests` pulito; `make quality` step ruff verde |
 | 05 | task | `test_vlm` skip-if-missing + comando validate-prompts | vlm skippa senza extra; esiste un entry-point CLI di validazione set |
-| 06 | task | Skill di repo `prompts` per il code agent | `.claude/skills/prompts*` che valida/modifica/prova i prompt usando il comando del 05 |
+| 06 | task | Skill di repo `minnarone-prompts` per il code agent | `.claude/skills/minnarone-prompts*` che valida/modifica/prova i prompt usando il comando del 05 |
 
 Dipendenze: 01, 02, 04 indipendenti e pronti. 03 dopo 02 (la validazione
 per-sezione deve coprire anche `headers.md`). 05 pronto (le due parti sono
