@@ -1,0 +1,19 @@
+{
+  "surfaces": {
+    "tutorial_templates": {
+      "human_steps": ["find_guide", "copy_template", "answer_persona", "write_soul", "write_facts", "copy_config", "choose_profile", "install_tools", "download_models", "verify_hashes", "check_config", "smoke_chat", "smoke_audio", "smoke_video", "start_shadow"],
+      "agent_steps": ["find_readme", "find_operator_guide", "infer_doc_order", "ask_persona", "write_soul", "write_facts", "find_profile", "copy_config", "install_tools", "resolve_models", "verify_models", "check_config", "find_smokes", "run_smokes", "start_shadow"],
+      "duplicated_rules": []
+    },
+    "combined_skill_and_core_cli": {
+      "human_steps": ["invoke_init", "answer_persona", "confirm_preview", "invoke_doctor", "resolve_failures", "check_config", "start_shadow"],
+      "agent_steps": ["route_combined_skill", "answer_persona", "confirm_preview", "invoke_doctor", "resolve_failures", "check_config", "start_shadow"],
+      "duplicated_rules": ["persona_contract_in_skill_and_cli", "origin_labels_in_skill_and_cli", "model_manifest_in_docs_and_cli", "twitch_safety_in_skill_and_cli", "profile_matrix_in_docs_and_cli"]
+    },
+    "two_thin_skills_and_docs": {
+      "human_steps": ["follow_task_first_tutorial", "answer_onboarding_questions", "confirm_preview", "select_profile", "run_doctor_skill_checklist", "resolve_failures", "check_config", "start_shadow"],
+      "agent_steps": ["route_onboarding_skill", "ask_and_confirm", "route_doctor_skill", "select_profile", "resolve_failures", "check_config", "start_shadow"],
+      "duplicated_rules": ["short_skill_checklists_reference_canonical_docs"]
+    }
+  }
+}

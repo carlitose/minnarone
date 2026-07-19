@@ -42,7 +42,7 @@ senza contesto privato.
 
 - [11-task-rename-prompts-skill.md](done/11-task-rename-prompts-skill.md) — done
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md) — done
-- [16-prototype-agent-and-human-onboarding.md](16-prototype-agent-and-human-onboarding.md)
+- [16-prototype-agent-and-human-onboarding.md](done/16-prototype-agent-and-human-onboarding.md) — done
 - [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
 
 ## Frontier

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minnarone Runtime Doctor"
+  short_description: "Check tools, pinned models, config and shadow safety gates."
+  default_prompt: "Use $minnarone-runtime-doctor to verify this runtime profile without downloading models or starting live mode."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minnarone Twitch Onboarding"
+  short_description: "Confirm persona and prepare a safe Twitch shadow run."
+  default_prompt: "Use $minnarone-twitch-onboarding to prepare this channel for a confirmed shadow run without inventing persona facts."

@@ -1,0 +1,34 @@
+mode: public
+soul_path: soul.md
+facts_dir: facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: examplechannel
+  chat: true
+  audio: false
+  video: false
+  send:
+    mode: shadow
+    allowed_channels: []
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+
+commentator:
+  language: it
+  profiles:
+    original_chat:
+      idle_interval: 30.0
+
+speaker_embedding:
+  model_path: null
+  dimension: 512
+
+disclosure:
+  announce_ai: false
+
+retention:
+  perceptions_days: 7

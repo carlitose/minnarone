@@ -1,0 +1,69 @@
+{
+  "models": {
+    "asr_large_v3_turbo": {
+      "path": ".local/models/asr/large-v3-turbo/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/model.bin",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+      "size": 1617884929
+    },
+    "speaker_en_512": {
+      "path": ".local/models/speaker/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+      "revision": "3dspeaker-english-voxceleb-v1.0.2",
+      "sha256": "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b",
+      "size": 29596978,
+      "dimension": 512
+    },
+    "gemma4_gguf": {
+      "path": ".local/models/gguf/gemma-4-e2b/66a399f68ddd113b06dff02fca9523e55465d11d/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+      "revision": "66a399f68ddd113b06dff02fca9523e55465d11d",
+      "sha256": "e531007218dfab990486a5de7676a6932d6ea8dea233d1f698d7c21cf8a16889",
+      "size": 2620370976
+    },
+    "gemma4_mmproj": {
+      "path": ".local/models/gguf/gemma-4-e2b/66a399f68ddd113b06dff02fca9523e55465d11d/mmproj-F16.gguf",
+      "revision": "66a399f68ddd113b06dff02fca9523e55465d11d",
+      "sha256": "13c8966d1635d02e6727f27402880614906fa291850c07feda18dbcddf2291b6",
+      "size": 985654080
+    }
+  },
+  "profiles": {
+    "P0": {
+      "tools": [],
+      "modules": ["yaml"],
+      "models": [],
+      "min_free_bytes": 1,
+      "config_expectations": {
+        "twitch.chat": true,
+        "twitch.audio": false,
+        "twitch.video": false
+      }
+    },
+    "P2": {
+      "tools": ["streamlink", "ffmpeg"],
+      "modules": ["faster_whisper", "sherpa_onnx"],
+      "models": ["asr_large_v3_turbo", "speaker_en_512"],
+      "min_free_bytes": 4000000000,
+      "config_expectations": {
+        "twitch.chat": true,
+        "twitch.audio": true,
+        "twitch.video": false,
+        "speaker_embedding.dimension": 512
+      }
+    },
+    "P5": {
+      "tools": ["streamlink", "ffmpeg", "llama-server"],
+      "modules": ["faster_whisper", "sherpa_onnx", "PIL"],
+      "models": ["asr_large_v3_turbo", "speaker_en_512", "gemma4_gguf", "gemma4_mmproj"],
+      "min_free_bytes": 8000000000,
+      "endpoints": ["/health", "/props"],
+      "config_expectations": {
+        "llm_provider": "llamacpp",
+        "twitch.chat": true,
+        "twitch.audio": true,
+        "twitch.video": true,
+        "speaker_embedding.dimension": 512,
+        "vlm.backend": "llamacpp"
+      }
+    }
+  }
+}
