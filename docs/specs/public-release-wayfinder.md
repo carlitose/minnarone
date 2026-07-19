@@ -11,9 +11,19 @@ Active
 ## Destination
 
 Il repository `minnarone` è pubblico su GitHub, con licenza chiara (MIT), nessun
-segreto o contenuto sensibile nei file tracciati né nella history, README
-accurato, e nessun file personale/accidentale tracciato. Un visitatore esterno
-capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
+segreto o contenuto sensibile nei file tracciati né nella history, e un percorso
+operativo verificato per due pubblici:
+
+1. una persona può passare dal clone a una prova Twitch `shadow` chat-only e,
+   opzionalmente, alla pipeline audio/video completa senza dipendere dallo stato
+   nascosto della macchina dell'autore;
+2. un code agent trova confini, comandi, architettura, workflow prompt e criteri
+   di sicurezza sufficienti per contribuire senza inventare persona, facts o
+   configurazione.
+
+Il README resta la landing page, ma porta rapidamente a golden path brevi e
+progressivi invece di chiedere al nuovo utente di ricostruire il flusso da una
+guida operatore molto lunga.
 
 ## Decisions So Far
 
@@ -55,68 +65,183 @@ capisce cos'è il progetto, può installarlo e sa cosa può farne legalmente.
   (`docs/source/minnarone-cover.jpg`) in cima ai due README; sezione "offrimi
   un caffè" con link PayPal (`https://paypal.me/CarloSergi`). Entrambi committati
   sulla branch/PR del ticket 08.
+- **Prep pubblicazione 01–04, 06–08 completata** (2026-07-17): licenza e pulizia,
+  review screenshot, decisione lingua, secret scan history, suite verde,
+  fresh-install e README bilingue risultano chiusi nei ticket sotto `done/`.
+  Il ticket 05 (flip) resta intenzionalmente aperto.
+- **Progressive enablement, shadow-first** (sessione operatore reale
+  2026-07-18): il percorso affidabile è chat-only → raw audio/video smoke →
+  ASR/VAD/speaker/VLM → shadow → config `live` separata → promozione TUI con
+  doppio `p`; `k` torna immediatamente in shadow. Saltare direttamente alla
+  configurazione completa nasconde troppi punti di guasto.
+- **`soul`, `facts` e prompt template sono confini diversi** (sessione
+  2026-07-18): `soul.md` è identità/opinioni/stile, `facts/*.md` è conoscenza del
+  canale/sessione, `src/minnarone/prompts/*.md` è il contratto comportamentale e
+  di formato byte-stabile. Un assistente non deve dedurre e scrivere identità o
+  descrizioni del canale senza un checkpoint umano; nella prova reale è stato
+  necessario correggere una persona inventata.
+- **La personalizzazione sicura resta locale**: la prova reale ha usato
+  config, soul e facts sotto `.local/` (gitignored) e artifact sotto `.smoke/`.
+  I default prompt impacchettati sono rimasti invariati.
+- **Pipeline completa provata su una live reale** (2026-07-18): Streamlink ha
+  reso disponibili più profili di qualità; uno smoke conservativo ha prodotto
+  31 chunk audio, 5 utterance VAD e 6 frame video senza failure media. La chat
+  quieta (0 eventi) ha però reso l'intero smoke non-zero: utile evidenza di una
+  semantica di successo troppo rigida.
+- **Setup completo ancora dipendente dalla macchina**: la prova ha riusato
+  modelli locali già presenti (faster-whisper, speaker ONNX, Qwen2-VL) e path
+  assoluti personali. Questo dimostra il runtime, non un onboarding ripetibile
+  per un visitatore esterno.
+- **Priorità skill chiarita dall'utente (2026-07-18)**: il bisogno non è creare
+  altri file di prompt, ma offrire più skill repo-local per i code agent. Prima
+  si rinomina la skill generica `prompts`; solo dopo si definisce e documenta
+  il catalogo completo nei README.
+- **Stato skill corrente**: il solo pacchetto skill realmente versionato è
+  `.agents/skills/minnarone-prompts/`, esposto a Claude Code dal symlink
+  `.claude/skills/minnarone-prompts`. Il README cita solo questa skill. Il
+  vecchio alias `prompts` e il symlink personale rotto `project-designer` sono
+  stati rimossi.
+- **Nome skill prompt confermato dall'utente (2026-07-18)**:
+  `minnarone-prompts` ha sostituito il nome generico `prompts` nel ticket 11.
+- **Migrazione skill confermata dall'utente (2026-07-18)**: rename netto
+  applicato, senza alias `prompts`; rimosso anche il symlink personale rotto
+  `.claude/skills/project-designer`.
+- **Catalogo skill confermato dall'utente (ticket 10, 2026-07-18)**:
+  `minnarone-prompts` gestisce prompt-set; `minnarone-twitch-onboarding` guida
+  intervista soul/facts, config e shadow/live; `minnarone-runtime-doctor`
+  verifica dipendenze, modelli e smoke. I confini di dettaglio saranno provati
+  nel ticket 16, ma i nomi sono stabili.
+- **Contratto onboarding soul/facts confermato (ticket 13, 2026-07-18)**: hard
+  gate prima della scrittura; preview Markdown esatta con origine dei dati;
+  diff minimo per file esistenti; default sotto `.local/<canale>/`; soul e facts
+  separati dai prompt template; metadata solo verificabili; eventuale
+  `## Contesto corrente` persistente solo con opt-in e revisione alla live
+  successiva; validazione automatica senza avvio runtime. Nessuna modifica al
+  runtime, limite dimensionale o guardrail segreti aggiuntivo.
+- **Ticket 12 — primo percorso operatore Twitch inventariato** (2026-07-18):
+  la sessione reale conferma la golden path progressiva chat-only → smoke
+  media → modelli → shadow → config live separata → doppio `p`, con `k` come
+  kill-switch; non dimostra ancora onboarding ripetibile da clone pulito.
+- **Priorità risultante dal ticket 12**: P1 prima del pubblico per drift
+  runtime/docs (`commentator.enabled`, token shadow, dotenv smoke, chat quieta,
+  Grok 4.3/`thinking`) nel ticket 18 e per profili/acquisizione/path modelli nel
+  ticket 15; intervista persona e golden path passano dai ticket 13, 16 e 17.
+  I gate shadow/live sono intenzionali e restano soggetti alla decisione safety
+  del ticket 14.
+
+## Evidence: First Real Twitch Operator Journey (2026-07-18)
+
+- Il primo problema dell'utente è stato capire **che progetto fosse e come
+  avviarlo**, non installare Python: il README contiene le risposte ma non offre
+  una corsia task-first abbastanza visibile.
+- `.env.example` → `.env` è semplice; la CLI principale carica `.env`, mentre
+  `minnarone-twitch-smoke` richiede oggi variabili già esportate. La differenza
+  non è evidente dal quickstart.
+- Il default `llm_provider: grok` risolve ancora a `x-ai/grok-4.3`; la sessione
+  ha richiesto `llm_params.model: x-ai/grok-4.5` e `reasoning_effort: low`.
+  Gli example usano ancora `thinking: low`.
+- La guida operatore contiene almeno due drift osservabili: usa ancora
+  `commentator.enabled` in un esempio e afferma che anche `shadow` richiede
+  `TWITCH_SEND_OAUTH_TOKEN`, mentre il runtime costruisce/legge il sender solo
+  per `live`.
+- L'assistente ha confuso inizialmente personalizzazione con generazione libera:
+  ha scritto una bozza di soul/facts prima di intervistare l'operatore. Il
+  prodotto/documentazione deve rendere il checkpoint esplicito, non affidarlo
+  alla disciplina conversazionale del singolo agent.
+- Shadow/live è tecnicamente ben protetto ma poco scopribile: `mode: live` arma
+  soltanto; la sessione parte in shadow, doppio `p` promuove, `k` disarma. Una
+  config live separata si è dimostrata più sicura di modificare quella shadow.
 
 ## Not Yet Specified
 
-- (vuoto — le voci precedenti sono risolte: screenshot → si tengono, lingua
-  README → inglese + README.it.md (ticket 08), gitignore e riga licenza →
-  fatti nel ticket 01 / PR #26.)
+- Se l'onboarding pubblico debba restare docs/templates oppure includere un
+  comando guidato (`minnarone init`/`doctor`) che crea config + soul + facts e
+  verifica credenziali, dipendenze e modelli.
+- Quali profili runtime supportare ufficialmente (chat-only, CPU-light,
+  Apple-Silicon, CUDA, llama.cpp) e come acquisire modelli compatibili senza
+  path assoluti, licenze ambigue o download impliciti di molti GB.
+- Quale modello OpenRouter sia il default pubblico e come validare parametri
+  model-specific (`thinking` vs `reasoning_effort`) senza inseguire slug
+  hard-coded obsoleti.
+- Quali vincoli pubblici di autorizzazione, disclosure AI, retention e policy
+  Twitch debbano diventare guardrail/documentazione del progetto.
+- Set minimo di documenti per contributori e code agent (`AGENTS.md`,
+  `CONTRIBUTING.md`, `SECURITY.md`, architettura rapida) prima del flip.
 
 ## Out of Scope
 
 - Traduzione completa della documentazione operativa (`docs/*.md`) in inglese.
 - Pulizia o riscrittura dei docs interni (issue/ticket/prds) — restano com'è.
-- Setup di CI pubblica, badge, CONTRIBUTING.md, code of conduct — nice-to-have
-  post-pubblicazione, non bloccanti.
+- CI avanzata, benchmark multi-hardware e supporto garantito per ogni
+  combinazione GPU/OS.
 - Riscrittura della history git (i commit con email personale dell'autore sono
   accettati come normali).
+- Auto-download immediato dei modelli multi-GB prima che profili, licenze,
+  checksum e budget disco siano decisi.
+- Modificare i nove prompt default byte-stabili solo per rendere più facile il
+  quickstart: l'onboarding deve usare override/soul/facts, non indebolire il
+  contratto impacchettato.
+- Avviare o promuovere automaticamente un bot `live`; il passaggio resta
+  attended-only e richiede un gesto umano esplicito.
 
 ## Frontier / Blocking Edges
 
-- **Licenza non ancora su main**: LICENSE + pyproject sono su branch locale non
-  committata. Blocca la pubblicazione. → ticket 01.
-- ~~Screenshot non revisionati~~: risolto (grilling 02 chiuso: si tengono).
-- ~~Lingua README non decisa~~: risolto (grilling 03 chiuso: inglese +
-  README.it.md). La traduzione è ora il ticket 08 e va fatta prima del flip
-  (prima impressione).
-- **Pre-flight finale**: scan history con tool dedicato (es. gitleaks) e check
-  file tracciati residui, come rete di sicurezza prima del flip. → ticket 04.
-- **4 test rossi su main** (scoperti 2026-07-17, pre-esistenti al lavoro di
-  release): chi clona il repo pubblico e lancia `pytest` vede subito 4 failure.
-  Uno è un test docs stantio dal refresh README (PR #24), gli altri 3 sono da
-  diagnosticare. → ticket 06.
-- **Nessuna verifica da installazione pulita**: il README è verificato "sulla
-  carta" ma nessuno ha rifatto di recente il percorso utente-nuovo (clone →
-  venv pulito → install → avvio modalità) seguendo SOLO il README. → ticket 07.
-- **Flip a pubblico**: azione GitHub irreversibile di fatto (issue/PR diventano
-  pubblici). Va fatta per ultima, dopo che 01–04, 06 e 07 sono chiusi. → ticket 05.
+- **Rename skill — risolto**: ticket 11 done; rename atomico
+  `prompts` → `minnarone-prompts`, riferimenti aggiornati e symlink personale
+  rimosso.
+- **Inventario dell'esperienza reale — risolto**: ticket 12 done; la matrice
+  assegna i gap P1 ai ticket 15, 16–18 e conserva i gate shadow/live.
+- **Confine persona/facts — risolto**: ticket 13 done; contratto e due scenari
+  di accettazione sono pronti come input del prototipo 16.
+- **Policy pubblica**: verificare con fonti primarie autorizzazione
+  bot, disclosure, retention e credenziali prima di presentare il percorso live
+  come golden path pubblico. → ticket 14.
+- **Runtime/model profiles**: modelli e hardware hanno funzionato solo grazie a
+  stato locale preesistente; serve una matrice supportata e un'acquisizione
+  ripetibile. → ticket 15 (può partire dopo l'inventario 12).
+- **Onboarding guidato e nuove skill**: scegliere tramite prototipo minimo il
+  confine tra skill repo-local, docs/templates e `init/doctor`; non costruire
+  interfacce definitive prima delle decisioni 10, 13–15. → ticket 16.
+- **README e code-agent surface**: golden path task-first, catalogo skill e
+  istruzioni di repo dipendono dagli esiti precedenti. → ticket 17.
+- **Attriti runtime noti**: smoke senza dotenv, chat quieta che invalida media
+  riusciti, schema/commenti/token/model drift. → ticket 18.
+- **Flip a pubblico**: il ticket 05 resta l'ultima azione, con conferma esplicita
+  e dopo la chiusura dei nuovi blocker 10–18 (09 può restare polish separato).
 
 ## Ticket Plan
 
-- 01 — task — Finalizzare licenza MIT e pulizia file (LICENSE, pyproject,
-  riga licenza nel README, rimozione `.agents/skills/`, gitignore per
-  `wiki/`/`.tokensave/`) → PR su main mergiata.
-- 02 — grilling — Revisione umana screenshot `docs/source/screenshots/`
-  (sensibilità + diritti) → decisione registrata: tengo/rimuovo/riduco.
-- 03 — grilling — Decidere lingua del README pubblico (italiano, inglese, o
-  bilingue) → decisione registrata; eventuale ticket task derivato.
-- 04 — task — Pre-flight di sicurezza: gitleaks (o equivalente) su tutta la
-  history, verifica `git ls-files` per artifact residui → report pulito
-  allegato/riassunto nella mappa.
+- 01–04 — done — licenza/pulizia, screenshot, lingua e security pre-flight.
 - 05 — task — Flip visibilità GitHub a public + verifica post-flip (clone
-  anonimo, link README funzionanti, pagina repo) → repo pubblico verificato.
-- 06 — task — Sistemare i 4 test falliti su main (1 test docs stantio da
-  PR #24 + 3 da diagnosticare) → `pytest` verde su main.
-- 07 — task — Verifica da installazione pulita seguendo SOLO il README (clone
-  fresco, venv nuovo, extra, `--check` su tutti gli examples, avvio modalità
-  fattibili, smoke CLI, replay) → gap README↔realtà registrati e risolti.
-- 08 — task — Tradurre il README in inglese (README.md) conservando l'italiano
-  come README.it.md con link incrociati → README pubblico in inglese.
+  anonimo, link README funzionanti, pagina repo) → bloccato fino alla nuova
+  frontiera.
+- 06–08 — done — suite verde, fresh-install e README bilingue.
+- 09 — task — localizzare CLI/example in inglese → polish, da riallineare dopo
+  l'audit 10 per evitare doppio lavoro.
+- 10 — done — nome, migrazione e catalogo skill repo-local decisi.
+- 11 — done — skill `prompts` rinominata end-to-end in `minnarone-prompts`;
+  directory, frontmatter, symlink, riferimenti/script/test aggiornati.
+- 12 — done — inventario evidence-backed del primo percorso operatore reale;
+  matrice gap/severità/owner riportata nella mappa.
+- 13 — done — contratto guidato per persona, soul, facts e descrizione canale
+  confermato; nessuna identità inventata, nessuna modifica runtime.
+- 14 — research — policy Twitch/public bot: autorizzazione, disclosure,
+  retention e token boundaries → decision spec prima del golden path live.
+- 15 — research — profili runtime/modelli/hardware e acquisizione ripetibile →
+  matrice supportata con costi disco/RAM/VRAM e licenze.
+- 16 — prototype — catalogo nuove skill + confronto skill/docs/templates vs
+  `minnarone init/doctor` → prova reversibile e scelta dell'interfaccia minima
+  per code agent e utente normale.
+- 17 — task — README task-first, catalogo skill, tutorial Twitch progressivo,
+  golden config sanitizzati e `AGENTS.md`/CONTRIBUTING pointers → percorso umano
+  e code-agent ripetibile.
+- 18 — task — correggere attriti e drift runtime/docs scoperti nella sessione →
+  smoke/dotenv/quiet-chat, schema commentator, token shadow/live e modello/params.
 
 ## Next Review
 
-Dopo i ticket 01–04: rileggere questa mappa, confermare che tutte le voci in
-"Not Yet Specified" sono risolte o spostate, e solo allora eseguire il ticket
-05 (flip). Dopo il flip: verificare da sessione anonima che il repo sia
-visibile, che i link relativi del README funzionino su GitHub e che non compaia
-nulla di inatteso nelle issue/PR pubbliche.
+Con 10–13 chiusi, completare la ricerca safety 14 e usare l'inventario 12 per i
+profili runtime 15. Con 14–15 chiusi, prototipare il catalogo/onboarding nel 16,
+poi rendere eseguibili 17–18 e decidere se il 09 va assorbito nel polish. Solo
+quando la nuova frontiera è verde si riapre il ticket 05 con conferma esplicita
+dell'utente e verifica anonima post-flip.

@@ -27,7 +27,11 @@ Emerso dalla verifica fresh-install (ticket 07), severità "note".
 
 ## Blocked By
 
-- None — indipendente.
+- [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md)
+- [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
+
+Rivalutare dopo il 18 se questo lavoro resta separato o viene assorbito dal
+polish user-facing del ticket 17.
 
 ## Frontier
 
