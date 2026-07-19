@@ -14,7 +14,7 @@ blocchi da risolvere prima del pubblico sono di priorità **P1**: percorso
 task-first e intervista persona, acquisizione/configurazione portabile dei
 modelli, e allineamento fra smoke, guida, examples e runtime. Nell'ambito
 tecnico di questo inventario non emerge un P0 autonomo; la decisione di safety
-pubblica resta al [ticket 14](../tickets/public-release/14-research-public-twitch-safety.md).
+pubblica resta al [ticket 14](../tickets/public-release/done/14-research-public-twitch-safety.md).
 
 La progressione osservata resta la golden path corretta: chat-only, smoke raw
 audio/video, ASR/VAD/speaker/VLM, shadow, config `live` separata, doppio `p` in
