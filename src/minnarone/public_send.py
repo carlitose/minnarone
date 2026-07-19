@@ -11,6 +11,8 @@ Come `HumanLikeness`, è PURO e deterministico: nessun I/O, niente
 `time.time()` interno (il clock è iniettato, come lo sleep del Reactor),
 nessuna attesa. Tutte le transizioni di stato sono esplicite
 (`promote`, `engage_kill_switch`, `record_failure`, `record_success`).
+Decisioni, budget e transizioni sono serializzati da un lock reentrante: la
+revoca permanente vince anche se arriva insieme a una promozione operatore.
 
 Vocabolario chiuso delle decisioni (contratto per router, eventi e TUI dei
 prossimi slice):
@@ -25,6 +27,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import RLock
 
 from .config import TwitchSendConfig, TwitchSendMode
 from .twitch_media import normalize_twitch_channel
@@ -94,10 +97,12 @@ class PublicSendPolicy:
             raise TypeError("clock deve essere un callable () -> float")
         self._config = config
         self._clock = clock
+        self._lock = RLock()
         # Ogni sessione parte in shadow: `live` in config ARMA la capacità, ma
         # non promuove nulla finché l'operatore non chiama `promote()`.
         self._promoted = False
         self._kill_switch = False
+        self._live_disabled = False
         self._consecutive_failures = 0
         # Timestamp delle decisioni che hanno consumato budget (send + shadow),
         # in ordine crescente. Le finestre si potano ad ogni decisione.
@@ -118,22 +123,23 @@ class PublicSendPolicy:
         4. `send`/`shadow` consumano budget: se una finestra è esaurita ->
            `drop` col motivo di budget, altrimenti registra il timestamp.
         """
-        now = self._clock()
-        self._prune(now)
+        with self._lock:
+            now = self._clock()
+            self._prune(now)
 
-        action, reason = self._intended(channel)
+            action, reason = self._intended(channel)
 
-        if action == ACTION_DROP:
+            if action == ACTION_DROP:
+                return self._remember(SendDecision(action, reason))
+
+            budget_reason = self._budget_block()
+            if budget_reason is not None:
+                return self._remember(SendDecision(ACTION_DROP, budget_reason))
+
+            # send e shadow consumano entrambi il budget (fedeltà della prova).
+            self._minute_events.append(now)
+            self._hour_events.append(now)
             return self._remember(SendDecision(action, reason))
-
-        budget_reason = self._budget_block()
-        if budget_reason is not None:
-            return self._remember(SendDecision(ACTION_DROP, budget_reason))
-
-        # send e shadow consumano entrambi il budget (fedeltà della prova).
-        self._minute_events.append(now)
-        self._hour_events.append(now)
-        return self._remember(SendDecision(action, reason))
 
     def _intended(self, channel: str) -> tuple[str, str]:
         """Azione/motivo voluti da modo e stato, prima del vincolo di budget."""
@@ -147,7 +153,7 @@ class PublicSendPolicy:
             return ACTION_SHADOW, REASON_OK
         # mode is LIVE: shadow finché non promosso, di nuovo shadow se il
         # kill-switch è ingaggiato.
-        if self._kill_switch:
+        if self._live_disabled or self._kill_switch:
             return ACTION_SHADOW, REASON_KILL_SWITCH
         if not self._promoted:
             return ACTION_SHADOW, REASON_NOT_PROMOTED
@@ -196,12 +202,13 @@ class PublicSendPolicy:
         cambio di stato). La promozione è l'UNICA azione che disingaggia il
         kill-switch (nessun re-enable silenzioso).
         """
-        if self._config.mode is not TwitchSendMode.LIVE:
-            return False
-        self._promoted = True
-        self._kill_switch = False
-        self._consecutive_failures = 0
-        return True
+        with self._lock:
+            if self._config.mode is not TwitchSendMode.LIVE or self._live_disabled:
+                return False
+            self._promoted = True
+            self._kill_switch = False
+            self._consecutive_failures = 0
+            return True
 
     def engage_kill_switch(self) -> None:
         """Degrada l'invio a shadow immediatamente (operatore o auto-degrado).
@@ -209,8 +216,15 @@ class PublicSendPolicy:
         Idempotente. Revoca la promozione: tornare live richiede un `promote()`
         esplicito.
         """
-        self._kill_switch = True
-        self._promoted = False
+        with self._lock:
+            self._kill_switch = True
+            self._promoted = False
+
+    def disable_live(self) -> None:
+        """Permanently disarm live sending for this session after auth failure."""
+        with self._lock:
+            self._live_disabled = True
+            self.engage_kill_switch()
 
     def record_failure(self) -> None:
         """Registra un fallimento d'invio consecutivo; auto-degrada alla soglia.
@@ -218,9 +232,10 @@ class PublicSendPolicy:
         Raggiunta `failure_threshold`, ingaggia automaticamente il kill-switch
         (stesso stato di quello manuale). Non disingaggia mai da solo.
         """
-        self._consecutive_failures += 1
-        if self._consecutive_failures >= self._config.failure_threshold:
-            self.engage_kill_switch()
+        with self._lock:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._config.failure_threshold:
+                self.engage_kill_switch()
 
     def record_success(self) -> None:
         """Azzera la serie di fallimenti consecutivi.
@@ -228,20 +243,22 @@ class PublicSendPolicy:
         NON disingaggia il kill-switch: solo `promote()` lo fa (auto-degrado
         che non si annulla in silenzio).
         """
-        self._consecutive_failures = 0
+        with self._lock:
+            self._consecutive_failures = 0
 
     # -- Osservabilità ------------------------------------------------------
 
     def snapshot(self) -> PolicySnapshot:
         """Fotografia read-only dello stato corrente (per TUI/eventi)."""
-        now = self._clock()
-        self._prune(now)
-        return PolicySnapshot(
-            mode=self._config.mode,
-            promoted=self._promoted,
-            kill_switch=self._kill_switch,
-            consecutive_failures=self._consecutive_failures,
-            minute_remaining=self._config.max_per_minute - len(self._minute_events),
-            hour_remaining=self._config.max_per_hour - len(self._hour_events),
-            last_decision=self._last_decision,
-        )
+        with self._lock:
+            now = self._clock()
+            self._prune(now)
+            return PolicySnapshot(
+                mode=self._config.mode,
+                promoted=self._promoted,
+                kill_switch=self._kill_switch,
+                consecutive_failures=self._consecutive_failures,
+                minute_remaining=self._config.max_per_minute - len(self._minute_events),
+                hour_remaining=self._config.max_per_hour - len(self._hour_events),
+                last_decision=self._last_decision,
+            )

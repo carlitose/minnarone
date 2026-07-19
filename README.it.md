@@ -95,13 +95,20 @@ reali. Il template è [`.env.example`](.env.example) (`cp .env.example .env`).
 |-----------|--------------|
 | `OPENROUTER_API_KEY` | Con `llm_provider: grok`/`deepseek` (OpenRouter). NON serve con `llm_provider: llamacpp` (LLM locale). |
 | `TWITCH_BOT_USERNAME` | Con `adapter: twitch` + `twitch.chat: true` (ingestione IRC in lettura). |
-| `TWITCH_OAUTH_TOKEN` | Con `adapter: twitch` + `twitch.chat: true` — token di **lettura** (`chat:read chat:edit`). |
-| `TWITCH_SEND_OAUTH_TOKEN` | **Solo** per `twitch.send.mode: live` — token di **scrittura** di un account bot dedicato. |
+| `TWITCH_OAUTH_TOKEN` | Con `adapter: twitch` + `twitch.chat: true` o invio live — token di **lettura** (`chat:read`). |
+| `TWITCH_SEND_OAUTH_TOKEN` | **Solo** per `twitch.send.mode: live` — token di **scrittura** (`chat:edit`) dell'account bot dedicato. |
 
 Il token di lettura e quello di scrittura sono deliberatamente distinti: una
-config read-only non deve mai avere il potere di inviare messaggi. La presenza
-del token di scrittura è verificata al build dell'agente; il valore non entra
-mai in log, errori o artefatti.
+config read-only non deve mai avere il potere di inviare messaggi. In `live`
+entrambi devono appartenere a `TWITCH_BOT_USERNAME`: quello di lettura richiede
+`chat:read`, quello di invio `chat:edit`. Sono validati all'avvio, non oltre ogni
+ora e prima di un `expires_in` breve con margine di sicurezza. Deadline assolute
+evitano drift dovuto alla latenza HTTP; token già nel margine falliscono chiusi
+senza retry rapido. Un errore read
+disarma il live, ferma il sender e la run; un errore send ferma il sender e
+mantiene definitivamente in shadow la sessione ancora attiva. `off` e `shadow`
+non leggono il token di invio. I valori non entrano in log, errori o artefatti;
+`--check` resta offline.
 
 ## Controllo qualità
 
@@ -173,8 +180,7 @@ Lo **switch `mode`** è solo configurazione (stesso motore):
 
 Il commentatore locale si configura con `commentator.profiles`: un dizionario di
 **profili** indicizzati per stile. Un profilo presente attiva il reattore
-corrispondente; un dizionario di profili vuoto = commentatore spento. Non esiste
-più il vecchio flag `commentator.enabled`.
+corrispondente; un dizionario di profili vuoto = commentatore spento.
 
 | Stile (`commentator.profiles.<stile>`) | Cosa fa | Modalità |
 |----------------------------------------|---------|----------|
@@ -202,8 +208,9 @@ Guardrail (default conservativi): **allow-list** di canali (`allowed_channels`;
 IRC di Twitch (`max_per_minute: 1`, `max_per_hour: 20`), **kill-switch** con
 auto-degrado a shadow dopo `failure_threshold` invii falliti consecutivi (default
 3), e un **token di scrittura separato** (`TWITCH_SEND_OAUTH_TOKEN`) di un
-account bot dedicato. Nella TUI l'operatore ha i comandi `k` (kill-switch) e `p`
-(promote). Procedura completa nella [guida operatore Twitch](docs/twitch-operator.md).
+account bot dedicato. Nella TUI premi `p` due volte entro 3 secondi per
+promuovere e `k` una volta per il kill-switch. Procedura completa nella
+[guida operatore Twitch](docs/twitch-operator.md).
 
 ## Commentatore locale su Teams (cattura SO)
 
@@ -343,12 +350,13 @@ disabilita la scelta automatica per quel cluster (supporta anche più streamer).
 Il modello di speaker embedding va scelto **coerente con la lingua** dell'audio.
 `speaker_embedding.dimension` deve **corrispondere al modello scelto**:
 
-- modello CAM++ inglese (VoxCeleb) → `dimension: 512`;
-- modello CAM++ zh-cn (common) → `dimension: 192`.
+- modello CAM++ inglese raccomandato
+  `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` → `dimension: 512`.
 
 Minnarone non scarica alcun modello: punta `speaker_embedding.model_path` a un
-file ONNX locale. `speaker_clustering.threshold` (default `0.45`) è il join floor
-di similarità coseno: più alto = più splitting; taralo per modello/lingua.
+file ONNX locale. Per il modello VoxCeleb raccomandato parti da
+`speaker_clustering.threshold: 0.5`: più alto significa più splitting; taralo su
+audio rappresentativo.
 
 ## Esempio di config (`config.yaml`)
 
@@ -383,7 +391,9 @@ twitch:
     failure_threshold: 3
 
 llm_params:
-  thinking: low
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low             # low | medium | high
 
 senser_interval: 0.5
 idle_interval: 150.0
@@ -407,13 +417,13 @@ asr:
   condition_on_previous_text: false
 
 speaker_embedding:
-  model_path: null          # percorso locale a un modello ONNX sherpa-onnx
+  model_path: null          # raccomandato: 3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192            # 192 = CAM++ zh-cn; 512 = CAM++ inglese (VoxCeleb). Deve combaciare col modello.
+  dimension: 512            # CAM++ inglese VoxCeleb; deve combaciare col modello.
 
 speaker_clustering:
-  threshold: 0.45           # join floor coseno; più alto = più splitting. Tara per modello/lingua.
+  threshold: 0.5            # punto di partenza VoxCeleb; tara su audio rappresentativo.
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -447,7 +457,10 @@ auto_memory: false      # inerte in MVP
 ```
 
 I punti `retention` e `auto_memory` sono presenti nello schema ma non alterano
-il comportamento (estensione v2).
+il comportamento (estensione v2). Le run locali possono contenere
+`perceptions.jsonl`, sommari e `debug/prompts` / `debug/events.jsonl`: dopo un
+opt-out o una revoca elimina manualmente la directory pertinente
+`.local/<agente>/runs/run-*`. Non pubblicare questi artefatti.
 
 ## File di prompt (persona, regole, formato)
 
@@ -517,11 +530,11 @@ i `.md` nella tua lingua (mantenendo placeholder e token di controllo) e punta
 ### Confine di sicurezza (cosa NON puoi sovrascrivere)
 
 Le regole **anti-injection** e di **disclosure** sono cablate in `prompt.py` e
-volutamente NON stanno tra i file editabili, insieme alla meccanica del fence dei
-dati non fidati. È una scelta deliberata: un file editabile non deve mai poter
-indebolire la protezione che tiene l'agente in personaggio e tratta il contenuto
-percepito come dati, mai come comandi. Un override cambia persona, stile e
-lingua; non può mai spegnere le regole di sicurezza.
+volutamente NON stanno tra i file editabili. Le regole di stile tunabili sono
+rese prima e la stance configurata viene aggiunta dopo: un override non può
+diventare l'ultima istruzione contraddittoria. Con `announce_ai: false` Minnarone
+non si annuncia spontaneamente ma non deve mentire se interrogato; `true`
+permette una risposta esplicita.
 
 ## LLM locale (llama.cpp)
 

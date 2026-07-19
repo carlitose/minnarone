@@ -75,20 +75,29 @@ Recommended starting points:
   `language: null` or `language: it` if the stream is consistently Italian. If
   your `faster-whisper` install expects the CTranslate2 shorthand, use
   `model: turbo`.
-- Speaker embedding: a local sherpa-onnx CAM++/3D-Speaker-style ONNX model with
-  `speaker_embedding.dimension: 192`, `provider: cpu`, and `num_threads: 1` or
-  `2`. Set `speaker_embedding.model_path` to the actual `.onnx` file. Pick a
-  model that matches the stream language and domain: a Mandarin-trained model
-  such as `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx` depresses
-  same-speaker similarity on Italian (and other non-Mandarin) speech, which
-  drives over-segmentation into many clusters. The emitted label stays `altro`
-  for every non-streamer voice, so over-segmentation is not visible in the
-  label — it shows up as an inflated cluster count in the diagnostics. For
-  non-Mandarin streams prefer a language-matched or multilingual embedding
-  model.
+- Speaker embedding: the recommended starting point is the English VoxCeleb CAM++
+  `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` model with
+  `speaker_embedding.dimension: 512`, `provider: cpu`, and `num_threads: 1` or
+  `2`. Set `speaker_embedding.model_path` to the actual `.onnx` file. Start at
+  `speaker_clustering.threshold: 0.5`, then tune on representative stream audio.
+  The dimension must always match the chosen model.
 - VLM: a local Qwen2-VL-compatible Hugging Face model directory or model id in
   `vlm.model`. Captions are concise English by default because they are internal
   context for the LLM, not final user-facing prose.
+
+For the hosted LLM baseline, `llm_provider: grok` currently defaults to
+`x-ai/grok-4.5`. Override `llm_params.model` explicitly when needed. The Grok
+4.5 family—including dated permaslugs such as `x-ai/grok-4.5-20260708` and
+OpenRouter `:variant` suffixes—is effort-only and rejects legacy `thinking` /
+`reasoning_effort`. DeepSeek and unrelated custom slugs retain provider-specific
+pass-through instead of inheriting the Grok policy:
+
+```yaml
+llm_params:
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low # low | medium | high
+```
 
 Apple Silicon starting points for a MacBook/Mac Studio class M2 Max with 32 GB
 RAM:
@@ -122,10 +131,19 @@ read -r -s -p "TWITCH_OAUTH_TOKEN: " TWITCH_OAUTH_TOKEN; echo; export TWITCH_OAU
 normalizes it internally. Do not put these secrets in YAML files, examples,
 shell history snippets intended for commits, or issue docs.
 
+Both the main CLI and `minnarone-twitch-smoke` load the shared `.env` contract:
+first beside a supplied config (main CLI), then from the current working
+directory, without overriding exported variables.
+
 Audio-only and video-only smoke runs can be isolated with `--no-chat`, so they
 do not require `TWITCH_BOT_USERNAME` or `TWITCH_OAUTH_TOKEN`.
 
 ## Smoke Commands
+
+A quiet chat is not a failure when requested audio or video capture succeeds.
+Use `--strict-chat` when the acceptance run specifically requires at least one
+chat event; chat-only smoke remains strict because it has no successful media
+signal to fall back on.
 
 Chat-only, writing chat perceptions:
 
@@ -244,15 +262,15 @@ Recommended speaker config defaults:
 
 ```yaml
 speaker_embedding:
-  model_path: /path/to/campp-speaker-embedding.onnx
+  model_path: /path/to/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192
+  dimension: 512
 
 speaker_clustering:
   # threshold is the cosine-similarity join floor (higher = more splitting).
-  # 0.45 is a reasonable starting point, not universal: tune per model/language.
-  threshold: 0.45
+  # Recommended VoxCeleb starting point; tune on representative stream audio.
+  threshold: 0.5
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 ```
@@ -272,10 +290,10 @@ from minnarone.speaker import (
 pcm = Path(".smoke/twitch-asr/raw/audio/audio-0001.pcm").read_bytes()
 backend = SherpaOnnxSpeakerEmbeddingBackend(
     SpeakerEmbeddingConfig(
-        model_path="/path/to/campp-speaker-embedding.onnx",
+        model_path="/path/to/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
         provider="cpu",
         num_threads=1,
-        dimension=192,
+        dimension=512,
     )
 )
 embedding = backend.embed(
@@ -305,7 +323,7 @@ from minnarone.speaker import OnlineSpeakerClusterer, SpeakerClusteringConfig
 
 clusterer = OnlineSpeakerClusterer(
     SpeakerClusteringConfig(
-        threshold=0.45,
+        threshold=0.5,
         warmup_seconds=2.0,
         min_update_seconds=1.0,
     )
@@ -573,15 +591,15 @@ asr:
   condition_on_previous_text: false
 
 speaker_embedding:
-  model_path: null
+  model_path: null # 3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192
+  dimension: 512
 
 speaker_clustering:
   # threshold is the cosine-similarity join floor (higher = more splitting).
-  # 0.45 is a reasonable starting point, not universal: tune per model/language.
-  threshold: 0.45
+  # Recommended VoxCeleb starting point; tune on representative stream audio.
+  threshold: 0.5
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -607,9 +625,8 @@ vlm:
   max_image_pixels: 500000
 
 commentator:
-  enabled: false
   language: it
-  idle_interval: null
+  profiles: {} # no profiles means commentator disabled
 ```
 
 For local audio perception, install the audio extra, set `twitch.audio: true`,
@@ -740,9 +757,10 @@ code changes. A minimal, partial English example is in
 
 **Security boundary.** The anti-injection and disclosure rules are hard-coded in
 `prompt.py` and are intentionally NOT among the editable files, together with the
-untrusted-data fence. An override can change persona, style and language, but it
-can never weaken the protection that keeps the agent in character and treats
-perceived content as data, never as commands.
+untrusted-data fence. Tunable rules render first and the configured disclosure
+stance is appended afterward, so an override cannot become the last,
+contradictory instruction. An override can change persona, style and language,
+but cannot weaken the data fence.
 
 ## Full Commentator Run Workflow
 
@@ -806,11 +824,11 @@ Success signal for the first full run:
 ## Public Chat Send
 
 Minnarone can send public PRIVMSG messages to a Twitch channel when all of the
-following gates are satisfied: `mode: public`, `twitch.send.mode` is `shadow` or
-`live`, a valid write-scope token is present, the target channel is in the
-allow-list, and the per-minute/per-hour budget has not been exceeded. Every
-session starts in shadow regardless of config; live requires a manual TUI
-promotion.
+following gates are satisfied: `mode: public`, `twitch.send.mode` is `live`, a
+valid write token is present, the target channel is in the allow-list, the
+per-minute/per-hour budget has not been exceeded, and the operator has promoted
+the session from the TUI. `shadow` is an offline rehearsal and does not read or
+require the send token. Every live-capable session starts in shadow.
 
 ### Single-Writer Invariant
 
@@ -820,16 +838,14 @@ the entire codebase and should be enforced in code review.
 
 ### Dedicated Bot Account
 
-Use a dedicated Twitch account for sending. Do not reuse your personal account
-or the read-only bot account used for chat capture.
+Use one dedicated Twitch bot account for capture and sending; do not reuse your
+personal account. Both credentials must validate as `TWITCH_BOT_USERNAME`.
 
 1. Create a new Twitch account for the bot at <https://www.twitch.tv/signup>.
 2. Register the account as a developer application at
    <https://dev.twitch.tv/console/apps/create> to generate a client id.
-3. Generate an OAuth token with the `chat:edit` scope (required for PRIVMSG).
-   The read token (`TWITCH_OAUTH_TOKEN`) only needs `chat:read`; the write
-   token needs `chat:edit`. Keep them as separate credentials on separate
-   accounts when possible.
+3. Generate separate read and send OAuth credentials for that bot. The read
+   token needs `chat:read`; the send token needs `chat:edit` for PRIVMSG.
 
 ### Write Token
 
@@ -841,15 +857,24 @@ for commits, or issue docs.
 read -r -s -p "TWITCH_SEND_OAUTH_TOKEN: " TWITCH_SEND_OAUTH_TOKEN; echo; export TWITCH_SEND_OAUTH_TOKEN
 ```
 
-The token may include or omit the `oauth:` prefix; the sender normalizes it
-internally. If the token is missing or empty at agent build time, send-capable
-modes (`shadow` and `live`) refuse to start.
+The token may include or omit the `oauth:` prefix. Only `live` reads it; if it
+is missing or empty, `live` fails closed while `off` and `shadow` remain safe.
+In `live`, Minnarone validates both tokens against Twitch's `/oauth2/validate`
+at startup, no later than hourly, and before a short `expires_in` deadline with
+a safety margin. Deadlines stay anchored to validation start/previous deadline,
+so HTTP latency cannot drift them; a token already inside the margin fails
+closed instead of entering a retry loop. Login and identity metadata must match; the read token requires
+`chat:read`, the send token `chat:edit`. Invalid read credentials engage the
+kill-switch, stop the sender, and stop the run. Invalid send credentials stop
+the sender and permanently leave the still-running session in shadow (no
+automatic promotion). Token values are never logged.
+`--check` only checks local configuration and never calls Twitch.
 
 ### Allow-List Workflow
 
 The `twitch.send.allowed_channels` list gates which channels the bot may send
-to. A channel must be explicitly listed before the bot will send (or shadow-log)
-messages there. This is the operator's explicit authorization step.
+to. A channel must be explicitly listed before a promoted live session can
+transmit. Shadow remains non-networked even when the list is empty.
 
 Before adding a channel:
 
@@ -870,7 +895,7 @@ Use shadow to:
 - Verify the bot would send at an acceptable rate.
 - Inspect message quality before they reach a live audience.
 - Tune `max_per_minute` and `max_per_hour` to match the channel's pace.
-- Confirm allow-list and credential configuration are correct.
+- Confirm message quality and the intended allow-list before live.
 
 Start with this config and observe the TUI for several minutes:
 
@@ -1085,7 +1110,19 @@ Live TUI runs are local, bounded, and gitignored. The default run root is
 `.local/minnarone/runs/`; `.local/` is in `.gitignore`, and run artifacts are not
 for commits or issue uploads. Each live run gets a directory named
 `.local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa` with a Minnarone ownership
-marker, `perceptions.jsonl`, and `debug/`.
+marker, `perceptions.jsonl`, and `debug/`. Depending on the run, artifacts may
+also include summaries, `debug/prompts/prompt-*.json`, and
+`debug/events.jsonl`; they can contain audience text or derived observations.
+
+The config field `retention.perceptions_days` is currently reserved and inert;
+it does not delete these artifacts. Fixed housekeeping caps below prevent
+unbounded growth, but they are not a consent or revocation mechanism. After an
+audience opt-out or authorization revocation, stop capture and manually delete
+the affected run, for example:
+
+```bash
+rm -rf .local/minnarone/runs/run-YYYYMMDDTHHMMSSZ-aaaaaaaa
+```
 
 These retention limits are the disk safety guardrails:
 
@@ -1181,15 +1218,15 @@ asr:
   condition_on_previous_text: false
 
 speaker_embedding:
-  model_path: /path/to/campp-speaker-embedding.onnx
+  model_path: /path/to/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192
+  dimension: 512
 
 speaker_clustering:
   # threshold is the cosine-similarity join floor (higher = more splitting).
-  # 0.45 is a reasonable starting point, not universal: tune per model/language.
-  threshold: 0.45
+  # Recommended VoxCeleb starting point; tune on representative stream audio.
+  threshold: 0.5
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 ```

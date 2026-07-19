@@ -68,7 +68,7 @@ def _coerce_enum(
 
 @dataclass(frozen=True, slots=True)
 class DisclosureConfig:
-    """Punto v2 (inerte in MVP): se/come l'agente dichiara di essere un'AI."""
+    """Stance operativa: annuncio AI esplicito oppure non-proattivo e veritiero."""
 
     announce_ai: bool = False
 
@@ -848,7 +848,7 @@ class Config:
     # ASR/VLM lenti facciano crescere memoria senza limiti.
     perception_queue_size: int = 32
     perception_shutdown_timeout: float = 5.0
-    # --- punti di estensione v2 (presenti ma inerti) ---
+    # Disclosure è cablata; retention e auto_memory restano estensioni inerti.
     disclosure: DisclosureConfig = field(default_factory=DisclosureConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     auto_memory: bool = False

@@ -1,5 +1,7 @@
 """Test del PromptBuilder: prefisso stabile + messaggi recenti + situazione in coda."""
 
+import pytest
+
 from minnarone.memory import MemoryBlocks
 from minnarone.output import CommentatorStyle
 from minnarone.perception import Perception, Source
@@ -308,10 +310,9 @@ def test_stable_prefix_byte_identical_with_new_rules():
 
 
 def test_disclosure_flag_changes_prompt_rules_coherently():
-    # Default (announce_ai=False): le regole dicono di NON rivelare di essere
-    # un'AI. Con announce_ai=True: le regole permettono/istruiscono la
-    # disclosure. Il testo del prefisso differisce coerentemente col flag.
-    default_builder = PromptBuilder(_blocks())  # default = non rivelare
+    # Default (announce_ai=False): niente annuncio proattivo, ma nessuna falsa
+    # negazione. Con announce_ai=True la disclosure è permessa esplicitamente.
+    default_builder = PromptBuilder(_blocks())
     disclose_builder = PromptBuilder(_blocks(), announce_ai=True)
 
     default_prefix = default_builder.stable_prefix()
@@ -320,10 +321,9 @@ def test_disclosure_flag_changes_prompt_rules_coherently():
 
     default_low = default_prefix.lower()
     disclose_low = disclose_prefix.lower()
-    # default: vieta la rivelazione
-    assert "non rivelare" in default_low or "mai rivelare" in default_low
-    # disclosure abilitata: niente divieto di rivelazione
-    assert "non rivelare" not in disclose_low and "mai rivelare" not in disclose_low
+    assert "non annunciare spontaneamente" in default_low
+    assert "non mentire" in default_low
+    assert "puoi dichiarare apertamente" in disclose_low
 
 
 def test_disclosure_default_matches_no_arg():
@@ -331,6 +331,54 @@ def test_disclosure_default_matches_no_arg():
     assert (
         PromptBuilder(_blocks()).stable_prefix()
         == PromptBuilder(_blocks(), announce_ai=False).stable_prefix()
+    )
+
+
+def test_original_chat_disclosure_flag_is_truthful_and_effective():
+    hidden = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        announce_ai=False,
+    ).stable_prefix()
+    announced = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        announce_ai=True,
+    ).stable_prefix()
+
+    assert hidden != announced
+    assert "Non annunciare spontaneamente" in hidden
+    assert "non mentire" in hidden
+    assert "puoi dichiarare apertamente" in announced
+    assert "Non rivelare MAI" not in hidden
+    assert "Non rivelare MAI" not in announced
+
+
+@pytest.mark.parametrize(
+    ("announce_ai", "authoritative_rule"),
+    [
+        (False, "Non annunciare spontaneamente"),
+        (True, "puoi dichiarare apertamente"),
+    ],
+)
+def test_english_prompt_set_cannot_override_disclosure_stance(
+    announce_ai, authoritative_rule
+):
+    from pathlib import Path
+
+    from minnarone.prompt_source import load_prompt_set
+
+    prefix = PromptBuilder(
+        _blocks(),
+        commentator_style=CommentatorStyle.ORIGINAL_CHAT,
+        announce_ai=announce_ai,
+        prompt_set=load_prompt_set(Path("examples/prompts-en")),
+    ).stable_prefix()
+
+    assert "Do not reveal that you are a bot, an AI" not in prefix
+    assert authoritative_rule in prefix
+    assert prefix.index("Write a single natural Twitch-chat message") < prefix.index(
+        authoritative_rule
     )
 
 
@@ -374,7 +422,7 @@ def test_original_chat_stable_prefix_contains_twitch_chat_behavior_rules():
     assert "minuscolo" in prefix
     assert "assistant" in prefix
     assert "non rivelare" in prefix.lower()
-    assert "puoi dichiarare apertamente" not in prefix
+    assert "puoi dichiarare apertamente" in prefix
     assert "bot in chat" in prefix
     assert "Minnarone/minna" in prefix
     assert "LUL/KEKW/OMEGALUL" in prefix
@@ -1628,9 +1676,12 @@ def test_original_chat_rules_served_from_loader_byte_identical():
         "@minnarone nel canale di enkk.\n"
         in prefix
     )
-    # il corpo delle regole termina con `...vedi in chat.\n` seguito dalla riga
-    # vuota che separa da [MEMORIA PERMANENTE]: byte-invarianza del confine.
-    assert "le emote che vedi in chat.\n\n[MEMORIA PERMANENTE]" in prefix
+    # La stance hard-coded segue il corpo tunabile e precede la memoria.
+    assert (
+        prefix.index("le emote che vedi in chat.")
+        < prefix.index("Non annunciare spontaneamente")
+        < prefix.index("[MEMORIA PERMANENTE]")
+    )
 
 
 def test_original_chat_rules_honor_prompt_set_override(tmp_path):
@@ -1765,8 +1816,12 @@ def test_operator_rules_served_from_loader_byte_identical():
         commentator_style=CommentatorStyle.OPERATOR,
         commentator_language="it",
     ).stable_prefix()
-    # il corpo compare integro e il confine col resto delle regole e' invariato.
-    assert f"{_OPERATOR_RULES_IT}\n## IDENTITÀ\n" in prefix
+    assert _OPERATOR_RULES_IT in prefix
+    assert (
+        prefix.index(_OPERATOR_RULES_IT)
+        < prefix.index("Non annunciare spontaneamente")
+        < prefix.index("## IDENTITÀ")
+    )
 
 
 def test_meeting_synthesizer_rules_served_from_loader_byte_identical():
@@ -1775,7 +1830,12 @@ def test_meeting_synthesizer_rules_served_from_loader_byte_identical():
         commentator_style=CommentatorStyle.MEETING_SYNTHESIZER,
         commentator_language="it",
     ).stable_prefix()
-    assert f"{_MEETING_SYNTHESIZER_RULES_IT}\n## IDENTITÀ\n" in prefix
+    assert _MEETING_SYNTHESIZER_RULES_IT in prefix
+    assert (
+        prefix.index(_MEETING_SYNTHESIZER_RULES_IT)
+        < prefix.index("Non annunciare spontaneamente")
+        < prefix.index("## IDENTITÀ")
+    )
 
 
 def test_suggester_rules_served_from_loader_byte_identical():
@@ -1784,7 +1844,12 @@ def test_suggester_rules_served_from_loader_byte_identical():
         commentator_style=CommentatorStyle.SUGGESTER,
         commentator_language="it",
     ).stable_prefix()
-    assert f"{_SUGGESTER_RULES_IT}\n## IDENTITÀ\n" in prefix
+    assert _SUGGESTER_RULES_IT in prefix
+    assert (
+        prefix.index(_SUGGESTER_RULES_IT)
+        < prefix.index("Non annunciare spontaneamente")
+        < prefix.index("## IDENTITÀ")
+    )
 
 
 def test_style_rules_language_substitution_for_english():

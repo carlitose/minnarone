@@ -37,8 +37,8 @@ def test_twitch_example_config_loads_future_shape():
     assert cfg.asr.model == "large-v3-turbo"
     assert cfg.asr.condition_on_previous_text is False
     assert cfg.speaker_embedding.provider == "cpu"
-    assert cfg.speaker_embedding.dimension == 192
-    assert cfg.speaker_clustering.threshold == 0.45
+    assert cfg.speaker_embedding.dimension == 512
+    assert cfg.speaker_clustering.threshold == 0.5
     assert cfg.speaker_clustering.warmup_seconds == 60.0
     assert cfg.speaker_clustering.min_update_seconds == 1.0
     assert cfg.video.sample_every == 1
@@ -272,7 +272,7 @@ def test_twitch_operator_docs_cover_manual_speaker_clustering_smoke():
         "Local Speaker Clustering Smoke",
         "OnlineSpeakerClusterer",
         "SpeakerClusteringConfig",
-        "threshold=0.45",
+        "threshold=0.5",
         "warmup_seconds=2.0",
         "min_update_seconds=1.0",
         "too short -> ?",
@@ -577,6 +577,40 @@ def test_twitch_operator_docs_cover_public_chat_send_section():
     ]
     for phrase in required:
         assert phrase in text
+
+
+def test_release_docs_match_current_model_token_and_retention_contracts():
+    operator = Path("docs/twitch-operator.md").read_text(encoding="utf-8")
+    examples = "\n".join(
+        Path(name).read_text(encoding="utf-8")
+        for name in (
+            "examples/twitch.example.yaml",
+            "examples/twitch-commentator.example.yaml",
+            "examples/twitch-original-chat.example.yaml",
+        )
+    )
+
+    assert "commentator.enabled" not in operator
+    assert "x-ai/grok-4.5" in operator
+    assert "reasoning:\n    effort: low" in operator
+    assert "no later than hourly" in operator
+    assert "before a short `expires_in` deadline" in operator
+    assert "read token requires\n`chat:read`, the send token `chat:edit`" in operator
+    assert "`--check` only checks local configuration" in operator
+    assert "retention.perceptions_days` is currently reserved and inert" in operator
+    assert "opt-out" in operator
+    assert "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx" in examples
+    assert "dimension: 512" in examples
+    assert "threshold: 0.5" in examples
+    assert "thinking:" not in examples
+
+
+def test_dotenv_template_documents_role_specific_twitch_scopes():
+    template = Path(".env.example").read_text(encoding="utf-8")
+
+    assert 'twitch token -u -s "chat:read"' in template
+    assert 'twitch token -u -s "chat:edit"' in template
+    assert 'twitch token -u -s "chat:read chat:edit"' not in template
 
 
 def test_twitch_operator_docs_single_writer_invariant_searchable():

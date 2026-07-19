@@ -12,6 +12,7 @@ import textwrap
 import minnarone.cli as cli
 from minnarone.cli import load_dotenv_file, main
 from minnarone.config import ConfigError
+from minnarone.twitch_auth import TwitchTokenValidationError
 from minnarone.twitch_stream import TwitchStreamRuntimeError
 
 
@@ -125,6 +126,26 @@ def test_cli_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch)
     err = capsys.readouterr().err
     assert "runtime Twitch" in err
     assert "Login authentication failed" in err
+
+
+def test_cli_token_validation_error_returns_nonzero_without_traceback(
+    tmp_path, capsys, monkeypatch
+):
+    class BrokenAgent:
+        async def run(self):
+            raise TwitchTokenValidationError(
+                "read token Twitch: account o scope non validi"
+            )
+
+    monkeypatch.setattr(cli, "build_agent", lambda _config: BrokenAgent())
+
+    code = main([str(_valid_config(tmp_path))])
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "credenziali Twitch" in err
+    assert "account o scope non validi" in err
+    assert "Traceback" not in err
 
 
 def test_cli_tui_launches_tui_branch(tmp_path, monkeypatch):
@@ -329,6 +350,8 @@ def test_cli_check_fails_for_live_send_without_write_token(
     # cwd isolata: la CLI ricarica `.env` dalla cwd, quindi un `.env` locale
     # dell'operatore (con TWITCH_SEND_OAUTH_TOKEN) vanificherebbe il delenv.
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:read-token")
     monkeypatch.delenv("TWITCH_SEND_OAUTH_TOKEN", raising=False)
     cfg = _twitch_send_config(
         tmp_path,
@@ -344,6 +367,27 @@ def test_cli_check_fails_for_live_send_without_write_token(
     err = capsys.readouterr().err
     assert "errore di config" in err
     assert "TWITCH_SEND_OAUTH_TOKEN" in err
+
+
+def test_cli_check_fails_for_live_send_without_read_token(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:send-token")
+    cfg = _twitch_send_config(
+        tmp_path,
+        """
+        mode: live
+        allowed_channels: ["minnarone"]
+        """,
+    )
+
+    code = main([str(cfg), "--check"])
+
+    assert code == 2
+    assert "TWITCH_OAUTH_TOKEN" in capsys.readouterr().err
 
 
 def test_cli_check_passes_for_shadow_send_without_write_token(

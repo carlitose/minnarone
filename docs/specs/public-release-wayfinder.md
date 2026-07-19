@@ -128,26 +128,32 @@ guida operatore molto lunga.
   ticket 15; intervista persona e golden path passano dai ticket 13, 16 e 17.
   I gate shadow/live sono intenzionali e restano soggetti alla decisione safety
   del ticket 14.
+- **Drift del percorso operatore risolto (ticket 18, 2026-07-19)**: CLI e smoke
+  condividono dotenv, chat quieta e strict sono distinti, guide/examples seguono
+  shadow/live, Grok 4.5 e VoxCeleb 512-dim, `announce_ai` è veritiero e il live
+  valida token con fallback read-stop/send-shadow. I ticket 17 e 09 sono ora
+  sbloccati; restano due note non bloccanti nel ticket chiuso su coalescing di
+  deadline perse e osservabilità esplicita del motivo `auth_disabled`.
 - **Policy Twitch pubblica verificata (ticket 14, 2026-07-18)**: il primo
-  golden path può restare IRC e shadow-first. IRC richiede User Access Token
-  `chat:read`/`chat:edit` e `NICK` uguale al login dell'account autorizzante; il
+  golden path può restare IRC e shadow-first. IRC usa un token read con
+  `chat:read`, un token send con `chat:edit` e `NICK` uguale al login
+  dell'account autorizzante; il
   Chat Bot Badge richiederebbe invece Send Chat Message API, App Access Token,
   `user:write:chat`, `user:bot` e `channel:bot` (o stato moderatore); il bot non
   può essere il broadcaster del canale. I budget
   Minnarone `1/min` e `20/ora` restano scelte conservative sotto i limiti
   ufficiali.
-- **Disclosure resta operator choice, con floor anti-inganno (ticket 14,
+- **Disclosure resta operator choice, con floor anti-inganno (ticket 14/18,
   2026-07-18)**: Twitch non impone un annuncio AI per messaggio, ma vieta
   bot/pratiche ingannevoli e richiede identità/scopo comprensibili. Il percorso
-  pubblico `ORIGINAL_CHAT` ignora oggi `announce_ai` e forza non-disclosure; il
-  golden path non deve descrivere il flag come efficace finché il gap non è
-  corretto o documentato.
-- **Token e retention non sono ancora production-safe (ticket 14,
+  pubblico `ORIGINAL_CHAT` ora rispetta `announce_ai`; con `false` non annuncia
+  spontaneamente ma non può mentire se interrogato.
+- **Token hardened; retention ancora manuale (ticket 14/18,
   2026-07-18)**: Twitch richiede validazione token all'avvio e ogni ora e
   cancellazione/opt-out dei log chat conservati solo finché necessari. Il
-  runtime controlla solo token non vuoti e `retention.perceptions_days` è
-  inerte; tutorial e onboarding devono mostrare artifact/cancellazione manuale
-  e fallire verso shadow/stop su credenziali invalide.
+  runtime valida account, scope e scadenza con deadline sicure e fallback
+  shadow/stop. `retention.perceptions_days` resta inerte; tutorial e onboarding
+  devono mostrare artifact, opt-out e cancellazione manuale.
 - **Permesso broadcaster obbligatorio per il live pubblico (ticket 14,
   2026-07-18)**: Minnarone usa un account bot dedicato e non coincide con
   l'installed chatbot che opera tramite l'account del broadcaster. Poiché l'IRC
@@ -233,10 +239,11 @@ guida operatore molto lunga.
   profili e un manifest di artifact pinned sono pronti come input del ticket 16.
 - **Onboarding guidato — risolto dal prototipo**: ticket 16 done; ticket 17
   produce tutorial/template e le due skill sottili, senza CLI core.
-- **README e code-agent surface**: golden path task-first, catalogo skill e
-  istruzioni di repo dipendono dagli esiti precedenti. → ticket 17.
-- **Attriti runtime noti**: smoke senza dotenv, chat quieta che invalida media
-  riusciti, schema/commenti/token/model drift. → ticket 18.
+- **README e code-agent surface — sbloccato**: tutti gli input runtime, safety,
+  onboarding e model profile sono chiusi; ticket 17 può produrre golden path,
+  catalogo skill e istruzioni di repo.
+- **Attriti runtime — risolti**: ticket 18 done; dotenv/smoke, quiet-chat,
+  schema, token, disclosure, modelli e guide sono riallineati.
 - **Flip a pubblico**: il ticket 05 resta l'ultima azione, con conferma esplicita
   e dopo la chiusura dei nuovi blocker 10–18 (09 può restare polish separato).
 
@@ -247,8 +254,8 @@ guida operatore molto lunga.
   anonimo, link README funzionanti, pagina repo) → bloccato fino alla nuova
   frontiera.
 - 06–08 — done — suite verde, fresh-install e README bilingue.
-- 09 — task — localizzare CLI/example in inglese → polish, da riallineare dopo
-  l'audit 10 per evitare doppio lavoro.
+- 09 — task — localizzare CLI/example in inglese → polish separato, ora
+  sbloccato dalla chiusura del ticket 18.
 - 10 — done — nome, migrazione e catalogo skill repo-local decisi.
 - 11 — done — skill `prompts` rinominata end-to-end in `minnarone-prompts`;
   directory, frontmatter, symlink, riferimenti/script/test aggiornati.
@@ -263,11 +270,10 @@ guida operatore molto lunga.
   matrice, budget, licenze, revision e digest consegnati al prototipo 16.
 - 16 — done — prototipo onboarding/doctor e confronto superfici; scelti docs +
   manifest + due skill sottili, rinviato il CLI core.
-- 17 — task — README task-first, catalogo skill, tutorial Twitch progressivo,
-  golden config sanitizzati e `AGENTS.md`/CONTRIBUTING pointers → percorso umano
-  e code-agent ripetibile.
-- 18 — task — correggere attriti e drift runtime/docs scoperti nella sessione →
-  smoke/dotenv/quiet-chat, schema commentator, token shadow/live e modello/params.
+- 17 — task — sbloccato — README task-first, catalogo skill, tutorial Twitch
+  progressivo, golden config sanitizzati e `AGENTS.md`/CONTRIBUTING pointers.
+- 18 — done — attriti e drift runtime/docs risolti: smoke/dotenv/quiet-chat,
+  schema commentator, token shadow/live, disclosure, modelli e params.
 
 ## Next Review
 

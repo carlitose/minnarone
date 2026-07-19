@@ -38,13 +38,14 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Default timeout (secondi) per la chiamata HTTP. Sovrascrivibile da llm_params.
 _DEFAULT_TIMEOUT = 30.0
+_REASONING_EFFORTS = {"low", "medium", "high"}
 
 # Slug di modello di default per provider logico. Sono valori di CONFIG con
-# esempi documentati come default: la versione esatta ("Grok 4.3" /
+# esempi documentati come default: la versione esatta ("Grok 4.5" /
 # "DeepSeek V4 Flash") può cambiare lato OpenRouter, quindi è sovrascrivibile
 # via `llm_params.model` senza toccare il codice.
 _DEFAULT_MODELS: dict[str, str] = {
-    "grok": "x-ai/grok-4.3",
+    "grok": "x-ai/grok-4.5",
     "deepseek": "deepseek/deepseek-chat",
 }
 
@@ -67,6 +68,46 @@ class TransportTimeout(TransportError):
 
 # Firma del transport: chiamato con keyword-only e ritorna una HttpResponse.
 Transport = Callable[..., HttpResponse]
+
+
+def _is_grok_45_family(model: str) -> bool:
+    base_model, separator, variant = model.partition(":")
+    if separator and not variant:
+        return False
+    default = _DEFAULT_MODELS["grok"]
+    if base_model == default:
+        return True
+    permaslug = base_model.removeprefix(f"{default}-")
+    return base_model.startswith(f"{default}-") and (
+        len(permaslug) == 8 and permaslug.isdigit()
+    )
+
+
+def _normalize_reasoning_params(
+    model: str, params: Mapping[str, object]
+) -> dict[str, object]:
+    """Apply the effort-only reasoning policy only to the Grok 4.5 baseline."""
+    normalized = dict(params)
+    if not _is_grok_45_family(model):
+        return normalized
+    legacy = [key for key in ("thinking", "reasoning_effort") if key in normalized]
+    if legacy:
+        raise LLMError(
+            f"llm_params.{legacy[0]} non è supportato: usa "
+            "llm_params.reasoning: {effort: low|medium|high}"
+        )
+    reasoning = normalized.get("reasoning")
+    if reasoning is not None:
+        if not isinstance(reasoning, Mapping):
+            raise LLMError("llm_params.reasoning deve essere una mappa")
+        if set(reasoning) != {"effort"}:
+            raise LLMError(
+                "llm_params.reasoning per Grok 4.5 accetta solo la chiave effort"
+            )
+        effort = reasoning.get("effort")
+        if effort not in _REASONING_EFFORTS:
+            raise LLMError("llm_params.reasoning.effort deve essere low, medium o high")
+    return normalized
 
 
 def _validate_timeout(value: object) -> float:
@@ -171,7 +212,7 @@ class OpenRouterProvider(LLMProvider):
         self._url = OPENROUTER_URL
         self._transport = transport or _urllib_transport
         # Parametri di tuning passati nel body (temperature, max_tokens, …).
-        self._params = dict(params or {})
+        self._params = _normalize_reasoning_params(model, params or {})
         # Chiavi riservate: il prompt e il modello sono fissati dal provider e
         # non possono essere sovrascritti da llm_params arbitrari (romperebbero
         # il pass-through verbatim e il prefisso stabile cacheabile).

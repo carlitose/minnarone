@@ -100,6 +100,63 @@ def test_llm_params_passed_through_to_body():
     assert sent["max_tokens"] == 256
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        "x-ai/grok-4.5",
+        "x-ai/grok-4.5:online",
+        "x-ai/grok-4.5-20260708",
+        "x-ai/grok-4.5-20260708:online",
+    ],
+)
+@pytest.mark.parametrize("legacy_key", ["thinking", "reasoning_effort"])
+def test_legacy_reasoning_params_are_rejected_with_migration_hint(model, legacy_key):
+    with pytest.raises(LLMError, match=r"reasoning.*effort"):
+        OpenRouterProvider(
+            model=model,
+            api_key="k",
+            transport=RecordingTransport(_ok_response()),
+            params={legacy_key: "low"},
+        )
+
+
+def test_canonical_reasoning_effort_is_sent_as_openrouter_object():
+    transport = RecordingTransport(_ok_response())
+    provider = OpenRouterProvider(
+        model="x-ai/grok-4.5",
+        api_key="k",
+        transport=transport,
+        params={"reasoning": {"effort": "low"}},
+    )
+
+    asyncio.run(provider.complete("p"))
+
+    sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
+    assert sent["reasoning"] == {"effort": "low"}
+
+
+@pytest.mark.parametrize("model", ["deepseek/deepseek-chat", "vendor/custom-model"])
+def test_non_grok_45_reasoning_params_remain_provider_pass_through(model):
+    transport = RecordingTransport(_ok_response())
+    provider = OpenRouterProvider(
+        model=model,
+        api_key="k",
+        transport=transport,
+        params={
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "provider-specific",
+            "reasoning": {"max_tokens": 123},
+        },
+    )
+
+    asyncio.run(provider.complete("p"))
+
+    sent = json.loads(transport.calls[0]["body"].decode("utf-8"))
+    assert sent["thinking"] == {"type": "enabled"}
+    assert sent["reasoning_effort"] == "provider-specific"
+    assert sent["reasoning"] == {"max_tokens": 123}
+
+
 def test_llm_params_cannot_override_prompt_messages():
     # Una chiave 'messages' stray in llm_params NON deve sovrascrivere il prompt
     # reale: rompe il pass-through verbatim e il prefisso stabile cacheabile.
@@ -282,7 +339,7 @@ def test_factory_selects_grok_model(monkeypatch):
         _config("grok"), transport=RecordingTransport(_ok_response())
     )
     assert isinstance(provider, OpenRouterProvider)
-    assert "grok" in provider.model
+    assert provider.model == "x-ai/grok-4.5"
 
 
 def test_factory_selects_deepseek_model(monkeypatch):

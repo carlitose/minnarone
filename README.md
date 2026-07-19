@@ -96,13 +96,20 @@ values. The template is [`.env.example`](.env.example) (`cp .env.example .env`).
 |-----------|--------------|
 | `OPENROUTER_API_KEY` | With `llm_provider: grok`/`deepseek` (OpenRouter). NOT needed with `llm_provider: llamacpp` (local LLM). |
 | `TWITCH_BOT_USERNAME` | With `adapter: twitch` + `twitch.chat: true` (read-side IRC ingestion). |
-| `TWITCH_OAUTH_TOKEN` | With `adapter: twitch` + `twitch.chat: true` — **read** token (`chat:read chat:edit`). |
-| `TWITCH_SEND_OAUTH_TOKEN` | **Only** for `twitch.send.mode: live` — **write** token of a dedicated bot account. |
+| `TWITCH_OAUTH_TOKEN` | With `adapter: twitch` + `twitch.chat: true` or live send — **read** token (`chat:read`). |
+| `TWITCH_SEND_OAUTH_TOKEN` | **Only** for `twitch.send.mode: live` — **write** token (`chat:edit`) of the dedicated bot account. |
 
 The read token and the write token are deliberately distinct: a read-only
-config must never have the power to send messages. The presence of the write
-token is verified when the agent is built; the value never enters logs, errors
-or artifacts.
+config must never have the power to send messages. In `live`, both tokens must
+belong to `TWITCH_BOT_USERNAME`: the read token needs `chat:read`, while the send
+token needs `chat:edit`. Minnarone validates them at startup, no later than
+hourly, and before a short `expires_in` deadline using a safety margin. Absolute
+deadlines prevent HTTP latency drift; tokens already inside the margin fail
+closed instead of retrying rapidly. A read
+failure disarms live, stops the sender, and stops the run; a send failure stops
+the sender and permanently keeps that running session in shadow. `off` and
+`shadow` never read the send token. Token values never enter logs, errors, or
+artifacts; `--check` remains offline.
 
 ## Quality checks
 
@@ -175,8 +182,7 @@ The **`mode` switch** is only configuration (same engine):
 
 The local commentator is configured with `commentator.profiles`: a dictionary of
 **profiles** indexed by style. A present profile activates the corresponding
-reactor; an empty profiles dictionary = commentator off. The old
-`commentator.enabled` flag no longer exists.
+reactor; an empty profiles dictionary = commentator off.
 
 | Style (`commentator.profiles.<style>`) | What it does | Mode |
 |----------------------------------------|---------|----------|
@@ -204,8 +210,9 @@ Guardrails (conservative defaults): channel **allow-list** (`allowed_channels`;
 Twitch's IRC limits (`max_per_minute: 1`, `max_per_hour: 20`), **kill-switch** with
 auto-degrade to shadow after `failure_threshold` consecutive failed sends (default
 3), and a **separate write token** (`TWITCH_SEND_OAUTH_TOKEN`) of a
-dedicated bot account. In the TUI the operator has the commands `k` (kill-switch) and `p`
-(promote). Full procedure in the [Twitch operator guide](docs/twitch-operator.md).
+dedicated bot account. In the TUI, press `p` twice within 3 seconds to promote
+and `k` once for the kill-switch. Full procedure in the
+[Twitch operator guide](docs/twitch-operator.md).
 
 ## Local commentator on Teams (OS capture)
 
@@ -345,12 +352,13 @@ disables the automatic choice for that cluster (it also supports multiple stream
 The speaker embedding model must be chosen **consistent with the language** of the
 audio. `speaker_embedding.dimension` must **match the chosen model**:
 
-- English CAM++ model (VoxCeleb) → `dimension: 512`;
-- zh-cn CAM++ model (common) → `dimension: 192`.
+- recommended English CAM++ model
+  `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` → `dimension: 512`.
 
 Minnarone does not download any model: point `speaker_embedding.model_path` to a
-local ONNX file. `speaker_clustering.threshold` (default `0.45`) is the cosine
-similarity join floor: higher = more splitting; tune it per model/language.
+local ONNX file. Start the recommended VoxCeleb model at
+`speaker_clustering.threshold: 0.5`; higher means more splitting, so tune it on
+representative audio.
 
 ## Config example (`config.yaml`)
 
@@ -385,7 +393,9 @@ twitch:
     failure_threshold: 3
 
 llm_params:
-  thinking: low
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low             # low | medium | high
 
 senser_interval: 0.5
 idle_interval: 150.0
@@ -409,13 +419,13 @@ asr:
   condition_on_previous_text: false
 
 speaker_embedding:
-  model_path: null          # percorso locale a un modello ONNX sherpa-onnx
+  model_path: null          # recommended: 3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192            # 192 = CAM++ zh-cn; 512 = CAM++ inglese (VoxCeleb). Deve combaciare col modello.
+  dimension: 512            # English VoxCeleb CAM++; must match the model.
 
 speaker_clustering:
-  threshold: 0.45           # join floor coseno; più alto = più splitting. Tara per modello/lingua.
+  threshold: 0.5            # VoxCeleb starting point; tune on representative audio.
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -449,7 +459,10 @@ auto_memory: false      # inerte in MVP
 ```
 
 The `retention` and `auto_memory` items are present in the schema but do not alter
-the behavior (v2 extension).
+behavior (v2 extension). Local runs may contain `perceptions.jsonl`, summaries,
+and `debug/prompts` / `debug/events.jsonl`; delete the relevant
+`.local/<agent>/runs/run-*` directory manually after an opt-out or revocation.
+Do not publish these artifacts.
 
 ## Prompt files (persona, rules, format)
 
@@ -525,10 +538,10 @@ in [examples/prompts-en/](examples/prompts-en/).
 
 The **anti-injection** and **disclosure** rules are hard-coded in `prompt.py` and
 are intentionally NOT among the editable files, together with the untrusted-data
-fence mechanics. This is deliberate: an editable file must never be able to
-weaken the protection that keeps the agent in character and treats perceived
-content as data, never as commands. A prompt override changes persona, style and
-language; it can never turn off the security rules.
+fence mechanics. Tunable style rules are rendered first and the configured
+disclosure stance is appended afterward, so an override cannot become the last,
+contradictory instruction. With `announce_ai: false` Minnarone does not announce
+itself proactively but must not lie when asked; `true` permits an explicit answer.
 
 ## Local LLM (llama.cpp)
 

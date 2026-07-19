@@ -22,6 +22,7 @@ class _OneSegmentVad:
 
 
 def test_twitch_chat_smoke_requires_manual_credentials(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
     monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
@@ -146,6 +147,38 @@ def test_twitch_chat_smoke_command_runs_with_twitch_env_only(
         }
     ]
     assert "2" in capsys.readouterr().out
+
+
+def test_twitch_smoke_loads_credentials_from_cwd_dotenv(tmp_path, monkeypatch):
+    calls = []
+
+    async def fake_smoke(**kwargs):
+        calls.append(kwargs)
+        return SmokeStats(chat_events=1)
+
+    (tmp_path / ".env").write_text(
+        "TWITCH_BOT_USERNAME=dotenv_bot\nTWITCH_OAUTH_TOKEN=oauth:dotenv-token\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TWITCH_BOT_USERNAME", raising=False)
+    monkeypatch.delenv("TWITCH_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+        ]
+    )
+
+    assert code == 0
+    assert calls[0]["username"] == "dotenv_bot"
+    assert calls[0]["oauth_token"] == "oauth:dotenv-token"
 
 
 def test_legacy_chat_smoke_command_uses_jsonl_output_file(
@@ -439,6 +472,59 @@ def test_twitch_smoke_fails_when_requested_audio_has_no_events(
 
     assert code == 1
     assert "audio: nessun evento" in capsys.readouterr().err
+
+
+def test_twitch_smoke_quiet_chat_does_not_fail_successful_audio(
+    tmp_path, monkeypatch, capsys
+):
+    async def fake_smoke(**kwargs):
+        return SmokeStats(chat_events=0, audio_events=1, audio_samples_saved=1)
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--audio",
+        ]
+    )
+
+    assert code == 0
+    assert "chat quieta" in capsys.readouterr().out
+
+
+def test_twitch_smoke_strict_chat_fails_even_when_audio_succeeds(
+    tmp_path, monkeypatch, capsys
+):
+    async def fake_smoke(**kwargs):
+        return SmokeStats(chat_events=0, audio_events=1, audio_samples_saved=1)
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:token")
+    monkeypatch.setattr("minnarone.twitch_smoke.run_twitch_smoke", fake_smoke)
+
+    code = main(
+        [
+            "--channel",
+            "minnarone",
+            "--duration",
+            "1",
+            "--output",
+            str(tmp_path / "smoke"),
+            "--audio",
+            "--strict-chat",
+        ]
+    )
+
+    assert code == 1
+    assert "chat: nessun evento" in capsys.readouterr().err
 
 
 def test_twitch_smoke_fails_when_requested_video_has_no_events(

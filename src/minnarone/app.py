@@ -28,7 +28,8 @@ Modalità come CONFIGURAZIONE, non due codebase (vedi `output.py`):
 
 Punti di estensione v2 PRESENTI ma INERTI:
 - `disclosure.announce_ai` è l'unico cablato (coerente): fluisce nello stance
-  del `PromptBuilder`. Default False = nessuna disclosure.
+  autorevole del `PromptBuilder`. Default False = niente annuncio proattivo,
+  senza imporre una falsa negazione quando l'utente chiede direttamente.
 - `retention` e `auto_memory` sono LETTI/ACCETTATI ma non fanno nulla nell'MVP.
 
 Testabilità: il `transport` HTTP dell'LLM è iniettabile (fake nei test, nessuna
@@ -96,6 +97,7 @@ from .speaker import (
 )
 from .store import PerceptionStore
 from .summarizer import Summarizer
+from .twitch_auth import TokenValidationTransport, TwitchLiveTokenGuard
 from .twitch_chat import ConnectIRC, _connect_twitch_irc
 from .twitch_chat_sender import TwitchChatSender
 from .twitch_stream import TwitchStreamAdapter
@@ -197,6 +199,7 @@ class Agent:
     video_diagnostics: object | None = None
     send_policy: object | None = None
     sender: object | None = None
+    token_guard: TwitchLiveTokenGuard | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -299,8 +302,21 @@ class Agent:
         Il sender (se presente) viene avviato prima dei task e fermato nel
         finally; i fallimenti di stop vengono riportati come gli altri errori
         di shutdown dell'adapter, mai inghiottiti.
+
+        In live, il token guard valida prima dell'avvio e poi alla prima deadline
+        tra limite orario e scadenza OAuth con margine. Le deadline sono ancorate
+        all'inizio/alla deadline precedente, quindi la latenza HTTP non causa
+        drift; token già nel margine falliscono chiusi. Una revoca read ha
+        priorità sul tick finale della pompa e arresta/disarma la run; una revoca
+        send ferma il sender ma lascia la run operativa in shadow.
         """
-        if self.sender is not None:
+        send_enabled = True
+        if self.token_guard is not None:
+            send_enabled = await self.token_guard.validate_startup()
+            if not send_enabled:
+                self._disable_live_send()
+
+        if self.sender is not None and send_enabled:
             await self.sender.start()
 
         reactor_tasks = [
@@ -311,25 +327,47 @@ class Agent:
             self.summarizer.run(interval=self.config.summarizer_interval)
         )
         pump_task = asyncio.create_task(self._pump_perceptions())
+        token_guard_task = (
+            asyncio.create_task(
+                self.token_guard.monitor(on_send_invalid=self._disable_live_send_async)
+            )
+            if self.token_guard is not None
+            else None
+        )
 
         try:
             if self.adapter is not None:
                 # La pompa guida la durata: attendi l'esaurimento dello stream,
                 # poi un ultimo tick di reazione deterministico per ogni Reactor.
-                await pump_task
-                for r in self.reactors:
-                    await r.run_once()
+                drivers = [pump_task]
+                if token_guard_task is not None:
+                    drivers.append(token_guard_task)
+                done, _pending = await asyncio.wait(
+                    drivers, return_when=asyncio.FIRST_COMPLETED
+                )
+                guard_finished = (
+                    token_guard_task is not None and token_guard_task in done
+                )
+                if guard_finished:
+                    self._disable_live_send()
+                    await token_guard_task
+                elif pump_task in done:
+                    for r in self.reactors:
+                        await r.run_once()
             else:
                 # Nessuna sorgente: i loop di reazione guidano (girano finché
                 # `reactor.stop()`), col Summarizer attivo in concorrenza.
                 # Con N Reactor, il primo che termina avvia lo shutdown di tutti.
                 # Con zero Reactor, niente da attendere (pump + summarizer only).
-                if reactor_tasks:
-                    _done, _pending = await asyncio.wait(
-                        reactor_tasks, return_when=asyncio.FIRST_COMPLETED
-                    )
-                else:
-                    await summarizer_task
+                drivers = list(reactor_tasks) or [summarizer_task]
+                if token_guard_task is not None:
+                    drivers.append(token_guard_task)
+                done, _pending = await asyncio.wait(
+                    drivers, return_when=asyncio.FIRST_COMPLETED
+                )
+                if token_guard_task is not None and token_guard_task in done:
+                    self._disable_live_send()
+                    await token_guard_task
         finally:
             # Arresto pulito di tutti i loop, in ogni caso (anche su
             # cancellazione): nessun task orfano.
@@ -340,6 +378,8 @@ class Agent:
                 task.cancel()
             summarizer_task.cancel()
             pump_task.cancel()
+            if token_guard_task is not None:
+                token_guard_task.cancel()
             # Stop sender before gathering child results; capture its error
             # so it can be reported alongside other shutdown failures.
             sender_error: BaseException | None = None
@@ -351,14 +391,28 @@ class Agent:
                         sender_error = None
                     else:
                         sender_error = exc
-            results = await asyncio.gather(
-                *reactor_tasks, summarizer_task, pump_task, return_exceptions=True
-            )
+            child_tasks = [*reactor_tasks, summarizer_task, pump_task]
+            if token_guard_task is not None:
+                child_tasks.append(token_guard_task)
+            results = await asyncio.gather(*child_tasks, return_exceptions=True)
             errors = _unexpected_shutdown_errors(results)
             if sender_error is not None:
                 errors.append(sender_error)
             if errors:
                 _raise_shutdown_errors(errors)
+
+    def _disable_live_send(self) -> None:
+        policy = self.send_policy
+        disable = getattr(policy, "disable_live", None)
+        if callable(disable):
+            disable()
+
+    async def _disable_live_send_async(self) -> None:
+        self._disable_live_send()
+        sender = self.sender
+        stop = getattr(sender, "stop", None)
+        if callable(stop):
+            await stop()
 
 
 def _unexpected_shutdown_errors(results: list[object]) -> list[BaseException]:
@@ -749,6 +803,8 @@ def build_agent(
     adapter: SourceAdapter | None = None,
     twitch_chat_connect: ConnectIRC | None = None,
     twitch_send_connect: ConnectIRC | None = None,
+    twitch_token_transport: TokenValidationTransport | None = None,
+    twitch_token_validation_interval: float = 60.0 * 60.0,
     audio_perceiver: AudioPerceiver | None = None,
     video_perceiver: VideoPerceiver | None = None,
     perception_queue: BoundedLocalPerceptionQueue | None = None,
@@ -798,9 +854,10 @@ def build_agent(
     - `OutputRouter` selezionato dalla modalità (`public`/`private`).
     - `Reactor(...)` che lega tutto insieme.
     """
-    # Gate fail-fast dell'invio pubblico: `twitch.send.mode: live` richiede il
-    # token di scrittura in ambiente, qualunque sia l'adapter iniettato.
+    # Gate fail-fast dell'invio pubblico: `twitch.send.mode: live` valida poi
+    # entrambi i token, quindi richiede già al build username, read e send.
     if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
+        _required_twitch_chat_credentials()
         _required_twitch_send_credentials()
 
     path = (
@@ -856,12 +913,20 @@ def build_agent(
     # Costruzione del sender: SOLO quando il config dichiara mode: live.
     # off/shadow non costruiscono il sender né leggono il token di scrittura.
     sender: TwitchChatSender | None = None
+    token_guard: TwitchLiveTokenGuard | None = None
     if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
         sender = TwitchChatSender(
             channel=config.twitch.channel,
             username=os.environ["TWITCH_BOT_USERNAME"],
             oauth_token=os.environ[TWITCH_SEND_TOKEN_ENV_VAR],
             connect=twitch_send_connect or _connect_twitch_irc,
+        )
+        token_guard = TwitchLiveTokenGuard(
+            username=os.environ["TWITCH_BOT_USERNAME"],
+            read_token=os.environ["TWITCH_OAUTH_TOKEN"],
+            send_token=os.environ[TWITCH_SEND_TOKEN_ENV_VAR],
+            transport=twitch_token_transport,
+            interval=twitch_token_validation_interval,
         )
 
     # -- Determine styles to build Reactors for --------------------------------
@@ -1123,6 +1188,7 @@ def build_agent(
         video_diagnostics=video_perceiver,
         send_policy=send_policy,
         sender=sender,
+        token_guard=token_guard,
     )
 
 

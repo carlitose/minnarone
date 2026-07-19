@@ -24,6 +24,7 @@ from minnarone.public_send import (
     SendDecision,
 )
 from minnarone.shadow_router import TwitchPublicOutputRouter
+from minnarone.twitch_auth import TwitchValidateResponse
 from minnarone.twitch_chat_sender import TwitchSendConnectionError, TwitchSendError
 
 # --- Fakes per isolamento del router ----------------------------------------
@@ -295,6 +296,22 @@ def _fake_transport(*, url, headers, body, timeout):
 
     payload = b'{"choices":[{"message":{"content":"ciao"}}]}'
     return HttpResponse(status=200, body=payload)
+
+
+def _fake_twitch_token_transport(*, token, timeout):
+    del token, timeout
+    return TwitchValidateResponse(
+        status=200,
+        body=json.dumps(
+            {
+                "client_id": "client",
+                "login": "bot",
+                "scopes": ["chat:read", "chat:edit"],
+                "user_id": "123",
+                "expires_in": 3600,
+            }
+        ).encode(),
+    )
 
 
 def _write_workspace(tmp_path, *, send_mode="off"):
@@ -921,6 +938,7 @@ def test_agent_starts_and_stops_cleanly_with_sender(tmp_path, monkeypatch):
         transport=_fake_transport,
         store_path=tmp_path / "p.jsonl",
         adapter=adapter,
+        twitch_token_transport=_fake_twitch_token_transport,
     )
     # Replace the real sender with a fake one for lifecycle testing
     agent = replace(agent, sender=sender, adapter=None, perception_queue=None)
@@ -959,6 +977,7 @@ def test_agent_surfaces_sender_stop_failure(tmp_path, monkeypatch):
         cfg,
         transport=_fake_transport,
         store_path=tmp_path / "p.jsonl",
+        twitch_token_transport=_fake_twitch_token_transport,
     )
     agent = replace(agent, sender=sender, adapter=None, perception_queue=None)
 

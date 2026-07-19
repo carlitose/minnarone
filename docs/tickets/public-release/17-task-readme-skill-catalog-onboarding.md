@@ -43,13 +43,13 @@ senza contesto privato.
 - [11-task-rename-prompts-skill.md](done/11-task-rename-prompts-skill.md) — done
 - [12-research-first-operator-journey.md](done/12-research-first-operator-journey.md) — done
 - [16-prototype-agent-and-human-onboarding.md](done/16-prototype-agent-and-human-onboarding.md) — done
-- [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
+- [18-task-fix-operator-journey-drift.md](done/18-task-fix-operator-journey-drift.md) — done
 
 ## Frontier
 
-Il README attuale è ricco ma lungo e reference-first. Il catalogo skill non può
-essere scritto prima del rename e del prototipo, altrimenti documenterebbe
-nomi/superfici destinati a cambiare.
+Il README attuale è ricco ma lungo e reference-first. Rename, prototipo e drift
+runtime sono ora chiusi: il ticket è sbloccato e può documentare nomi e superfici
+stabili.
 
 ## Work Plan
 
