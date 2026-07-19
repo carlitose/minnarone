@@ -365,11 +365,12 @@ def test_observability_snapshot_includes_run_channel_and_uptime(tmp_path):
     assert "uptime=" in status
 
 
-def test_build_agent_default_hides_ai_disclosure(tmp_path):
+def test_build_agent_default_does_not_announce_ai_but_stays_truthful(tmp_path):
     cfg = Config.load(_write_workspace(tmp_path, announce_ai=False))
     agent = build_agent(cfg, transport=_fake_transport)
     prefix = agent.prompt_builder.stable_prefix()
-    assert "Non rivelare MAI di essere un'AI" in prefix
+    assert "Non annunciare spontaneamente di essere un'AI" in prefix
+    assert "non mentire" in prefix
 
 
 def test_build_agent_loads_soul_and_facts_from_config(tmp_path):
@@ -514,6 +515,279 @@ def test_twitch_send_live_build_succeeds_with_write_token(tmp_path, monkeypatch)
     agent = build_agent(cfg, transport=_fake_transport)
 
     assert agent.config.twitch.send.mode is TwitchSendMode.LIVE
+
+
+def test_live_startup_invalid_send_token_stays_shadow_without_sender(
+    tmp_path, monkeypatch
+):
+    from minnarone.fakes import FakeSourceAdapter
+    from minnarone.twitch_auth import TwitchValidateResponse
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:read-token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:send-token")
+    cfg = _live_send_twitch_config(tmp_path)
+
+    def token_transport(*, token, timeout):
+        del timeout
+        status = 401 if token == "send-token" else 200
+        return TwitchValidateResponse(
+            status=status,
+            body=json.dumps(
+                {
+                    "client_id": "client",
+                    "login": "bot_user",
+                    "scopes": ["chat:read", "chat:edit"],
+                    "user_id": "123",
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    async def forbidden_connect():
+        raise AssertionError("invalid send token must not open sender IRC")
+
+    agent = build_agent(
+        cfg,
+        transport=_fake_transport,
+        adapter=FakeSourceAdapter([], channels=set()),
+        twitch_send_connect=forbidden_connect,
+        twitch_token_transport=token_transport,
+    )
+
+    asyncio.run(agent.run())
+
+    assert agent.send_policy.promote() is False
+
+
+def test_guard_failure_wins_simultaneous_pump_completion_and_disarms_live(
+    tmp_path, monkeypatch
+):
+    from minnarone.twitch_auth import TwitchTokenValidationError
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:read-token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:send-token")
+    agent = build_agent(_live_send_twitch_config(tmp_path), transport=_fake_transport)
+    ready = asyncio.Event()
+    arrivals = 0
+
+    async def rendezvous():
+        nonlocal arrivals
+        arrivals += 1
+        if arrivals == 2:
+            ready.set()
+        await ready.wait()
+
+    class SimultaneousAdapter:
+        async def start(self):
+            return None
+
+        async def events(self):
+            await rendezvous()
+            yield RawEvent(channel="unhandled", payload=None, ts=0.0)
+
+        async def stop(self):
+            return None
+
+    class FailingGuard:
+        async def validate_startup(self):
+            return True
+
+        async def monitor(self, *, on_send_invalid):
+            del on_send_invalid
+            await rendezvous()
+            raise TwitchTokenValidationError("read token Twitch: revoked")
+
+    class RecordingReactor:
+        def __init__(self):
+            self.final_ticks = 0
+
+        async def run(self, *, interval):
+            del interval
+            await asyncio.Event().wait()
+
+        async def run_once(self):
+            self.final_ticks += 1
+
+        def stop(self):
+            return None
+
+    class RecordingSender:
+        def __init__(self):
+            self.started = False
+            self.stopped = False
+
+        async def start(self):
+            self.started = True
+
+        async def stop(self):
+            self.stopped = True
+
+    class RecordingPolicy:
+        def __init__(self):
+            self.disabled = False
+
+        def disable_live(self):
+            self.disabled = True
+
+    reactor = RecordingReactor()
+    sender = RecordingSender()
+    policy = RecordingPolicy()
+    agent = replace(
+        agent,
+        adapter=SimultaneousAdapter(),
+        perception_queue=None,
+        token_guard=FailingGuard(),
+        reactors=[reactor],
+        sender=sender,
+        send_policy=policy,
+    )
+
+    async def run_bounded():
+        await asyncio.wait_for(agent.run(), timeout=2.0)
+
+    with pytest.raises(TwitchTokenValidationError, match="read token Twitch"):
+        asyncio.run(run_bounded())
+
+    assert reactor.final_ticks == 0
+    assert policy.disabled is True
+    assert sender.started is True
+    assert sender.stopped is True
+
+
+def test_hourly_read_token_failure_stops_agent_and_disarms_live(tmp_path, monkeypatch):
+    from minnarone.twitch_auth import (
+        TwitchTokenValidationError,
+        TwitchValidateResponse,
+    )
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:read-token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:send-token")
+    read_calls = 0
+
+    def token_transport(*, token, timeout):
+        nonlocal read_calls
+        del timeout
+        if token == "read-token":
+            read_calls += 1
+            if read_calls > 1:
+                return TwitchValidateResponse(status=401, body=b'{"message":"invalid"}')
+            scopes = ["chat:read"]
+        else:
+            scopes = ["chat:edit"]
+        return TwitchValidateResponse(
+            status=200,
+            body=json.dumps(
+                {
+                    "client_id": "client",
+                    "login": "bot_user",
+                    "scopes": scopes,
+                    "user_id": "123",
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    class RecordingSender:
+        def __init__(self):
+            self.started = False
+            self.stopped = False
+
+        async def start(self):
+            self.started = True
+
+        async def stop(self):
+            self.stopped = True
+
+    sender = RecordingSender()
+    agent = build_agent(
+        _live_send_twitch_config(tmp_path),
+        transport=_fake_transport,
+        twitch_token_transport=token_transport,
+        twitch_token_validation_interval=0.01,
+    )
+    agent = replace(agent, adapter=None, perception_queue=None, sender=sender)
+
+    with pytest.raises(TwitchTokenValidationError, match="read token Twitch"):
+        asyncio.run(asyncio.wait_for(agent.run(), timeout=2.0))
+
+    assert read_calls == 2
+    assert agent.send_policy.promote() is False
+    assert sender.started is True
+    assert sender.stopped is True
+
+
+def test_hourly_send_token_failure_degrades_agent_without_stopping_run(
+    tmp_path, monkeypatch
+):
+    from minnarone.twitch_auth import TwitchValidateResponse
+
+    monkeypatch.setenv("TWITCH_BOT_USERNAME", "bot_user")
+    monkeypatch.setenv("TWITCH_OAUTH_TOKEN", "oauth:read-token")
+    monkeypatch.setenv("TWITCH_SEND_OAUTH_TOKEN", "oauth:send-token")
+    send_calls = 0
+
+    def token_transport(*, token, timeout):
+        nonlocal send_calls
+        del timeout
+        if token == "send-token":
+            send_calls += 1
+            if send_calls > 1:
+                return TwitchValidateResponse(status=401, body=b'{"message":"invalid"}')
+            scopes = ["chat:edit"]
+        else:
+            scopes = ["chat:read"]
+        return TwitchValidateResponse(
+            status=200,
+            body=json.dumps(
+                {
+                    "client_id": "client",
+                    "login": "bot_user",
+                    "scopes": scopes,
+                    "user_id": "123",
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    class RecordingSender:
+        def __init__(self):
+            self.started = False
+            self.stop_calls = 0
+            self.stopped = asyncio.Event()
+
+        async def start(self):
+            self.started = True
+
+        async def stop(self):
+            self.stop_calls += 1
+            self.stopped.set()
+
+    sender = RecordingSender()
+    agent = build_agent(
+        _live_send_twitch_config(tmp_path),
+        transport=_fake_transport,
+        twitch_token_transport=token_transport,
+        twitch_token_validation_interval=0.01,
+    )
+    agent = replace(agent, adapter=None, perception_queue=None, sender=sender)
+
+    async def run():
+        task = asyncio.create_task(agent.run())
+        await asyncio.wait_for(sender.stopped.wait(), timeout=2.0)
+        assert task.done() is False
+        assert agent.send_policy.promote() is False
+        for reactor in agent.reactors:
+            reactor.stop()
+        await asyncio.wait_for(task, timeout=2.0)
+
+    asyncio.run(run())
+
+    assert send_calls == 2
+    assert sender.started is True
+    assert sender.stop_calls >= 1
 
 
 def test_twitch_chat_runtime_reacts_to_console_without_sending_chat(

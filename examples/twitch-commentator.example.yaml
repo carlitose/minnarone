@@ -54,15 +54,15 @@ asr:
   condition_on_previous_text: false
 
 speaker_embedding:
-  model_path: null
+  model_path: null # 3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192
+  dimension: 512
 
 speaker_clustering:
   # threshold is the cosine-similarity join floor (higher = more splitting).
-  # 0.45 is a reasonable starting point, not universal: tune per model/language.
-  threshold: 0.45
+  # 0.5 is the recommended VoxCeleb starting point; tune on representative audio.
+  threshold: 0.5
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -88,12 +88,14 @@ vlm:
   max_image_pixels: 500000
 
 llm_params:
-  thinking: low
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low
 
 disclosure:
   announce_ai: false
 
 retention:
-  perceptions_days: 7
+  perceptions_days: 7 # reserved/inert: delete local artifacts manually
 
 auto_memory: false

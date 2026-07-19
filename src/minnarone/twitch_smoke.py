@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .audio import Vad
+from .dotenv import load_env_files
 from .source import SourceAdapter
 from .twitch_audio import ProcessRunner, TwitchAudioReader, pcm_chunk_size_bytes
 from .twitch_chat import TwitchChatReader, capture_chat_smoke
@@ -114,6 +115,14 @@ def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
         help="disabilita la cattura chat IRC",
     )
     parser.add_argument(
+        "--strict-chat",
+        action="store_true",
+        help=(
+            "considera zero eventi chat un fallimento anche quando audio/video "
+            "sono riusciti"
+        ),
+    )
+    parser.add_argument(
         "--video",
         action="store_true",
         help="abilita cattura video raw via Streamlink/FFmpeg",
@@ -161,6 +170,7 @@ def chat_main(argv: Sequence[str] | None = None) -> int:
         print("--duration deve essere > 0", file=sys.stderr)
         return 2
 
+    load_env_files()
     missing = _missing_twitch_env()
     if missing:
         print(
@@ -321,10 +331,18 @@ async def run_twitch_chat_smoke(
 
 
 def _smoke_failures(
-    stats: SmokeStats, *, enable_chat: bool, enable_audio: bool, enable_video: bool
+    stats: SmokeStats,
+    *,
+    enable_chat: bool,
+    enable_audio: bool,
+    enable_video: bool,
+    strict_chat: bool = False,
 ) -> list[str]:
     failures = list(stats.failures)
-    if enable_chat and stats.chat_events == 0:
+    successful_media = (enable_audio and stats.audio_events > 0) or (
+        enable_video and stats.video_events > 0
+    )
+    if enable_chat and stats.chat_events == 0 and (strict_chat or not successful_media):
         failures.append("chat: nessun evento catturato")
     if enable_audio and stats.audio_events == 0:
         failures.append("audio: nessun evento catturato")
@@ -372,6 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("--max-video-frames deve essere >= 0", file=sys.stderr)
         return 2
 
+    load_env_files()
     enable_chat = not args.no_chat
     enable_audio = bool(args.audio or args.vad_diagnostic)
     enable_video = bool(args.video)
@@ -425,6 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         enable_chat=enable_chat,
         enable_audio=enable_audio,
         enable_video=enable_video,
+        strict_chat=args.strict_chat,
     )
     if failures:
         print(
@@ -432,6 +452,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+
+    if enable_chat and stats.chat_events == 0:
+        print(
+            "nota: chat quieta nella finestra; audio/video richiesti sono riusciti "
+            "(usa --strict-chat per rendere zero chat bloccante)"
+        )
 
     print(
         "ok: "

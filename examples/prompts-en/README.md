@@ -53,5 +53,5 @@ The anti-injection and disclosure rules are **hard-coded** in `prompt.py` and ar
 intentionally NOT part of these editable files. A prompt override can change the
 persona and language but can never weaken the security boundary: the untrusted
 data fence (`DATI_PERCEPITI`, the `| ` line prefix) is always hard-coded, and
-the safety rules text is always prepended right under the `regole` label,
-whatever that label says.
+the configured disclosure stance is appended after tunable rules so an override
+cannot become the last, contradictory instruction.

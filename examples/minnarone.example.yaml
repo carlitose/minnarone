@@ -21,11 +21,13 @@ idle_interval: 150.0       # commento proattivo in assenza di trigger (secondi)
 recent_chat_window: 15     # quanti messaggi di chat recenti nel prompt
 
 llm_params:
-  thinking: low            # parametri passati al provider
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low            # low | medium | high
 
 # --- punti di estensione v2 (presenti ma inerti nell'MVP) ---
 disclosure:
   announce_ai: false       # se l'agente dichiara di essere un'AI
 
 retention:
-  perceptions_days: 7      # per quanto conservare le percezioni (null = sempre)
+  perceptions_days: 7      # riservato/inerte: elimina gli artefatti manualmente

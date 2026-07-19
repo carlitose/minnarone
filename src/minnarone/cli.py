@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Sequence
 from contextlib import suppress
@@ -32,6 +31,12 @@ import yaml
 
 from .app import build_agent
 from .config import Config, ConfigError
+from .dotenv import (
+    load_dotenv_file as load_dotenv_file,
+)
+from .dotenv import (
+    load_env_files as _load_env_files,
+)
 from .live_tui import (
     LiveTuiDependencyError,
     ensure_live_tui_available,
@@ -51,6 +56,7 @@ from .prompt_source import (
 )
 from .replay import run_replay_tui
 from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
+from .twitch_auth import TwitchTokenValidationError
 from .twitch_stream import TwitchStreamRuntimeError
 
 
@@ -88,63 +94,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     if args.replay is None and args.config is None:
         parser.error("config richiesto a meno di usare --replay")
     return args
-
-
-def load_dotenv_file(path: Path) -> list[str]:
-    """Carica un file `.env` in `os.environ`, ritorna i nomi delle chiavi caricate.
-
-    Loader minimale a zero dipendenze per la comodità dell'operatore: evita di
-    riesportare i segreti (OPENROUTER_API_KEY, TWITCH_*) in ogni terminale.
-
-    Regole:
-    - file assente → no-op (lista vuota);
-    - righe `KEY=VALUE`, con `KEY` alfanumerico/underscore; supporta il prefisso
-      `export ` e le virgolette (singole o doppie) attorno al valore;
-    - righe vuote o che iniziano con `#` ignorate; righe malformate saltate;
-    - una chiave viene impostata SOLO se non già presente in `os.environ`
-      (l'ambiente del terminale vince sul file — semantica dotenv standard).
-
-    Non stampa né ritorna MAI i valori (sono segreti), solo i nomi delle chiavi.
-    """
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []
-
-    loaded: list[str] = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].lstrip()
-        key, sep, value = line.partition("=")
-        if not sep:
-            continue
-        key = key.strip()
-        if not key or not key.replace("_", "").isalnum():
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        if key in os.environ:
-            continue
-        os.environ[key] = value
-        loaded.append(key)
-    return loaded
-
-
-def _load_env_files(config_path: str | None) -> None:
-    """Carica i `.env` prima di leggere i segreti: dir del config, poi cwd.
-
-    Il primo che definisce una chiave vince (config-dir ha precedenza sul cwd),
-    coerente con `load_dotenv_file` che non sovrascrive chiavi già presenti.
-    Così i segreti possono stare accanto ai config locali (es. `.local/.env`)
-    oppure nella root del repo (`.env`).
-    """
-    if config_path is not None:
-        load_dotenv_file(Path(config_path).resolve().parent / ".env")
-    load_dotenv_file(Path(".env"))
 
 
 def _create_live_run_session(config: Config) -> RunSession:
@@ -380,6 +329,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             asyncio.run(agent.run())
     except TwitchStreamRuntimeError as exc:
         print(f"errore runtime Twitch: {exc}", file=sys.stderr)
+        return 1
+    except TwitchTokenValidationError as exc:
+        print(f"errore credenziali Twitch: {exc}", file=sys.stderr)
         return 1
     except LiveTuiDependencyError as exc:
         print(str(exc), file=sys.stderr)

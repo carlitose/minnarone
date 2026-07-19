@@ -49,7 +49,9 @@ perception_queue_size: 32  # tetto della work queue percezioni (backpressure)
 perception_shutdown_timeout: 5.0
 
 llm_params:
-  thinking: low            # parametri passati al provider
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low            # low | medium | high
 
 # Vision captioning locale (Qwen2-VL). Il prompt di default del backend è
 # pensato per stream Twitch e porta il modello a inventare contesto Twitch:
@@ -67,4 +69,4 @@ disclosure:
   announce_ai: false       # se l'agente dichiara di essere un'AI
 
 retention:
-  perceptions_days: 7      # per quanto conservare le percezioni (null = sempre)
+  perceptions_days: 7      # riservato/inerte: elimina gli artefatti manualmente

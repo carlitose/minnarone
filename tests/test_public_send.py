@@ -5,7 +5,9 @@ nessun I/O. La suite copre in modo esaustivo ogni combinazione di
 `{mode, promoted, kill-switch, allow-list, budget}` e ogni `reason`.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
+from threading import Barrier
 
 import pytest
 
@@ -133,6 +135,55 @@ def test_live_kill_switch_reverts_to_shadow():
     decision = policy.decide("ciao", "canale")
     assert decision.action == "shadow"
     assert decision.reason == "kill_switch"
+
+
+def test_invalid_send_credentials_disarm_live_for_rest_of_session():
+    policy = _policy(_live_config())
+    assert policy.promote() is True
+
+    policy.disable_live()
+
+    assert policy.decide("ciao", "canale").action == "shadow"
+    assert policy.promote() is False
+
+
+def test_live_disabled_is_an_independent_fail_closed_decision_gate():
+    policy = _policy(_live_config())
+    assert policy.promote() is True
+
+    # Simula uno snapshot concorrente nel punto tra il disarmo permanente e
+    # l'ingaggio del kill-switch: live_disabled deve bastare da solo.
+    policy._live_disabled = True
+    policy._kill_switch = False
+
+    decision = policy.decide("ciao", "canale")
+
+    assert decision.action == "shadow"
+    assert decision.reason == "kill_switch"
+
+
+def test_concurrent_promote_and_disable_always_finish_fail_closed():
+    policy = _policy(_live_config())
+    start = Barrier(3)
+
+    def promote():
+        start.wait()
+        return policy.promote()
+
+    def disable():
+        start.wait()
+        policy.disable_live()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        promote_result = executor.submit(promote)
+        disable_result = executor.submit(disable)
+        start.wait()
+        promote_result.result(timeout=1.0)
+        disable_result.result(timeout=1.0)
+
+    assert policy.promote() is False
+    assert policy.decide("ciao", "canale").action == "shadow"
+    assert policy.snapshot().kill_switch is True
 
 
 def test_kill_switch_reason_distinct_from_not_promoted():

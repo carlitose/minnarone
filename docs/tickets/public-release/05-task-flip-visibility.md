@@ -41,7 +41,7 @@ GitHub, nessun contenuto inatteso in issue/PR pubbliche.
 - [15-research-runtime-model-profiles.md](done/15-research-runtime-model-profiles.md) — done
 - [16-prototype-agent-and-human-onboarding.md](done/16-prototype-agent-and-human-onboarding.md) — done
 - [17-task-readme-skill-catalog-onboarding.md](17-task-readme-skill-catalog-onboarding.md)
-- [18-task-fix-operator-journey-drift.md](18-task-fix-operator-journey-drift.md)
+- [18-task-fix-operator-journey-drift.md](done/18-task-fix-operator-journey-drift.md) — done
 
 ## Frontier
 

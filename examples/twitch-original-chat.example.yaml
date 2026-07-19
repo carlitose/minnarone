@@ -37,12 +37,14 @@ perception_queue_size: 32
 perception_shutdown_timeout: 5.0
 
 llm_params:
-  thinking: low
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low
 
 disclosure:
   announce_ai: false
 
 retention:
-  perceptions_days: 7
+  perceptions_days: 7 # reserved/inert: delete local artifacts manually
 
 auto_memory: false

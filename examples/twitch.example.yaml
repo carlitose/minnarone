@@ -4,7 +4,7 @@
 # Secrets stay in environment variables:
 #   TWITCH_BOT_USERNAME    (read-only IRC ingestion)
 #   TWITCH_OAUTH_TOKEN     (read-only IRC ingestion)
-#   TWITCH_SEND_OAUTH_TOKEN (write-scope token, only needed for shadow/live)
+#   TWITCH_SEND_OAUTH_TOKEN (write token, only needed for live)
 
 mode: public
 soul_path: soul.md
@@ -59,17 +59,16 @@ asr:
 
 speaker_embedding:
   # Point this at a local sherpa-onnx speaker embedding ONNX model
-  # (for example a CAM++ 192-dimensional model). No model is downloaded by
-  # Minnarone.
-  model_path: null
+  # (recommended: English VoxCeleb CAM++). No model is downloaded by Minnarone.
+  model_path: null # 3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
   provider: cpu
   num_threads: 1
-  dimension: 192
+  dimension: 512
 
 speaker_clustering:
   # threshold is the cosine-similarity join floor (higher = more splitting).
-  # 0.45 is a reasonable starting point, not universal: tune per model/language.
-  threshold: 0.45
+  # 0.5 is the recommended VoxCeleb starting point; tune on representative audio.
+  threshold: 0.5
   warmup_seconds: 60.0
   min_update_seconds: 1.0
 
@@ -103,12 +102,14 @@ commentator:
   # remains available.
 
 llm_params:
-  thinking: low
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low
 
 disclosure:
   announce_ai: false
 
 retention:
-  perceptions_days: 7
+  perceptions_days: 7 # reserved/inert: delete local artifacts manually
 
 auto_memory: false
