@@ -17,26 +17,26 @@ senza contesto privato.
 
 ## Acceptance Criteria
 
-- [ ] README inglese e italiano iniziano con un quickstart task-first e rimandano
+- [x] README inglese e italiano iniziano con un quickstart task-first e rimandano
       i dettagli lunghi alle guide operative.
-- [ ] È spiegata senza ambiguità la differenza tra config, `soul`, `facts` e
+- [x] È spiegata senza ambiguità la differenza tra config, `soul`, `facts` e
       prompt template/override.
-- [ ] Il catalogo elenca ogni skill pubblica col nome canonico, trigger, azioni,
+- [x] Il catalogo elenca ogni skill pubblica col nome canonico, trigger, azioni,
       confini e link funzionante.
-- [ ] Sono presenti golden path progressivi: chat-only shadow, media smoke,
+- [x] Sono presenti golden path progressivi: chat-only shadow, media smoke,
       full multimodal, live attended-only con doppio `p` e `k`.
-- [ ] Il live documenta consenso broadcaster, account bot dedicato, validazione
+- [x] Il live documenta consenso broadcaster, account bot dedicato, validazione
       token, disclosure e fallback shadow/stop senza promettere il Chat Bot
       Badge sul trasporto IRC; distingue inoltre i limiti Twitch dai budget
       conservativi Minnarone.
-- [ ] La guida dichiara `retention.perceptions_days` inerte ed elenca artifact,
+- [x] La guida dichiara `retention.perceptions_days` inerte ed elenca artifact,
       cancellazione manuale e opt-out finché manca enforcement runtime.
-- [ ] Config/template pubblici non contengono path personali né credenziali.
-- [ ] I golden config italiani usano CAM++ English VoxCeleb con
+- [x] Config/template pubblici non contengono path personali né credenziali.
+- [x] I golden config italiani usano CAM++ English VoxCeleb con
       `dimension: 512` e spiegano che il vecchio zh-cn 192-dim non è il default.
-- [ ] `AGENTS.md`/CONTRIBUTING pointers coprono architettura, comandi quality,
+- [x] `AGENTS.md`/CONTRIBUTING pointers coprono architettura, comandi quality,
       prompt safety, worktree sporco e skill routing.
-- [ ] Percorso umano e code-agent vengono verificati da clone pulito.
+- [x] Percorso umano e code-agent vengono verificati da clone pulito.
 
 ## Blocked By
 
@@ -70,3 +70,23 @@ stabili.
 - Tradurre tutta `docs/`.
 - Marketing/social launch.
 - Supportare ogni adapter nel quickstart iniziale.
+
+## Completion Evidence (2026-07-19)
+
+- README EN/IT task-first, catalogo di tre skill pubbliche, golden path progressivi,
+  gate live e disclosure/retention documentati.
+- Skill `minnarone-twitch-onboarding` e `minnarone-runtime-doctor` scaffoldate e
+  validate con `quick_validate.py`; alias Claude relativi e limite
+  `core.symlinks=false` documentato/testato.
+- Config onboarding sanitizzate; profilo italiano P3 usa CAM++ English VoxCeleb
+  512-dim con soglia `0.5`. Il manifest autentica tutti i file richiesti e rende
+  obbligatorio anche il loader smoke locale.
+- Suite completa: `1277 passed`; `make quality`, entrambi i validator skill e
+  `git diff --check` verdi.
+- Tre iterazioni di review: verdetto finale code-review `Pass`, anti-pattern
+  review `LGTM`, nessun finding residuo.
+- QA da clone locale pulito: `uv sync --extra tui`, copia template, `--check` e
+  `validate-prompts --config` verdi; percorso code-agent con extra dev, 50 test
+  onboarding/operator, `make quality`, validator skill e symlink check verdi.
+- Non eseguiti perché richiedono rete/account/hardware o invio reale: Twitch TUI,
+  smoke P1-P5, inferenza Apple/CUDA/llama.cpp e promozione live.
