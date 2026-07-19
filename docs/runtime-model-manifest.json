@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-07-18",
+  "policy": {
+    "download": "explicit-only",
+    "verification": "sha256-before-first-run",
+    "default_root": ".local/models",
+    "weight_digest_semantics": "A primary weight digest is necessary but never sufficient for model readiness.",
+    "required_file_provenance": "Every required_files entry is authenticated at its bundle source owner and revision by direct bytes plus SHA-256 or by a resolving artifact reference.",
+    "model_readiness_pass_requires": [
+      "all_required_bundle_files_present",
+      "all_required_bundle_files_authenticated_at_pinned_source",
+      "all_published_digests_match",
+      "profile_specific_local_loader_smoke_passed"
+    ]
+  },
+  "profiles": {
+    "P0": {"name": "chat-only", "bundles": []},
+    "P1": {"name": "capture-smoke", "bundles": []},
+    "P2": {"name": "cpu-light-audio", "bundles": ["asr-large-v3-turbo", "speaker-voxceleb-campp-512"]},
+    "P3": {"name": "apple-silicon-full", "bundles": ["asr-large-v3-turbo", "speaker-voxceleb-campp-512", "qwen2-vl-2b-torch"]},
+    "P4": {"name": "cuda-full", "bundles": ["asr-large-v3-turbo", "speaker-voxceleb-campp-512", "qwen2-vl-2b-torch"]},
+    "P5": {"name": "llamacpp-full-local", "bundles": ["asr-large-v3-turbo", "speaker-voxceleb-campp-512", "gemma-4-llamacpp"], "runtime": "llama-cpp-b10016"}
+  },
+  "bundles": {
+    "asr-large-v3-turbo": {
+      "source": {
+        "owner": "dropbox-dash/faster-whisper-large-v3-turbo",
+        "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+      },
+      "artifacts": ["asr-large-v3-turbo"],
+      "required_files": {
+        "config.json": {
+          "bytes": 2263,
+          "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e"
+        },
+        "model.bin": {"artifact": "asr-large-v3-turbo"},
+        "preprocessor_config.json": {
+          "bytes": 340,
+          "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+        },
+        "tokenizer.json": {
+          "bytes": 2710337,
+          "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"
+        },
+        "vocabulary.json": {
+          "bytes": 1068114,
+          "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+      },
+      "loader_smoke": {
+        "probe": "Load the pinned local snapshot with faster-whisper in offline mode and transcribe bounded known 16 kHz PCM.",
+        "pass_condition": "The loader performs no download and returns plausible non-empty text without a model/config/tokenizer error."
+      }
+    },
+    "speaker-voxceleb-campp-512": {
+      "source": {
+        "owner": "k2-fsa/sherpa-onnx",
+        "revision": "speaker-recongition-models"
+      },
+      "artifacts": ["speaker-voxceleb-campp-512"],
+      "required_files": {
+        "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx": {
+          "artifact": "speaker-voxceleb-campp-512"
+        }
+      },
+      "loader_smoke": {
+        "probe": "Load the ONNX file with the configured sherpa-onnx CPU backend and embed bounded 16 kHz speech.",
+        "pass_condition": "The embedding has 512 finite values and a norm near 1 without a loader/provider error."
+      }
+    },
+    "qwen2-vl-2b-torch": {
+      "source": {
+        "owner": "Qwen/Qwen2-VL-2B-Instruct",
+        "revision": "895c3a49bc3fa70a340399125c650a463535e71c"
+      },
+      "artifacts": ["qwen2-vl-2b-shard-1", "qwen2-vl-2b-shard-2"],
+      "required_files": {
+        "config.json": {
+          "bytes": 1196,
+          "sha256": "422adefa19e62dd175961cec85bc0400344fe5bf9b22bd1182e05aaae78556e0"
+        },
+        "generation_config.json": {
+          "bytes": 272,
+          "sha256": "d2864bf1edea5863d331edfff48106b586a366f5a2c41aa77731fadc53aa25d2"
+        },
+        "merges.txt": {
+          "bytes": 1671839,
+          "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+        },
+        "model-00001-of-00002.safetensors": {
+          "artifact": "qwen2-vl-2b-shard-1"
+        },
+        "model-00002-of-00002.safetensors": {
+          "artifact": "qwen2-vl-2b-shard-2"
+        },
+        "model.safetensors.index.json": {
+          "bytes": 56411,
+          "sha256": "260ab9fa1418d6d6ab79daa1d9da2c47264f3b72edb4630fc799077ac67d27c6"
+        },
+        "preprocessor_config.json": {
+          "bytes": 347,
+          "sha256": "b5eaad0c2815f07631535dcc58f3c462b0d73693638ad21d19f3c50820eae1cc"
+        },
+        "tokenizer.json": {
+          "bytes": 7029741,
+          "sha256": "cb63a0a23eef3d5b01063a9880a1925a65aaf4d1591d519910ee3527852950a0"
+        },
+        "tokenizer_config.json": {
+          "bytes": 4190,
+          "sha256": "ff5c4fd898fe8c39591eb70e5d39d2782802d4204d6ae9ba1223252f354842a0"
+        },
+        "vocab.json": {
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      },
+      "loader_smoke": {
+        "probe": "Load processor and model from the pinned local directory with local-files-only behavior, then caption one bounded image.",
+        "pass_condition": "The first inference performs no download and returns a bounded non-empty caption on the selected profile device."
+      }
+    },
+    "gemma-4-llamacpp": {
+      "source": {
+        "owner": "unsloth/gemma-4-E2B-it-qat-GGUF",
+        "revision": "66a399f68ddd113b06dff02fca9523e55465d11d"
+      },
+      "artifacts": ["gemma-4-gguf", "gemma-4-mmproj"],
+      "required_files": {
+        "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf": {
+          "artifact": "gemma-4-gguf"
+        },
+        "mmproj-F16.gguf": {"artifact": "gemma-4-mmproj"}
+      },
+      "loader_smoke": {
+        "probe": "Start the pinned local llama.cpp runtime with the paired GGUF and mmproj, verify /health and vision in /props, then caption one bounded image.",
+        "pass_condition": "Health is ready, vision is enabled, and the server returns a bounded non-empty caption without loading a different revision."
+      }
+    },
+    "qwen2-vl-2b-llamacpp-experimental": {
+      "source": {
+        "owner": "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
+        "revision": "bb307c036e8a1ed7b663bbd0c35b41c4c9294cfd"
+      },
+      "artifacts": ["qwen2-vl-2b-gguf-experimental", "qwen2-vl-2b-mmproj-experimental"],
+      "required_files": {
+        "Qwen2-VL-2B-Instruct-Q4_K_M.gguf": {
+          "artifact": "qwen2-vl-2b-gguf-experimental"
+        },
+        "mmproj-Qwen2-VL-2B-Instruct-Q8_0.gguf": {
+          "artifact": "qwen2-vl-2b-mmproj-experimental"
+        }
+      },
+      "loader_smoke": {
+        "probe": "Start the pinned local llama.cpp runtime with the paired experimental GGUF and mmproj, verify /health and vision in /props, then caption one bounded image.",
+        "pass_condition": "Health is ready, vision is enabled, and the server returns a bounded non-empty caption; otherwise this experimental bundle is not ready."
+      }
+    }
+  },
+  "artifacts": {
+    "asr-large-v3-turbo": {
+      "owner": "dropbox-dash/faster-whisper-large-v3-turbo",
+      "filename": "model.bin",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "license": "MIT",
+      "bytes": 1617884929,
+      "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"
+    },
+    "speaker-voxceleb-campp-512": {
+      "owner": "k2-fsa/sherpa-onnx",
+      "filename": "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+      "revision": "speaker-recongition-models",
+      "license": "Apache-2.0",
+      "embedding_dimension": 512,
+      "bytes": 29596978,
+      "sha256": "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b"
+    },
+    "qwen2-vl-2b-shard-1": {
+      "owner": "Qwen/Qwen2-VL-2B-Instruct",
+      "filename": "model-00001-of-00002.safetensors",
+      "revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+      "license": "Apache-2.0",
+      "bytes": 3988609112,
+      "sha256": "994ac2b03f97de8bc647d0fe5eba2e4b632b3e28dc03574c29bdfc36cf47e1b9"
+    },
+    "qwen2-vl-2b-shard-2": {
+      "owner": "Qwen/Qwen2-VL-2B-Instruct",
+      "filename": "model-00002-of-00002.safetensors",
+      "revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+      "license": "Apache-2.0",
+      "bytes": 429441656,
+      "sha256": "92540d8353c8d226a589a3b179bdb33851c970ee2cc2ac7ba035f79425e7b833"
+    },
+    "gemma-4-gguf": {
+      "owner": "unsloth/gemma-4-E2B-it-qat-GGUF",
+      "filename": "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+      "revision": "66a399f68ddd113b06dff02fca9523e55465d11d",
+      "license": "Apache-2.0",
+      "bytes": 2620370976,
+      "sha256": "e531007218dfab990486a5de7676a6932d6ea8dea233d1f698d7c21cf8a16889"
+    },
+    "gemma-4-mmproj": {
+      "owner": "unsloth/gemma-4-E2B-it-qat-GGUF",
+      "filename": "mmproj-F16.gguf",
+      "revision": "66a399f68ddd113b06dff02fca9523e55465d11d",
+      "license": "Apache-2.0",
+      "bytes": 985654080,
+      "sha256": "13c8966d1635d02e6727f27402880614906fa291850c07feda18dbcddf2291b6"
+    },
+    "qwen2-vl-2b-gguf-experimental": {
+      "owner": "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
+      "filename": "Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+      "revision": "bb307c036e8a1ed7b663bbd0c35b41c4c9294cfd",
+      "license": "Apache-2.0",
+      "experimental": true,
+      "bytes": 986046944,
+      "sha256": "5745685d2e607a82a0696c1118e56a2a1ae0901da450fd9cd4f161c6b62867d7"
+    },
+    "qwen2-vl-2b-mmproj-experimental": {
+      "owner": "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
+      "filename": "mmproj-Qwen2-VL-2B-Instruct-Q8_0.gguf",
+      "revision": "bb307c036e8a1ed7b663bbd0c35b41c4c9294cfd",
+      "license": "Apache-2.0",
+      "experimental": true,
+      "bytes": 709883360,
+      "sha256": "a0ad91f00a7a80dcf84d719a61b00ee2e07b71794f4ee2dfa81a254621a8c418"
+    }
+  },
+  "runtimes": {
+    "llama-cpp-b10016": {
+      "owner": "ggml-org/llama.cpp",
+      "revision": "b10016 (commit 32b741c336decea914e4c1c24a9c9815485901b2)",
+      "license": "MIT",
+      "platform_note": "Use the same release or commit on the target platform and compute that artifact's digest.",
+      "verified_asset": {
+        "platform": "windows-cuda-13.3-x64",
+        "filename": "llama-b10016-bin-win-cuda-13.3-x64.zip",
+        "bytes": 145700678,
+        "sha256": "2c367deffa72f0ccd6881aedcfd09e12c66f2f00113bbbed4158fcd3064f662d"
+      }
+    }
+  }
+}

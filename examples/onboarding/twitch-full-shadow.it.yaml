@@ -1,0 +1,86 @@
+# Golden path P3: Apple Silicon full multimodal shadow in Italian.
+# This MPS/device_map configuration is not a P4 CUDA or P5 llama.cpp preset.
+# Model paths are portable repo-local examples. Acquire pinned artifacts
+# explicitly from docs/runtime-model-manifest.json; Minnarone never downloads them.
+
+mode: public
+soul_path: soul.md
+facts_dir: facts
+adapter: twitch
+llm_provider: grok
+agent_name: minnarone
+
+twitch:
+  channel: examplechannel
+  quality: best
+  chat: true
+  audio: true
+  video: true
+  audio_chunk_seconds: 1.0
+  video_fps: 0.2
+  send:
+    mode: shadow
+    allowed_channels: []
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+
+vad:
+  mode: 2
+  frame_ms: 30
+  padding_ms: 300
+  max_utterance_seconds: 30.0
+
+asr:
+  model: .local/models/asr/faster-whisper-large-v3-turbo
+  device: cpu
+  compute_type: int8
+  language: it
+  beam_size: 5
+  condition_on_previous_text: false
+
+speaker_embedding:
+  # Public Italian default: English VoxCeleb CAM++, not the old zh-cn model.
+  model_path: .local/models/speaker/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
+  provider: cpu
+  num_threads: 2
+  dimension: 512
+
+speaker_clustering:
+  threshold: 0.5
+  warmup_seconds: 60.0
+  min_update_seconds: 1.0
+
+video:
+  sample_every: 1
+  dedup_change_threshold: 0.03
+
+vlm:
+  backend: qwen
+  model: .local/models/vlm/Qwen2-VL-2B-Instruct
+  device: mps
+  device_map: null
+  torch_dtype: auto
+  max_new_tokens: 48
+  timeout_seconds: 30.0
+  language: it
+  max_caption_chars: 240
+  max_image_edge: 768
+  max_image_pixels: 500000
+
+commentator:
+  language: it
+
+llm_params:
+  model: x-ai/grok-4.5
+  reasoning:
+    effort: low
+
+disclosure:
+  announce_ai: true
+
+retention:
+  # Reserved/inert: choose a policy and delete local artifacts manually.
+  perceptions_days: 7
+
+auto_memory: false

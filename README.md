@@ -13,6 +13,127 @@ A reusable framework for building AI agents that **perceive a live multimodal co
 
 It grew out of the generalization of **Minnarone**, a bot that watched Twitch live streams and interacted in chat in a way indistinguishable from a human.
 
+## Quickstart: chat-only shadow
+
+The first supported task is a **chat-only shadow** rehearsal: Minnarone reads
+the channel, builds candidate replies, records local evidence, and sends no
+Twitch message. From a clean clone:
+
+```bash
+git clone https://github.com/carlitose/minnarone.git
+cd minnarone
+uv sync --extra tui
+cp .env.example .env
+mkdir -p .local/minnarone/onboarding/examplechannel
+cp -R examples/onboarding/. .local/minnarone/onboarding/examplechannel/
+```
+
+In the local copy, change `examplechannel`, `soul.md`, and `facts/channel.md`.
+Put the dedicated bot account's read credentials and the LLM key in `.env`;
+never paste tokens into YAML. Then validate and run:
+
+```bash
+uv run python -m minnarone .local/minnarone/onboarding/examplechannel/twitch-chat-shadow.it.yaml --check
+uv run python -m minnarone .local/minnarone/onboarding/examplechannel/twitch-chat-shadow.it.yaml --tui
+```
+
+`--check` is local and lazy: it validates construction but does not prove a
+Twitch connection, hardware capacity, or first model inference. The run itself
+starts in shadow and requires an attended stop with `Ctrl-C`.
+
+### What you are editing
+
+These inputs have deliberately different jobs:
+
+| Input | Responsibility | Not its job |
+| --- | --- | --- |
+| YAML **configuration** | Select adapters, modes, models, providers, safety budgets, and cadences. | Persona prose or stable channel knowledge. |
+| `soul.md` | Define identity, voice, values, and behavioral boundaries. | Runtime wiring or claims about the channel. |
+| `facts/` | Hold manually curated, sourced, stable facts about channels or interlocutors. | Learned memory, secrets, or prompt instructions. |
+| Built-in **prompt templates** / `prompts_dir` | Shape runtime instructions; an explicit `prompts_dir` overrides packaged templates. | General configuration, soul, or facts. |
+
+Minnarone does not auto-learn persistent facts. Review each change. Use the
+prompt skill below for template overrides; onboarding must not blur that safety
+boundary.
+
+### Progressive Twitch golden paths
+
+1. **Chat-only shadow (P0).** Start with
+   [`twitch-chat-shadow.it.yaml`](examples/onboarding/twitch-chat-shadow.it.yaml),
+   run `--check`, then observe candidate sends in the TUI. No write token is
+   needed or read.
+2. **Media smoke (P1/P2).** Prove capture components separately before adding
+   them to the agent. Follow the bounded chat, `--no-chat --audio`, VAD, and
+   `--no-chat --video` commands in the
+   [Twitch operator guide](docs/twitch-operator.md#smoke-commands).
+   Inspect `.smoke/*/stats.json`; a smoke is evidence for that component only.
+3. **Full multimodal shadow (P3-P5).** Choose a hardware profile in the
+   [runtime model research](docs/research/runtime-model-profiles.md), acquire
+   artifacts explicitly at the revisions in the
+   [model manifest](docs/runtime-model-manifest.json), and verify the complete
+   bundle: required files, published SHA-256 digests, and a local loader smoke.
+   A primary weight digest alone is not a readiness result. The Italian
+   [`twitch-full-shadow.it.yaml`](examples/onboarding/twitch-full-shadow.it.yaml)
+   is a **P3-only MPS example**. It uses English VoxCeleb CAM++
+   `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx`, dimension `512`, and
+   threshold `0.5`; the older Mandarin 192-dimension artifact is not the public
+   default. **P4 CUDA and P5 llama.cpp** require their profile-specific backend,
+   device, model, and runtime settings; do not run it unchanged. Run every
+   isolated smoke, then `--check`, then a bounded shadow TUI run while watching
+   memory, queues, and latency.
+4. **Attended live.** Use a separate local config only after every gate below
+   passes. A new `live`-configured session still starts in shadow. Inspect the
+   candidate output, then press `p` twice within three seconds to promote.
+   Press `k` for the immediate kill-switch; returning live always requires
+   pressing `p` twice again. Never leave a live session unattended.
+
+### Public-send safety gates
+
+Live is not the quickstart. It requires recorded **broadcaster consent** for
+the target channel, a **dedicated bot account**, an allow-list, and read/write
+tokens belonging to that account. The allow-list is a technical defense, not
+evidence of consent. Complete **token validation** for account, required scope,
+expiry, and revocation at startup and no later than hourly. A mismatch, `401`,
+revocation, missing scope, block, ban, or stop request means fallback to shadow
+or stop, never a best-effort send.
+
+Choose an honest **disclosure** mechanism appropriate to the channel: the bot
+profile, channel description, a clear response, or an announcement. Do not
+instruct the system to deny what it is. Minnarone currently sends through IRC;
+do not promise a Twitch **Chat Bot Badge**, which requires the supported Send
+Chat Message API/App-token authorization path and is not provided by IRC.
+
+The defaults `max_per_minute: 1` and `max_per_hour: 20` are conservative
+**Minnarone budgets**. They are not official **Twitch limits** and do not grant
+permission to fill Twitch's rate bucket. Keep both layers of constraints.
+
+Shadow still reads and stores data. A run can contain `perceptions.jsonl`,
+`debug/prompts/`, `debug/events.jsonl`, summaries, and derived copies of chat.
+`retention.perceptions_days` is reserved and inert; it does not delete data.
+Choose a purpose-bound duration, document an **opt-out** contact, stop the run,
+and perform **manual deletion** of the complete run directory and derived
+copies when requested, consent is withdrawn, or the data is no longer needed.
+
+### Public skill catalog
+
+The **portable canonical** skills are under `.agents/skills/` on every checkout.
+Relative `.claude/skills/` symlink aliases are optional conveniences on
+symlink-capable checkouts. With `core.symlinks=false`, Git may materialize an
+alias as a plain file containing only its target; that plain file is not a
+valid skill. Code agents must load the matching canonical `.agents` `SKILL.md`
+before acting.
+
+| Skill | Trigger | Actions | Boundary |
+| --- | --- | --- | --- |
+| [`minnarone-prompts`](.agents/skills/minnarone-prompts/SKILL.md) | Edit, translate, validate, or preview prompt overrides. | Validate/edit/try an explicit prompt set. | Does not create general config, soul, facts, or Twitch live state. |
+| [`minnarone-twitch-onboarding`](.agents/skills/minnarone-twitch-onboarding/SKILL.md) | Set up a channel workspace or interview for config/persona/facts. | Preview exact files, require confirmation, write sanitized local inputs, validate, and stop in shadow. | Does not edit prompt templates, download models, or enable live. |
+| [`minnarone-runtime-doctor`](.agents/skills/minnarone-runtime-doctor/SKILL.md) | Check whether a P0-P5 runtime/profile is ready. | Perform read-only tool, config, artifact, digest, capacity, and safety checks with PASS/FAIL/SKIP evidence. | Does not install, download, mutate, run long captures, or send. |
+
+Humans can follow the paths above directly. Code agents should start at
+[`AGENTS.md`](AGENTS.md) and contributors at
+[`CONTRIBUTING.md`](CONTRIBUTING.md); both route architecture, quality, prompt
+safety, dirty-worktree handling, and skills.
+
 ## Origin and credits
 
 Minnarone was conceived and built by **enkk**, its original author and designer: a bot able to listen to and watch a Twitch live stream and to interact in chat with other users and with the streamer without anyone realizing they were talking to an artificial intelligence (a kind of Turing test applied to chat).
