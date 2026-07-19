@@ -66,7 +66,7 @@ class _ObservabilitySnapshotBridge:
                 raise self._fatal
             if self._snapshot is _UNSET:
                 raise DashboardSnapshotNotReady(
-                    "snapshot osservabilità live non ancora disponibile"
+                    "live observability snapshot is not yet available"
                 )
             return self._snapshot
 
@@ -103,7 +103,7 @@ class _BackgroundAgentRuntime:
             self._stop_requested.set()
             self._request_stop_from_thread()
             self._thread.join(timeout=timeout)
-            raise RuntimeError("runtime live non avviato entro il timeout")
+            raise RuntimeError("live runtime did not start before the timeout")
         self.raise_if_failed()
 
     def stop(
@@ -118,8 +118,8 @@ class _BackgroundAgentRuntime:
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
             if not ready:
-                raise RuntimeError("runtime live non pronto per l'arresto")
-            raise RuntimeError("runtime live non arrestato entro il timeout")
+                raise RuntimeError("live runtime is not ready to stop")
+            raise RuntimeError("live runtime did not stop before the timeout")
 
     def raise_if_failed(self) -> None:
         if self._error is None:
@@ -194,7 +194,7 @@ def _request_app_shutdown(app: object) -> None:
     errors: list[BaseException] = []
     if callable(call_from_thread):
         if not callable(exit_app):
-            raise RuntimeError("app TUI non espone un metodo exit utilizzabile")
+            raise RuntimeError("TUI app does not expose a usable exit method")
         try:
             call_from_thread(exit_app)
             return
@@ -209,7 +209,7 @@ def _request_app_shutdown(app: object) -> None:
             errors.append(exc)
     if errors:
         _raise_errors(errors)
-    raise RuntimeError("app TUI non espone un metodo exit utilizzabile")
+    raise RuntimeError("TUI app does not expose a usable exit method")
 
 
 def _unexpected_task_exceptions(
@@ -257,7 +257,7 @@ def _combine_errors(
 
 def _positive_timeout(value: float, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        raise ValueError(f"{field_name} deve essere > 0")
+        raise ValueError(f"{field_name} must be > 0")
     return float(value)
 
 

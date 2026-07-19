@@ -62,7 +62,7 @@ def _coerce_enum(
     except (TypeError, ValueError) as exc:
         accepted = ", ".join(member.value for member in enum_cls)
         raise ConfigError(
-            f"{field_name} {value!r} non valido (ammessi: {accepted})"
+            f"{field_name} {value!r} is invalid (allowed: {accepted})"
         ) from exc
 
 
@@ -93,10 +93,10 @@ class CommentatorConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.language, str) or not self.language.strip():
-            raise ConfigError("commentator.language deve essere una stringa non vuota")
+            raise ConfigError("commentator.language must be a non-empty string")
         object.__setattr__(self, "language", self.language.strip())
         if not isinstance(self.profiles, dict):
-            raise ConfigError("commentator.profiles deve essere un dizionario")
+            raise ConfigError("commentator.profiles must be a mapping")
 
     def active_styles(self) -> list[CommentatorStyle]:
         """Return the list of active commentator styles (profile keys)."""
@@ -116,7 +116,7 @@ class CommentatorConfig:
             private_only = self._PRIVATE_ONLY_STYLES & self.profiles.keys()
             if private_only:
                 names = ", ".join(sorted(s.value for s in private_only))
-                raise ConfigError(f"profilo/i {names} richiede mode: private")
+                raise ConfigError(f"profile(s) {names} require mode: private")
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,15 +128,15 @@ class OperatorProfileConfig:
     def __post_init__(self) -> None:
         if self.idle_interval is not None:
             if isinstance(self.idle_interval, bool):
-                raise ConfigError("OperatorProfileConfig.idle_interval deve essere > 0")
+                raise ConfigError("OperatorProfileConfig.idle_interval must be > 0")
             try:
                 interval = float(self.idle_interval)
             except (TypeError, ValueError) as exc:
                 raise ConfigError(
-                    "OperatorProfileConfig.idle_interval deve essere > 0"
+                    "OperatorProfileConfig.idle_interval must be > 0"
                 ) from exc
             if interval <= 0:
-                raise ConfigError("OperatorProfileConfig.idle_interval deve essere > 0")
+                raise ConfigError("OperatorProfileConfig.idle_interval must be > 0")
             object.__setattr__(self, "idle_interval", interval)
 
 
@@ -149,19 +149,15 @@ class OriginalChatProfileConfig:
     def __post_init__(self) -> None:
         if self.idle_interval is not None:
             if isinstance(self.idle_interval, bool):
-                raise ConfigError(
-                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
-                )
+                raise ConfigError("OriginalChatProfileConfig.idle_interval must be > 0")
             try:
                 interval = float(self.idle_interval)
             except (TypeError, ValueError) as exc:
                 raise ConfigError(
-                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
+                    "OriginalChatProfileConfig.idle_interval must be > 0"
                 ) from exc
             if interval <= 0:
-                raise ConfigError(
-                    "OriginalChatProfileConfig.idle_interval deve essere > 0"
-                )
+                raise ConfigError("OriginalChatProfileConfig.idle_interval must be > 0")
             object.__setattr__(self, "idle_interval", interval)
 
 
@@ -173,19 +169,15 @@ class MeetingSynthesizerProfileConfig:
 
     def __post_init__(self) -> None:
         if isinstance(self.interval_s, bool):
-            raise ConfigError(
-                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
-            )
+            raise ConfigError("MeetingSynthesizerProfileConfig.interval_s must be > 0")
         try:
             interval = float(self.interval_s)
         except (TypeError, ValueError) as exc:
             raise ConfigError(
-                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
+                "MeetingSynthesizerProfileConfig.interval_s must be > 0"
             ) from exc
         if interval <= 0:
-            raise ConfigError(
-                "MeetingSynthesizerProfileConfig.interval_s deve essere > 0"
-            )
+            raise ConfigError("MeetingSynthesizerProfileConfig.interval_s must be > 0")
         object.__setattr__(self, "interval_s", interval)
 
 
@@ -221,7 +213,7 @@ def _build_profile_from_dict(
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            f"campi commentator.profiles.{style.value} non riconosciuti: "
+            f"unknown commentator.profiles.{style.value} fields: "
             + ", ".join(f"'{key}'" for key in unknown)
         )
     return config_cls(**data)  # type: ignore[return-value]
@@ -234,11 +226,11 @@ def _coerce_config_float(value: object, field_name: str) -> float:
     interi in Python, quindi vanno rifiutati esplicitamente prima di `float()`.
     """
     if isinstance(value, bool):
-        raise ConfigError(f"{field_name} deve essere numerico")
+        raise ConfigError(f"{field_name} must be numeric")
     try:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field_name} deve essere numerico") from exc
+        raise ConfigError(f"{field_name} must be numeric") from exc
 
 
 def _coerce_config_positive_int(value: object, field_name: str) -> int:
@@ -248,7 +240,7 @@ def _coerce_config_positive_int(value: object, field_name: str) -> int:
     `perception_queue_size`) possono adottare questo helper in futuro.
     """
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ConfigError(f"{field_name} deve essere un intero >= 1")
+        raise ConfigError(f"{field_name} must be an integer >= 1")
     return value
 
 
@@ -259,7 +251,7 @@ def _normalized_channel(value: object, field_name: str) -> str:
     senza affidarsi all'`AttributeError` interno di `normalize_twitch_channel`.
     """
     if not isinstance(value, str):
-        raise ConfigError(f"{field_name}: {value!r} non è un canale Twitch valido")
+        raise ConfigError(f"{field_name}: {value!r} is not a valid Twitch channel")
     try:
         return normalize_twitch_channel(value)
     except ValueError as exc:
@@ -288,10 +280,10 @@ def _coerce_send_mode(value: object) -> TwitchSendMode:
     # quindi l'errore suggerisce esplicitamente di quotare il valore.
     if isinstance(value, bool) and value is True:
         quoted = [f"'{mode.value}'" for mode in TwitchSendMode]
-        accepted = ", ".join(quoted[:-1]) + f" o {quoted[-1]}"
+        accepted = ", ".join(quoted[:-1]) + f" or {quoted[-1]}"
         raise ConfigError(
-            f"twitch.send.mode: usa {accepted} (quota il valore: "
-            "YAML interpreta on/yes/true come booleano)"
+            f"twitch.send.mode: use {accepted} (quote the value: "
+            "YAML interprets on/yes/true as boolean)"
         )
     # `false_alias`: `mode: off` non quotato è la grafia naturale del default
     # e YAML lo parsa come False (insieme a ogni altra grafia falsy).
@@ -320,9 +312,7 @@ class TwitchSendConfig:
 
         channels = self.allowed_channels
         if isinstance(channels, str) or not isinstance(channels, (list, tuple)):
-            raise ConfigError(
-                "twitch.send.allowed_channels deve essere una lista di canali"
-            )
+            raise ConfigError("twitch.send.allowed_channels must be a list of channels")
         normalized = tuple(
             _normalized_channel(channel, "twitch.send.allowed_channels")
             for channel in channels
@@ -344,7 +334,7 @@ class TwitchSendConfig:
         """
         if self.mode is not TwitchSendMode.OFF and mode is not OutputMode.PUBLIC:
             raise ConfigError(
-                f"twitch.send.mode: '{self.mode.value}' richiede mode: public"
+                f"twitch.send.mode: '{self.mode.value}' requires mode: public"
             )
 
     @classmethod
@@ -360,7 +350,7 @@ class TwitchSendConfig:
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise ConfigError(
-                "campi twitch.send non riconosciuti: "
+                "unknown twitch.send fields: "
                 + ", ".join(f"'{key}'" for key in unknown)
             )
         return cls(
@@ -395,14 +385,14 @@ class TwitchConfig:
         )
 
         if not isinstance(self.quality, str) or not self.quality.strip():
-            raise ConfigError("twitch.quality deve essere una stringa non vuota")
+            raise ConfigError("twitch.quality must be a non-empty string")
         object.__setattr__(self, "quality", self.quality.strip())
 
         for name in ("chat", "audio", "video"):
             if not isinstance(getattr(self, name), bool):
-                raise ConfigError(f"twitch.{name} deve essere booleano")
+                raise ConfigError(f"twitch.{name} must be boolean")
         if not (self.chat or self.audio or self.video):
-            raise ConfigError("twitch deve abilitare almeno chat, audio o video")
+            raise ConfigError("twitch must enable at least chat, audio, or video")
 
         audio_chunk_seconds = self._coerce_float(
             self.audio_chunk_seconds,
@@ -422,7 +412,7 @@ class TwitchConfig:
         object.__setattr__(self, "video_fps", video_fps)
 
         if not isinstance(self.send, TwitchSendConfig):
-            raise ConfigError("twitch.send deve essere una TwitchSendConfig")
+            raise ConfigError("twitch.send must be a TwitchSendConfig")
         self._validate_live_send_requirements()
 
     def _validate_live_send_requirements(self) -> None:
@@ -436,8 +426,8 @@ class TwitchConfig:
             return
         if self.channel not in self.send.allowed_channels:
             raise ConfigError(
-                f"twitch.send.mode: live richiede che il canale "
-                f"'{self.channel}' sia in twitch.send.allowed_channels"
+                f"twitch.send.mode: live requires channel "
+                f"'{self.channel}' to be in twitch.send.allowed_channels"
             )
 
     @classmethod
@@ -456,14 +446,13 @@ class TwitchConfig:
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise ConfigError(
-                "campi twitch non riconosciuti: "
-                + ", ".join(f"'{key}'" for key in unknown)
+                "unknown twitch fields: " + ", ".join(f"'{key}'" for key in unknown)
             )
         if "channel" not in data:
-            raise ConfigError("campo obbligatorio 'twitch.channel' mancante")
+            raise ConfigError("required field 'twitch.channel' is missing")
         send_raw = data.get("send")
         if send_raw is not None and not isinstance(send_raw, dict):
-            raise ConfigError("'twitch.send' deve essere una tabella")
+            raise ConfigError("'twitch.send' must be a mapping")
         send = TwitchSendConfig.from_dict(send_raw or {})
         return cls(
             channel=data["channel"],  # type: ignore[arg-type]
@@ -498,9 +487,9 @@ class OsCaptureConfig:
     def __post_init__(self) -> None:
         for name in ("audio", "video"):
             if not isinstance(getattr(self, name), bool):
-                raise ConfigError(f"os_capture.{name} deve essere booleano")
+                raise ConfigError(f"os_capture.{name} must be boolean")
         if not (self.audio or self.video):
-            raise ConfigError("os_capture deve abilitare almeno audio o video")
+            raise ConfigError("os_capture must enable at least audio or video")
 
         audio_chunk_seconds = _coerce_config_float(
             self.audio_chunk_seconds,
@@ -524,7 +513,7 @@ class OsCaptureConfig:
             or not isinstance(self.monitor, int)
             or self.monitor < 1
         ):
-            raise ConfigError("os_capture.monitor deve essere un intero >= 1")
+            raise ConfigError("os_capture.monitor must be an integer >= 1")
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "OsCaptureConfig":
@@ -539,8 +528,7 @@ class OsCaptureConfig:
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise ConfigError(
-                "campi os_capture non riconosciuti: "
-                + ", ".join(f"'{key}'" for key in unknown)
+                "unknown os_capture fields: " + ", ".join(f"'{key}'" for key in unknown)
             )
         return cls(
             audio=data.get("audio", True),  # type: ignore[arg-type]
@@ -567,8 +555,8 @@ class LlamaCppConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.base_url, str) or not self.base_url.strip():
             raise ConfigError(
-                "llamacpp.base_url deve essere una stringa non vuota "
-                "(es. 'http://127.0.0.1:8080')"
+                "llamacpp.base_url must be a non-empty string "
+                "(for example 'http://127.0.0.1:8080')"
             )
         base_url = self.base_url.strip().rstrip("/")
         parsed = urlsplit(base_url)
@@ -576,13 +564,14 @@ class LlamaCppConfig:
             port = parsed.port
         except ValueError as exc:
             raise ConfigError(
-                f"llamacpp.base_url {self.base_url!r} non valido: la porta "
-                "deve essere numerica (es. 'http://127.0.0.1:8080')"
+                f"llamacpp.base_url {self.base_url!r} is invalid: the port "
+                "must be numeric (for example 'http://127.0.0.1:8080')"
             ) from exc
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise ConfigError(
-                f"llamacpp.base_url {self.base_url!r} non valido: serve un URL "
-                "http(s) con host e porta esplicita (es. 'http://127.0.0.1:8080')"
+                f"llamacpp.base_url {self.base_url!r} is invalid: expected an "
+                "http(s) URL with a host and explicit port "
+                "(for example 'http://127.0.0.1:8080')"
             )
         # Solo scheme://host:porta: il provider aggiunge da sé `/v1/chat/...` e
         # il probe aggiunge `/health`. Un path (tipicamente il `/v1` della
@@ -591,17 +580,19 @@ class LlamaCppConfig:
         # solo a runtime: meglio rifiutarli qui.
         if parsed.path or parsed.query or parsed.fragment:
             raise ConfigError(
-                f"llamacpp.base_url {self.base_url!r} non valido: indica solo "
-                "scheme://host:porta senza path (es. 'http://127.0.0.1:8080'), "
-                "il provider aggiunge da sé i path (niente '/v1')"
+                f"llamacpp.base_url {self.base_url!r} is invalid: specify only "
+                "scheme://host:port without a path "
+                "(for example 'http://127.0.0.1:8080'); the provider adds its "
+                "own paths (do not include '/v1')"
             )
         # Porta esplicita consigliata: llama-server non gira sulle porte
         # standard 80/443, quindi un URL senza porta è quasi sempre un refuso.
         # `port == 0` non è connettibile: trattato come porta mancante.
         if not port:
             raise ConfigError(
-                f"llamacpp.base_url {self.base_url!r} senza porta esplicita: "
-                "indica la porta del llama-server (es. 'http://127.0.0.1:8080')"
+                f"llamacpp.base_url {self.base_url!r} has no explicit port: "
+                "specify the llama-server port "
+                "(for example 'http://127.0.0.1:8080')"
             )
         object.__setattr__(self, "base_url", base_url)
 
@@ -612,8 +603,7 @@ class LlamaCppConfig:
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise ConfigError(
-                "campi llamacpp non riconosciuti: "
-                + ", ".join(f"'{key}'" for key in unknown)
+                "unknown llamacpp fields: " + ", ".join(f"'{key}'" for key in unknown)
             )
         # `base_url` assente → default del dataclass (unica fonte di verità,
         # niente literal duplicato qui).
@@ -630,7 +620,7 @@ def _vad_config_from_dict(data: dict[str, object]) -> VadConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi vad non riconosciuti: " + ", ".join(f"'{key}'" for key in unknown)
+            "unknown vad fields: " + ", ".join(f"'{key}'" for key in unknown)
         )
     try:
         return VadConfig(
@@ -655,7 +645,7 @@ def _asr_config_from_dict(data: dict[str, object]) -> AsrConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi asr non riconosciuti: " + ", ".join(f"asr.{key}" for key in unknown)
+            "unknown asr fields: " + ", ".join(f"asr.{key}" for key in unknown)
         )
     try:
         return AsrConfig(
@@ -682,7 +672,7 @@ def _speaker_embedding_config_from_dict(
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi speaker_embedding non riconosciuti: "
+            "unknown speaker_embedding fields: "
             + ", ".join(f"speaker_embedding.{key}" for key in unknown)
         )
     try:
@@ -707,7 +697,7 @@ def _speaker_clustering_config_from_dict(
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi speaker_clustering non riconosciuti: "
+            "unknown speaker_clustering fields: "
             + ", ".join(f"speaker_clustering.{key}" for key in unknown)
         )
     try:
@@ -725,8 +715,7 @@ def _video_config_from_dict(data: dict[str, object]) -> VideoPerceptionConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi video non riconosciuti: "
-            + ", ".join(f"video.{key}" for key in unknown)
+            "unknown video fields: " + ", ".join(f"video.{key}" for key in unknown)
         )
     try:
         return VideoPerceptionConfig(
@@ -757,7 +746,7 @@ def _vlm_config_from_dict(data: dict[str, object]) -> QwenVlConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi vlm non riconosciuti: " + ", ".join(f"vlm.{key}" for key in unknown)
+            "unknown vlm fields: " + ", ".join(f"vlm.{key}" for key in unknown)
         )
     try:
         return QwenVlConfig(
@@ -788,7 +777,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(
-            "campi commentator non riconosciuti: "
+            "unknown commentator fields: "
             + ", ".join(f"commentator.{key}" for key in unknown)
         )
 
@@ -796,7 +785,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
     if profiles_raw is None:
         profiles_raw = {}
     if not isinstance(profiles_raw, dict):
-        raise ConfigError("commentator.profiles deve essere una tabella")
+        raise ConfigError("commentator.profiles must be a mapping")
 
     parsed_profiles: dict[CommentatorStyle, ProfileConfig] = {}
     for key, value in profiles_raw.items():
@@ -804,7 +793,7 @@ def _commentator_config_from_dict(data: dict[str, object]) -> CommentatorConfig:
         if value is None:
             value = {}
         if not isinstance(value, dict):
-            raise ConfigError(f"commentator.profiles.{key} deve essere una tabella")
+            raise ConfigError(f"commentator.profiles.{key} must be a mapping")
         parsed_profiles[style] = _build_profile_from_dict(style, value)
 
     return CommentatorConfig(
@@ -870,70 +859,66 @@ class Config:
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, OutputMode):
-            raise ConfigError(f"mode non valido: {self.mode!r}")
+            raise ConfigError(f"invalid mode: {self.mode!r}")
         for name in ("soul_path", "facts_dir", "adapter", "llm_provider", "agent_name"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
-                raise ConfigError(f"campo obbligatorio '{name}' mancante o vuoto")
+                raise ConfigError(f"required field '{name}' is missing or empty")
         # prompts_dir è opzionale: se dato deve essere una stringa non vuota.
         if self.prompts_dir is not None and (
             not isinstance(self.prompts_dir, str) or not self.prompts_dir
         ):
-            raise ConfigError("prompts_dir deve essere una stringa non vuota")
+            raise ConfigError("prompts_dir must be a non-empty string")
         if self.twitch is not None and not isinstance(self.twitch, TwitchConfig):
-            raise ConfigError("twitch deve essere una TwitchConfig")
+            raise ConfigError("twitch must be a TwitchConfig")
         if self.os_capture is not None and not isinstance(
             self.os_capture, OsCaptureConfig
         ):
-            raise ConfigError("os_capture deve essere una OsCaptureConfig")
+            raise ConfigError("os_capture must be an OsCaptureConfig")
         if not isinstance(self.vad, VadConfig):
-            raise ConfigError("vad deve essere una VadConfig")
+            raise ConfigError("vad must be a VadConfig")
         if not isinstance(self.asr, AsrConfig):
-            raise ConfigError("asr deve essere una AsrConfig")
+            raise ConfigError("asr must be an AsrConfig")
         if not isinstance(self.speaker_embedding, SpeakerEmbeddingConfig):
-            raise ConfigError(
-                "speaker_embedding deve essere una SpeakerEmbeddingConfig"
-            )
+            raise ConfigError("speaker_embedding must be a SpeakerEmbeddingConfig")
         if not isinstance(self.speaker_clustering, SpeakerClusteringConfig):
-            raise ConfigError(
-                "speaker_clustering deve essere una SpeakerClusteringConfig"
-            )
+            raise ConfigError("speaker_clustering must be a SpeakerClusteringConfig")
         if not isinstance(self.video, VideoPerceptionConfig):
-            raise ConfigError("video deve essere una VideoPerceptionConfig")
+            raise ConfigError("video must be a VideoPerceptionConfig")
         if not isinstance(self.vlm, QwenVlConfig):
-            raise ConfigError("vlm deve essere una QwenVlConfig")
+            raise ConfigError("vlm must be a QwenVlConfig")
         if not isinstance(self.commentator, CommentatorConfig):
-            raise ConfigError("commentator deve essere una CommentatorConfig")
+            raise ConfigError("commentator must be a CommentatorConfig")
         if not isinstance(self.llamacpp, LlamaCppConfig):
-            raise ConfigError("llamacpp deve essere una LlamaCppConfig")
+            raise ConfigError("llamacpp must be a LlamaCppConfig")
         self.commentator.validate_for_mode(self.mode)
         self._validate_public_twitch_persona()
         if self.twitch is not None:
             self.twitch.send.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
-            raise ConfigError("adapter 'twitch' richiede la sezione 'twitch'")
+            raise ConfigError("adapter 'twitch' requires the 'twitch' section")
         if self.adapter == "os_capture" and self.os_capture is None:
-            raise ConfigError("adapter 'os_capture' richiede la sezione 'os_capture'")
+            raise ConfigError("adapter 'os_capture' requires the 'os_capture' section")
         if self.senser_interval <= 0:
-            raise ConfigError("senser_interval deve essere > 0")
+            raise ConfigError("senser_interval must be > 0")
         if self.idle_interval <= 0:
-            raise ConfigError("idle_interval deve essere > 0")
+            raise ConfigError("idle_interval must be > 0")
         if self.summarizer_interval <= 0:
-            raise ConfigError("summarizer_interval deve essere > 0")
+            raise ConfigError("summarizer_interval must be > 0")
         if self.recent_chat_window <= 0:
-            raise ConfigError("recent_chat_window deve essere > 0")
+            raise ConfigError("recent_chat_window must be > 0")
         if (
             isinstance(self.perception_queue_size, bool)
             or not isinstance(self.perception_queue_size, int)
             or self.perception_queue_size < 1
         ):
-            raise ConfigError("perception_queue_size deve essere un intero >= 1")
+            raise ConfigError("perception_queue_size must be an integer >= 1")
         if (
             isinstance(self.perception_shutdown_timeout, bool)
             or not isinstance(self.perception_shutdown_timeout, (int, float))
             or self.perception_shutdown_timeout <= 0
         ):
-            raise ConfigError("perception_shutdown_timeout deve essere > 0")
+            raise ConfigError("perception_shutdown_timeout must be > 0")
 
     def _validate_public_twitch_persona(self) -> None:
         """Su Twitch in modalità public la persona È l'original_chat.
@@ -955,35 +940,35 @@ class Config:
         if offending:
             names = ", ".join(style.value for style in offending)
             raise ConfigError(
-                "su Twitch in modalità public la persona è sempre 'original_chat': "
-                f"il profilo commentator '{names}' non è ammesso. Usa "
-                "commentator.profiles.original_chat oppure rimuovi i profili "
-                "(il default per twitch+public è original_chat)."
+                "on Twitch in public mode the persona is always 'original_chat': "
+                f"commentator profile '{names}' is not allowed. Use "
+                "commentator.profiles.original_chat or remove the profiles "
+                "(the twitch+public default is original_chat)."
             )
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "Config":
         """Costruisce e valida una Config da un dizionario (es. TOML parsato)."""
         if "mode" not in data:
-            raise ConfigError("campo obbligatorio 'mode' mancante")
+            raise ConfigError("required field 'mode' is missing")
         try:
             mode = OutputMode(data["mode"])
         except ValueError as exc:
             raise ConfigError(
-                f"mode {data['mode']!r} non valido (ammessi: public, private)"
+                f"mode {data['mode']!r} is invalid (allowed: public, private)"
             ) from exc
 
         disclosure_raw = data.get("disclosure", {})
         retention_raw = data.get("retention", {})
         if not isinstance(disclosure_raw, dict) or not isinstance(retention_raw, dict):
-            raise ConfigError("'disclosure' e 'retention' devono essere tabelle")
+            raise ConfigError("'disclosure' and 'retention' must be mappings")
         twitch_raw = data.get("twitch")
         if twitch_raw is not None and not isinstance(twitch_raw, dict):
-            raise ConfigError("'twitch' deve essere una tabella")
+            raise ConfigError("'twitch' must be a mapping")
         twitch = TwitchConfig.from_dict(twitch_raw) if twitch_raw is not None else None
         os_capture_raw = data.get("os_capture")
         if os_capture_raw is not None and not isinstance(os_capture_raw, dict):
-            raise ConfigError("'os_capture' deve essere una tabella")
+            raise ConfigError("'os_capture' must be a mapping")
         os_capture = (
             OsCaptureConfig.from_dict(os_capture_raw)
             if os_capture_raw is not None
@@ -991,37 +976,37 @@ class Config:
         )
         vad_raw = data.get("vad", {})
         if not isinstance(vad_raw, dict):
-            raise ConfigError("'vad' deve essere una tabella")
+            raise ConfigError("'vad' must be a mapping")
         vad = _vad_config_from_dict(vad_raw)
         asr_raw = data.get("asr", {})
         if not isinstance(asr_raw, dict):
-            raise ConfigError("'asr' deve essere una tabella")
+            raise ConfigError("'asr' must be a mapping")
         asr = _asr_config_from_dict(asr_raw)
         speaker_embedding_raw = data.get("speaker_embedding", {})
         if not isinstance(speaker_embedding_raw, dict):
-            raise ConfigError("'speaker_embedding' deve essere una tabella")
+            raise ConfigError("'speaker_embedding' must be a mapping")
         speaker_embedding = _speaker_embedding_config_from_dict(speaker_embedding_raw)
         speaker_clustering_raw = data.get("speaker_clustering", {})
         if not isinstance(speaker_clustering_raw, dict):
-            raise ConfigError("'speaker_clustering' deve essere una tabella")
+            raise ConfigError("'speaker_clustering' must be a mapping")
         speaker_clustering = _speaker_clustering_config_from_dict(
             speaker_clustering_raw
         )
         video_raw = data.get("video", {})
         if not isinstance(video_raw, dict):
-            raise ConfigError("'video' deve essere una tabella")
+            raise ConfigError("'video' must be a mapping")
         video = _video_config_from_dict(video_raw)
         vlm_raw = data.get("vlm", {})
         if not isinstance(vlm_raw, dict):
-            raise ConfigError("'vlm' deve essere una tabella")
+            raise ConfigError("'vlm' must be a mapping")
         vlm = _vlm_config_from_dict(vlm_raw)
         commentator_raw = data.get("commentator", {})
         if not isinstance(commentator_raw, dict):
-            raise ConfigError("'commentator' deve essere una tabella")
+            raise ConfigError("'commentator' must be a mapping")
         commentator = _commentator_config_from_dict(commentator_raw)
         llamacpp_raw = data.get("llamacpp", {})
         if not isinstance(llamacpp_raw, dict):
-            raise ConfigError("'llamacpp' deve essere una tabella")
+            raise ConfigError("'llamacpp' must be a mapping")
         llamacpp = LlamaCppConfig.from_dict(llamacpp_raw)
 
         try:
@@ -1072,27 +1057,27 @@ class Config:
     @staticmethod
     def _positive_int(value: object, field_name: str) -> int:
         if isinstance(value, bool):
-            raise ConfigError(f"{field_name} deve essere un intero >= 1")
+            raise ConfigError(f"{field_name} must be an integer >= 1")
         if isinstance(value, float) and not value.is_integer():
-            raise ConfigError(f"{field_name} deve essere un intero >= 1")
+            raise ConfigError(f"{field_name} must be an integer >= 1")
         try:
             parsed = int(value)  # type: ignore[arg-type]
         except (TypeError, ValueError) as exc:
-            raise ConfigError(f"{field_name} deve essere un intero >= 1") from exc
+            raise ConfigError(f"{field_name} must be an integer >= 1") from exc
         if parsed < 1:
-            raise ConfigError(f"{field_name} deve essere un intero >= 1")
+            raise ConfigError(f"{field_name} must be an integer >= 1")
         return parsed
 
     @staticmethod
     def _positive_float(value: object, field_name: str) -> float:
         if isinstance(value, bool):
-            raise ConfigError(f"{field_name} deve essere > 0")
+            raise ConfigError(f"{field_name} must be > 0")
         try:
             parsed = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError) as exc:
-            raise ConfigError(f"{field_name} deve essere > 0") from exc
+            raise ConfigError(f"{field_name} must be > 0") from exc
         if parsed <= 0:
-            raise ConfigError(f"{field_name} deve essere > 0")
+            raise ConfigError(f"{field_name} must be > 0")
         return parsed
 
     @staticmethod
@@ -1115,13 +1100,13 @@ class Config:
         """Carica e valida una Config da un file YAML."""
         p = Path(path)
         if not p.is_file():
-            raise ConfigError(f"file di config non trovato: {p}")
+            raise ConfigError(f"config file not found: {p}")
         with p.open("r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         if data is None:
-            raise ConfigError(f"file di config vuoto: {p}")
+            raise ConfigError(f"config file is empty: {p}")
         if not isinstance(data, dict):
-            raise ConfigError("la radice del file di config deve essere una mappa")
+            raise ConfigError("config file root must be a mapping")
         return cls.from_dict(
             cls._with_config_relative_memory_paths(data, p.resolve().parent)
         )

@@ -227,7 +227,7 @@ def test_os_capture_section_must_be_a_table(tmp_path):
         "os_capture:\n  audio: true\n  video: true\n",
         "os_capture: not-a-table\n",
     )
-    with pytest.raises(ConfigError, match="tabella"):
+    with pytest.raises(ConfigError, match="mapping"):
         Config.load(_write(tmp_path, bad))
 
 
@@ -246,7 +246,7 @@ def test_os_capture_adapter_rejects_wrong_os_capture_object_type():
 @pytest.mark.parametrize(
     "line, replacement, message",
     [
-        ('channel: "#Minnarone"', "channel: '#'", "channel Twitch"),
+        ('channel: "#Minnarone"', "channel: '#'", "Twitch channel"),
         ("quality: best", "quality: ''", "quality"),
         ("audio_chunk_seconds: 1.0", "audio_chunk_seconds: 0", "audio_chunk_seconds"),
         (
@@ -293,12 +293,12 @@ def test_os_capture_config_parses_overrides():
 
 
 def test_os_capture_config_rejects_unknown_field():
-    with pytest.raises(ConfigError, match="os_capture non riconosciuti"):
+    with pytest.raises(ConfigError, match="unknown os_capture fields"):
         OsCaptureConfig.from_dict({"moitor": 1})
 
 
 def test_os_capture_config_requires_at_least_one_channel():
-    with pytest.raises(ConfigError, match="almeno audio o video"):
+    with pytest.raises(ConfigError, match="at least audio or video"):
         OsCaptureConfig.from_dict({"audio": False, "video": False})
 
 
@@ -609,7 +609,7 @@ def test_commentator_config_defaults_overrides_and_validation(tmp_path):
 
     with pytest.raises(ConfigError, match="commentator.language"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  language: ''\n"))
-    with pytest.raises(ConfigError, match="commentator non riconosciuti"):
+    with pytest.raises(ConfigError, match="unknown commentator fields"):
         Config.load(_write(tmp_path, MINIMAL_YAML + "commentator:\n  unexpected: 1\n"))
 
 
@@ -699,7 +699,7 @@ def test_commentator_unknown_profile_key_raises(tmp_path):
 
 def test_commentator_unknown_field_within_profile_raises(tmp_path):
     with pytest.raises(
-        ConfigError, match="commentator.profiles.operator non riconosciuti"
+        ConfigError, match="unknown commentator.profiles.operator fields"
     ):
         Config.load(
             _write(
@@ -859,7 +859,7 @@ def test_commentator_round_trip_from_dict():
 def test_commentator_unknown_top_level_key_raises():
     from minnarone.config import _commentator_config_from_dict
 
-    with pytest.raises(ConfigError, match="commentator non riconosciuti.*enabled"):
+    with pytest.raises(ConfigError, match="unknown commentator fields.*enabled"):
         _commentator_config_from_dict({"enabled": True})
 
 
@@ -912,12 +912,12 @@ def test_missing_required_field_raises(tmp_path):
 
 
 def test_missing_file_raises(tmp_path):
-    with pytest.raises(ConfigError, match="non trovato"):
+    with pytest.raises(ConfigError, match="not found"):
         Config.load(tmp_path / "nope.yaml")
 
 
 def test_empty_file_raises(tmp_path):
-    with pytest.raises(ConfigError, match="vuoto"):
+    with pytest.raises(ConfigError, match="is empty"):
         Config.load(_write(tmp_path, ""))
 
 
@@ -979,8 +979,8 @@ def test_twitch_send_parses_full_block_and_normalizes_channels(tmp_path):
         ("\nsend:\n  failure_threshold: 0\n", "twitch.send.failure_threshold"),
         ("\nsend:\n  allowed_channels: ['']\n", "twitch.send.allowed_channels"),
         ("\nsend:\n  allowed_channels: canale\n", "twitch.send.allowed_channels"),
-        ("\nsend:\n  budget: 3\n", "twitch.send non riconosciuti"),
-        ("\nsend: not-a-table\n", "tabella"),
+        ("\nsend:\n  budget: 3\n", "unknown twitch.send fields"),
+        ("\nsend: not-a-table\n", "mapping"),
     ],
 )
 def test_invalid_twitch_send_config_fails_clearly(tmp_path, send_block, message):
@@ -996,15 +996,15 @@ def test_twitch_send_mode_unquoted_truthy_boolean_suggests_quoting(tmp_path):
     with pytest.raises(ConfigError) as excinfo:
         Config.load(_write(tmp_path, bad))
     message = str(excinfo.value)
-    assert "twitch.send.mode: usa 'off', 'shadow' o 'live'" in message
-    assert "quota il valore: YAML interpreta on/yes/true come booleano" in message
+    assert "twitch.send.mode: use 'off', 'shadow' or 'live'" in message
+    assert "quote the value: YAML interprets on/yes/true as boolean" in message
 
 
 def test_twitch_send_shadow_requires_public_mode(tmp_path):
     bad = _twitch_yaml_with_send("\nsend:\n  mode: shadow\n").replace(
         "mode: public", "mode: private"
     )
-    with pytest.raises(ConfigError, match="'shadow' richiede mode: public"):
+    with pytest.raises(ConfigError, match="'shadow' requires mode: public"):
         Config.load(_write(tmp_path, bad))
 
 

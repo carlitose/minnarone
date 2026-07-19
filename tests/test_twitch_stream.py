@@ -269,7 +269,7 @@ def test_unproductive_reader_failure_is_raised_after_stream_finishes():
 
 def test_constructor_requires_credentials_only_when_chat_reader_is_built():
     TwitchStreamAdapter(channel="minnarone", chat=False, audio=True)
-    with pytest.raises(ValueError, match="credenziali"):
+    with pytest.raises(ValueError, match="credentials"):
         TwitchStreamAdapter(channel="minnarone", chat=True, audio=False)
 
 

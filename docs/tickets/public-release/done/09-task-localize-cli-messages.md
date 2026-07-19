@@ -17,13 +17,13 @@ Emerso dalla verifica fresh-install (ticket 07), severità "note".
 
 ## Acceptance Criteria
 
-- [ ] Le stringhe utente della CLI (`src/minnarone/cli.py`, errori di
+- [x] Le stringhe utente della CLI (`src/minnarone/cli.py`, errori di
       validazione config, messaggi di build/avvio) sono in inglese o gated su
       locale.
-- [ ] I commenti del blocco "Config example" nel README e/o i file
+- [x] I commenti del blocco "Config example" nel README e/o i file
       `examples/*.yaml` sono coerenti con la lingua scelta.
-- [ ] Test aggiornati se asseriscono stringhe italiane.
-- [ ] `pytest` verde.
+- [x] Test aggiornati se asseriscono stringhe italiane.
+- [x] `pytest` verde.
 
 ## Blocked By
 
@@ -53,3 +53,22 @@ tradurre tutte le stringhe CLI tocca molti file e molti test.
 ## Out of Scope
 
 - Traduzione dei docs operativi e dei docs interni (restano italiani).
+
+## Completion Evidence (2026-07-19)
+
+- Tradotte in inglese le superfici dei quattro comandi installati, gli errori
+  runtime/config/provider/capture propagati alla CLI e tutta la copia pubblica
+  dashboard/TUI; docstring, commenti interni e prompt/persona restano italiani.
+- Tradotti i commenti fenced di `README.md` e dei cinque example YAML pubblici;
+  `README.it.md`, valori come `language: it` e la semantica dei config restano
+  invariati.
+- Test aggiornati e rafforzati per help, errori, dashboard/TUI, commenti README,
+  redazione dei segreti e contratti dei provider.
+- Suite completa: `1287 passed`; `make quality`, `git diff --check` e tutti i
+  comandi `--help` verdi.
+- Tre iterazioni di review: verdetti finali code-review `Pass` e anti-pattern
+  review `LGTM`, nessun finding residuo.
+- QA offline: help, config valida/non valida, build failure, dipendenza TUI,
+  dashboard vuota, cinque config example e redazione token/API key tutti verdi.
+- Non eseguiti perché richiedono rete/account/hardware: capture Twitch, media
+  OS e verifica visuale interattiva della TUI.

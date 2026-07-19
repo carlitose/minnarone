@@ -63,36 +63,36 @@ from .twitch_stream import TwitchStreamRuntimeError
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="minnarone",
-        description="Avvia l'agente Minnarone da un file di configurazione.",
+        description="Start the Minnarone agent from a configuration file.",
         epilog=(
-            "Sottocomando: `minnarone validate-prompts "
-            "[--prompts-dir DIR | --config FILE]` valida i prompt-set "
-            "senza avviare l'app."
+            "Subcommand: `minnarone validate-prompts "
+            "[--prompts-dir DIR | --config FILE]` validates prompt sets "
+            "without starting the app."
         ),
     )
     parser.add_argument(
         "config",
         nargs="?",
-        help="percorso del file di config YAML",
+        help="path to the YAML configuration file",
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="valida il config e costruisci l'agente senza avviare il loop",
+        help="validate the configuration and build the agent without starting the loop",
     )
     parser.add_argument(
         "--tui",
         action="store_true",
-        help="avvia il runtime live con la dashboard TUI di osservabilità",
+        help="start the live runtime with the observability TUI dashboard",
     )
     parser.add_argument(
         "--replay",
         metavar="RUN_OR_JSONL",
-        help="apri una run o un perceptions.jsonl in dashboard replay offline",
+        help="open a run or perceptions.jsonl in the offline replay dashboard",
     )
     args = parser.parse_args(list(argv))
     if args.replay is None and args.config is None:
-        parser.error("config richiesto a meno di usare --replay")
+        parser.error("config is required unless --replay is used")
     return args
 
 
@@ -118,20 +118,20 @@ def _parse_validate_prompts_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="minnarone validate-prompts",
         description=(
-            "Valida i prompt-set (original-chat + summarizer): default "
-            "impacchettati più eventuale directory di override."
+            "Validate prompt sets (original-chat + summarizer): packaged "
+            "defaults plus an optional override directory."
         ),
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--prompts-dir",
         metavar="DIR",
-        help="directory di override dei prompt (come `prompts_dir` in config)",
+        help="prompt override directory (the `prompts_dir` configuration field)",
     )
     group.add_argument(
         "--config",
         metavar="FILE",
-        help="config YAML da cui leggere `prompts_dir`",
+        help="YAML configuration from which to read `prompts_dir`",
     )
     return parser.parse_args(list(argv))
 
@@ -146,20 +146,20 @@ def _prompts_dir_from_config(config_path: str) -> str | None:
     """
     p = Path(config_path)
     if not p.is_file():
-        raise ConfigError(f"file di config non trovato: {p}")
+        raise ConfigError(f"config file not found: {p}")
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise ConfigError(f"config illeggibile: {p}: {exc}") from exc
+        raise ConfigError(f"cannot read config: {p}: {exc}") from exc
     if data is None:
-        raise ConfigError(f"file di config vuoto: {p}")
+        raise ConfigError(f"config file is empty: {p}")
     if not isinstance(data, dict):
-        raise ConfigError("la radice del file di config deve essere una mappa")
+        raise ConfigError("config file root must be a mapping")
     prompts_dir = data.get("prompts_dir")
     if prompts_dir is None:
         return None
     if not isinstance(prompts_dir, str) or not prompts_dir:
-        raise ConfigError("prompts_dir deve essere una stringa non vuota")
+        raise ConfigError("prompts_dir must be a non-empty string")
     path = Path(prompts_dir)
     if not path.is_absolute():
         path = p.resolve().parent / path
@@ -176,7 +176,7 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
             else args.prompts_dir
         )
     except ConfigError as exc:
-        print(f"errore di config: {exc}", file=sys.stderr)
+        print(f"configuration error: {exc}", file=sys.stderr)
         return 2
 
     override_dir = Path(prompts_dir) if prompts_dir else None
@@ -199,7 +199,7 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
                     override_dir=override_dir,
                 )
             except PromptError as exc:
-                problems.append(f"errore prompt [{set_name}]: {exc}")
+                problems.append(f"prompt error [{set_name}]: {exc}")
             else:
                 checked.append((set_name, spec.filename, origin))
 
@@ -211,22 +211,20 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
             load_prompt_set(prompts_dir)
             load_summarizer_prompt_set(prompts_dir)
         except PromptError as exc:
-            problems.append(f"errore prompt: {exc}")
+            problems.append(f"prompt error: {exc}")
 
     if problems:
         for line in problems:
             print(line, file=sys.stderr)
-        label = "problema" if len(problems) == 1 else "problemi"
+        label = "problem" if len(problems) == 1 else "problems"
         print(
-            f"validazione fallita: {len(problems)} {label}.",
+            f"validation failed: {len(problems)} {label}.",
             file=sys.stderr,
         )
         return 1
 
-    where = (
-        f"override: {override_dir}" if override_dir else "solo default impacchettati"
-    )
-    print(f"ok: {len(checked)} file di prompt validati ({where})")
+    where = f"override: {override_dir}" if override_dir else "packaged defaults only"
+    print(f"ok: {len(checked)} prompt files validated ({where})")
     for set_name, filename, origin in checked:
         print(f"  [{set_name}] {filename}: {origin}")
     # Decisione FU-02 (niente strict-set bloccante): il fallback per-file resta,
@@ -235,10 +233,13 @@ def _validate_prompts_main(argv: Sequence[str]) -> int:
     n_override = sum(1 for _, _, origin in checked if origin == "override")
     n_default = len(checked) - n_override
     if override_dir is not None and 0 < n_override < len(checked):
+        override_label = "file" if n_override == 1 else "files"
+        default_label = "file" if n_default == 1 else "files"
         print(
-            f"nota: override parziale — {n_override} file da override, "
-            f"{n_default} dal default impacchettato (possibile mix di lingue: "
-            "verifica che sia voluto)"
+            f"note: partial override — {n_override} {override_label} from the "
+            f"override, {n_default} {default_label} from packaged defaults "
+            "(possible language mix: "
+            "verify that it is intentional)"
         )
     return 0
 
@@ -262,7 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         except OSError as exc:
-            print(f"errore replay: {exc}", file=sys.stderr)
+            print(f"replay error: {exc}", file=sys.stderr)
             return 1
         return 0
 
@@ -291,7 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     run_session.mark_completed()
             raise
     except ConfigError as exc:
-        print(f"errore di config: {exc}", file=sys.stderr)
+        print(f"configuration error: {exc}", file=sys.stderr)
         return 2
     except LiveTuiDependencyError as exc:
         print(str(exc), file=sys.stderr)
@@ -299,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.check:
         print(
-            f"ok: agente '{config.agent_name}' costruito "
+            f"ok: agent '{config.agent_name}' built "
             f"(mode={config.mode.value}, provider={config.llm_provider})"
         )
         return 0
@@ -317,7 +318,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if run_session is not None:
             with suppress(Exception):
                 run_session.mark_completed()
-        print(f"errore llama-server: {exc}", file=sys.stderr)
+        print(f"llama-server error: {exc}", file=sys.stderr)
         return 1
 
     # Avvio del loop di reazione live. La cattura di percezione (audio/schermo)
@@ -328,16 +329,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             asyncio.run(agent.run())
     except TwitchStreamRuntimeError as exc:
-        print(f"errore runtime Twitch: {exc}", file=sys.stderr)
+        print(f"Twitch runtime error: {exc}", file=sys.stderr)
         return 1
     except TwitchTokenValidationError as exc:
-        print(f"errore credenziali Twitch: {exc}", file=sys.stderr)
+        print(f"Twitch credentials error: {exc}", file=sys.stderr)
         return 1
     except LiveTuiDependencyError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("arresto richiesto.", file=sys.stderr)
+        print("shutdown requested.", file=sys.stderr)
     return 0
 
 

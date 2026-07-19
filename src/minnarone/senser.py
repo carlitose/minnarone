@@ -122,10 +122,11 @@ class Senser:
     ) -> None:
         if trigger_mode not in ("reactive", "periodic", "on_perception"):
             raise ValueError(
-                f"trigger_mode deve essere 'reactive', 'periodic' o 'on_perception', ricevuto {trigger_mode!r}"
+                "trigger_mode must be 'reactive', 'periodic', or "
+                f"'on_perception'; received {trigger_mode!r}"
             )
         if trigger_mode == "periodic" and interval_s is None:
-            raise ValueError("periodic mode richiede interval_s")
+            raise ValueError("periodic mode requires interval_s")
         self.trigger_mode = trigger_mode
         self._interval_s = interval_s
         self._store = store

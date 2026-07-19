@@ -1,37 +1,37 @@
-# Config di esempio con LLM locale via llama.cpp (nessuna OPENROUTER_API_KEY).
+# Example configuration with a local LLM through llama.cpp (no OPENROUTER_API_KEY).
 #
-# Prerequisito: avvia `llama-server` A MANO in un altro terminale, es.:
+# Prerequisite: start `llama-server` MANUALLY in another terminal, for example:
 #   llama-server -m gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf --port 8080 -ngl 99 -c 8192 --reasoning off --parallel 1
 #
-# minnarone NON gestisce il processo del server: all'avvio del loop live fa
-# solo un health-check su GET {base_url}/health (200 = modello caricato).
+# Minnarone DOES NOT manage the server process: when the live loop starts, it
+# only performs a health check at GET {base_url}/health (200 = model loaded).
 
 mode: public
 soul_path: soul.md
 facts_dir: facts
 adapter: os_capture
-llm_provider: llamacpp     # provider locale: llama-server OpenAI-compatibile
+llm_provider: llamacpp     # local provider: OpenAI-compatible llama-server
 
 llamacpp:
-  base_url: http://127.0.0.1:8080  # dove risponde il llama-server (porta esplicita)
+  base_url: http://127.0.0.1:8080  # llama-server address (explicit port)
 
-# Percezione: qui solo lo schermo, così il config passa `--check` senza altri
-# modelli. Il captioner VLM resta SPENTO (nessun `vlm.model`): su GPU piccole
-# conviene non affiancare il backend torch Qwen2-VL a llama-server. Per l'audio
-# servono anche VAD/ASR e `speaker_embedding.model_path` (vedi
+# Perception: screen only here, so the config passes `--check` without other
+# models. The VLM captioner remains OFF (no `vlm.model`): on small GPUs, avoid
+# running the torch Qwen2-VL backend beside llama-server. Audio also requires
+# VAD/ASR and `speaker_embedding.model_path` (see
 # minnarone.example.yaml).
 os_capture:
   audio: false
   video: true
   video_fps: 1.0
 
-# Captioning video sulla STESSA istanza llama-server (multimodale): decommenta
-# il blocco `vlm` sotto e riavvia il server con `--mmproj <mmproj.gguf>` e
-# `--parallel 2` MA con `-c 16384` (il contesto e' diviso per gli slot: con
-# --parallel 2 servono 16384 per avere 8192 token a richiesta; -c 4096 darebbe
-# solo 2048/slot e un prompt multi-canale sforerebbe -> 400). Il backend riusa
-# `llamacpp.base_url` qui sopra: niente doppia residenza torch-VLM + LLM in VRAM.
-# All'avvio live la CLI verifica la visione via GET /props (errore se manca --mmproj).
+# Video captioning on the SAME multimodal llama-server instance: uncomment the
+# `vlm` block below and restart the server with `--mmproj <mmproj.gguf>` and
+# `--parallel 2`, BUT use `-c 16384` (context is split across slots: parallel 2
+# needs 16384 for 8192 tokens per request; -c 4096 would provide only 2048/slot
+# and a multi-channel prompt would exceed it -> 400). The backend reuses
+# `llamacpp.base_url` above: no duplicate torch-VLM + LLM residency in VRAM.
+# At live startup, the CLI checks vision through GET /props (error without --mmproj).
 # vlm:
 #   backend: llamacpp
 
@@ -40,7 +40,7 @@ idle_interval: 150.0
 recent_chat_window: 15
 
 llm_params:
-  temperature: 0.7         # tuning passato nel body della richiesta
+  temperature: 0.7         # tuning passed in the request body
   max_tokens: 256
-  # NOTA: `thinking` (usato dai provider cloud) qui non serve: per llamacpp
-  # viene droppato — il reasoning si spegne server-side con `--reasoning off`.
+  # NOTE: `thinking` (used by cloud providers) is unnecessary here: llamacpp
+  # drops it; reasoning is disabled server-side with `--reasoning off`.

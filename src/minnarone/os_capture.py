@@ -95,10 +95,14 @@ class OsCaptureAdapter(SourceAdapter):
         readers: dict[str, SourceAdapter] = {}
         if config.audio:
             if audio_source is None:
-                raise ValueError("os_capture.audio abilitato ma audio_source mancante")
+                raise ValueError(
+                    "os_capture.audio is enabled but audio_source is missing"
+                )
             readers["audio"] = os_audio_capture(audio_source)
         if config.video:
             if video_source is None:
-                raise ValueError("os_capture.video abilitato ma video_source mancante")
+                raise ValueError(
+                    "os_capture.video is enabled but video_source is missing"
+                )
             readers["video"] = os_screen_capture(video_source)
         return readers

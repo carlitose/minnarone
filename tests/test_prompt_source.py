@@ -100,14 +100,14 @@ def test_language_name_maps_known_codes() -> None:
 
 def test_missing_required_file_fails_fast() -> None:
     spec = PromptSetSpec(specs=(PromptSpec(filename="inesistente.md"),))
-    with pytest.raises(PromptError, match="obbligatorio mancante"):
+    with pytest.raises(PromptError, match="required prompt file missing"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG)
 
 
 def test_empty_required_content_not_silent(tmp_path: Path) -> None:
     (tmp_path / "format.md").write_text("   \n", encoding="utf-8")
     spec = PromptSetSpec(specs=(PromptSpec(filename="format.md"),))
-    with pytest.raises(PromptError, match="vuoto"):
+    with pytest.raises(PromptError, match="is empty"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -118,7 +118,7 @@ def test_unknown_placeholder_fails_fast(tmp_path: Path) -> None:
     spec = PromptSetSpec(
         specs=(PromptSpec(filename="format.md", allowed_placeholders=frozenset()),)
     )
-    with pytest.raises(PromptError, match="ignoti"):
+    with pytest.raises(PromptError, match="unknown placeholders"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -157,7 +157,7 @@ def test_missing_required_key_fails_fast(tmp_path: Path) -> None:
             ),
         )
     )
-    with pytest.raises(PromptError, match="chiave"):
+    with pytest.raises(PromptError, match="key sections"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -209,7 +209,7 @@ def test_key_spec_missing_token_names_file_and_section(tmp_path: Path) -> None:
         a=KeySpec(required_tokens=("#tok",)),
         b=KeySpec(required_tokens=("#tok",)),
     )
-    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'b'.*#tok"):
+    with pytest.raises(PromptError, match=r"'keyed\.md' section 'b'.*#tok"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -223,14 +223,14 @@ def test_key_spec_foreign_placeholder_names_file_and_section(tmp_path: Path) -> 
         a=KeySpec(allowed_placeholders=frozenset({"user"})),
         b=KeySpec(),
     )
-    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'b'.*user"):
+    with pytest.raises(PromptError, match=r"'keyed\.md' section 'b'.*user"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
 def test_key_spec_missing_required_placeholder_names_section(tmp_path: Path) -> None:
     (tmp_path / "keyed.md").write_text("## a\nsenza placeholder\n", encoding="utf-8")
     spec = _keyed_spec(a=KeySpec(required_placeholders=frozenset({"user"})))
-    with pytest.raises(PromptError, match=r"'keyed\.md' sezione 'a'.*user"):
+    with pytest.raises(PromptError, match=r"'keyed\.md' section 'a'.*user"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -247,7 +247,7 @@ def test_key_spec_key_is_implicitly_required(tmp_path: Path) -> None:
             ),
         )
     )
-    with pytest.raises(PromptError, match="chiave"):
+    with pytest.raises(PromptError, match="key sections"):
         PromptSet(spec, default_pkg=DEFAULT_PROMPTS_PKG, override_dir=tmp_path)
 
 
@@ -299,7 +299,7 @@ def test_original_chat_situations_missing_key_fails_fast(tmp_path: Path) -> None
     (tmp_path / "situations.md").write_text(
         "## idle\nsolo idle MSG: #end_conv\n", encoding="utf-8"
     )
-    with pytest.raises(PromptError, match="chiave"):
+    with pytest.raises(PromptError, match="missing key sections"):
         load_prompt_set(tmp_path)
 
 
@@ -355,7 +355,7 @@ def test_situations_end_conv_missing_in_one_section_names_it(
     _write_situations(tmp_path, {"chat-mention": "{{user}} scrive, rispondi"})
     with pytest.raises(
         PromptError,
-        match=r"'situations\.md' sezione 'chat-mention'.*#end_conv",
+        match=r"'situations\.md' section 'chat-mention'.*#end_conv",
     ):
         load_prompt_set(tmp_path)
 
@@ -366,7 +366,7 @@ def test_situations_placeholder_in_wrong_section_names_it(tmp_path: Path) -> Non
     _write_situations(tmp_path, {"streamer-mention": "lo streamer parla a {{user}}"})
     with pytest.raises(
         PromptError,
-        match=r"'situations\.md' sezione 'streamer-mention'.*user",
+        match=r"'situations\.md' section 'streamer-mention'.*user",
     ):
         load_prompt_set(tmp_path)
 
@@ -374,7 +374,7 @@ def test_situations_placeholder_in_wrong_section_names_it(tmp_path: Path) -> Non
 def test_situations_reason_only_allowed_in_generic(tmp_path: Path) -> None:
     # `{{reason}}` è fornito solo dal render di `generic`: altrove è un errore.
     _write_situations(tmp_path, {"idle": "idle {{reason}} MSG: #end_conv"})
-    with pytest.raises(PromptError, match=r"'situations\.md' sezione 'idle'.*reason"):
+    with pytest.raises(PromptError, match=r"'situations\.md' section 'idle'.*reason"):
         load_prompt_set(tmp_path)
 
 
@@ -391,7 +391,7 @@ def test_summarizer_placeholder_in_section_names_it(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(
-        PromptError, match=r"'summarizer\.md' sezione 'label_chat'.*user"
+        PromptError, match=r"'summarizer\.md' section 'label_chat'.*user"
     ):
         load_summarizer_prompt_set(tmp_path)
 
@@ -498,7 +498,7 @@ def test_headers_channel_only_allowed_in_cosa_sai(tmp_path: Path) -> None:
     # degli altri header non fornisce valori.
     _write_headers(tmp_path, {"situazione": "[SITUATION of {{channel}}]"})
     with pytest.raises(
-        PromptError, match=r"'headers\.md' sezione 'situazione'.*channel"
+        PromptError, match=r"'headers\.md' section 'situazione'.*channel"
     ):
         load_prompt_set(tmp_path)
 
@@ -506,7 +506,7 @@ def test_headers_channel_only_allowed_in_cosa_sai(tmp_path: Path) -> None:
 def test_headers_cosa_sai_requires_channel(tmp_path: Path) -> None:
     # Un override non puo' "perdere" il canale (stessa regola di rules/intro).
     _write_headers(tmp_path, {"cosa_sai": "WHAT YOU KNOW (the streamer):"})
-    with pytest.raises(PromptError, match=r"'headers\.md' sezione 'cosa_sai'.*channel"):
+    with pytest.raises(PromptError, match=r"'headers\.md' section 'cosa_sai'.*channel"):
         load_prompt_set(tmp_path)
 
 
@@ -516,7 +516,7 @@ def test_headers_reject_header_ref_placeholders_no_recursion(
     # I placeholder `{{header_*}}` sono per i CORPI (situations.md), non per
     # headers.md stesso: niente ricorsione header->header.
     _write_headers(tmp_path, {"memoria": "{{header_situazione}}"})
-    with pytest.raises(PromptError, match=r"'headers\.md' sezione 'memoria'"):
+    with pytest.raises(PromptError, match=r"'headers\.md' section 'memoria'"):
         load_prompt_set(tmp_path)
 
 

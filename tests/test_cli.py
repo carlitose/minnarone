@@ -9,6 +9,8 @@ import builtins
 import os
 import textwrap
 
+import pytest
+
 import minnarone.cli as cli
 from minnarone.cli import load_dotenv_file, main
 from minnarone.config import ConfigError
@@ -49,6 +51,36 @@ def test_cli_check_builds_valid_config(tmp_path, capsys):
     assert "ok" in out.lower() or "minnarone" in out.lower()
 
 
+def test_cli_help_and_validate_prompts_help_are_english(capsys):
+    with pytest.raises(SystemExit) as caught:
+        main(["--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Start the Minnarone agent from a configuration file." in help_text
+    assert "path to the YAML configuration file" in help_text
+    assert "Avvia" not in help_text
+
+    with pytest.raises(SystemExit) as caught:
+        main(["validate-prompts", "--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Validate prompt sets" in help_text
+    assert "override directory" in help_text
+    assert "Valida i prompt-set" not in help_text
+
+
+def test_cli_check_success_and_missing_config_error_are_english(tmp_path, capsys):
+    code = main([str(_valid_config(tmp_path)), "--check"])
+    assert code == 0
+    assert "ok: agent 'minnarone' built" in capsys.readouterr().out
+
+    code = main([str(tmp_path / "missing.yaml"), "--check"])
+    assert code == 2
+    error = capsys.readouterr().err
+    assert "configuration error:" in error
+    assert "config file not found:" in error
+
+
 def test_cli_check_does_not_load_vlm_for_twitch_video_config(tmp_path, capsys):
     soul = tmp_path / "soul.md"
     soul.write_text("io", encoding="utf-8")
@@ -86,7 +118,7 @@ def test_cli_invalid_config_returns_nonzero(tmp_path, capsys):
     code = main([str(tmp_path / "missing.yaml"), "--check"])
     assert code != 0
     err = capsys.readouterr().err
-    assert "config" in err.lower() or "non trovato" in err.lower()
+    assert "config" in err.lower() or "not found" in err.lower()
 
 
 def test_cli_invalid_mode_clear_error(tmp_path, capsys):
@@ -124,7 +156,7 @@ def test_cli_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypatch)
 
     assert code == 1
     err = capsys.readouterr().err
-    assert "runtime Twitch" in err
+    assert "Twitch runtime error" in err
     assert "Login authentication failed" in err
 
 
@@ -134,7 +166,7 @@ def test_cli_token_validation_error_returns_nonzero_without_traceback(
     class BrokenAgent:
         async def run(self):
             raise TwitchTokenValidationError(
-                "read token Twitch: account o scope non validi"
+                "Twitch read token: invalid account or scopes"
             )
 
     monkeypatch.setattr(cli, "build_agent", lambda _config: BrokenAgent())
@@ -143,8 +175,8 @@ def test_cli_token_validation_error_returns_nonzero_without_traceback(
 
     assert code == 1
     err = capsys.readouterr().err
-    assert "credenziali Twitch" in err
-    assert "account o scope non validi" in err
+    assert "Twitch credentials error" in err
+    assert "invalid account or scopes" in err
     assert "Traceback" not in err
 
 
@@ -254,7 +286,7 @@ def test_cli_tui_runtime_twitch_error_returns_nonzero(tmp_path, capsys, monkeypa
 
     assert code == 1
     err = capsys.readouterr().err
-    assert "runtime Twitch" in err
+    assert "Twitch runtime error" in err
     assert "Login authentication failed" in err
 
 
@@ -365,7 +397,7 @@ def test_cli_check_fails_for_live_send_without_write_token(
 
     assert code == 2
     err = capsys.readouterr().err
-    assert "errore di config" in err
+    assert "configuration error" in err
     assert "TWITCH_SEND_OAUTH_TOKEN" in err
 
 
@@ -541,9 +573,9 @@ def test_cli_validate_prompts_partial_override_notice(tmp_path, capsys):
 
     assert code == 0
     out = capsys.readouterr().out
-    assert "override parziale" in out
+    assert "partial override" in out
     # 9 file totali (8 original-chat incluso headers.md + summarizer).
-    assert "1 file da override, 8 dal default" in out
+    assert "1 file from the override, 8 files from packaged defaults" in out
 
 
 def test_cli_validate_prompts_full_override_has_no_partial_notice(tmp_path, capsys):
@@ -572,7 +604,7 @@ def test_cli_validate_prompts_full_override_has_no_partial_notice(tmp_path, caps
 
     assert code == 0
     out = capsys.readouterr().out
-    assert "override parziale" not in out
+    assert "partial override" not in out
 
 
 def test_cli_validate_prompts_broken_section_names_file_and_section(tmp_path, capsys):
@@ -596,7 +628,7 @@ def test_cli_validate_prompts_broken_section_names_file_and_section(tmp_path, ca
     assert code != 0
     err = capsys.readouterr().err
     assert "situations.md" in err
-    assert "sezione 'idle'" in err
+    assert "section 'idle'" in err
     assert "#end_conv" in err
 
 

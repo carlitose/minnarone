@@ -44,6 +44,20 @@ def test_twitch_chat_smoke_requires_manual_credentials(tmp_path, monkeypatch, ca
     assert "TWITCH_OAUTH_TOKEN" in err
 
 
+def test_twitch_smoke_installed_command_help_is_english(capsys):
+    assert main(["--help"]) == 0
+    help_text = capsys.readouterr().out
+    assert "Read-only Twitch capture" in help_text
+    assert "Twitch channel to read" in help_text
+    assert "Cattura" not in help_text
+
+    assert chat_main(["--help"]) == 0
+    help_text = capsys.readouterr().out
+    assert "Read-only Twitch chat capture" in help_text
+    assert "path of the perceptions.jsonl file to write" in help_text
+    assert "Cattura" not in help_text
+
+
 def test_twitch_chat_smoke_requires_channel(tmp_path, capsys):
     code = main(
         [
@@ -242,7 +256,7 @@ def test_twitch_chat_smoke_zero_events_is_failure(tmp_path, monkeypatch, capsys)
     )
 
     assert code != 0
-    assert "nessun evento" in capsys.readouterr().err
+    assert "no events captured" in capsys.readouterr().err
 
 
 def test_twitch_chat_smoke_invalid_channel_is_clear_error(
@@ -291,7 +305,7 @@ def test_twitch_chat_smoke_operational_errors_are_clear(tmp_path, monkeypatch, c
 
     assert code == 1
     err = capsys.readouterr().err
-    assert "errore di connessione" in err
+    assert "connection error" in err
     assert "network unreachable" in err
 
 
@@ -471,7 +485,7 @@ def test_twitch_smoke_fails_when_requested_audio_has_no_events(
     )
 
     assert code == 1
-    assert "audio: nessun evento" in capsys.readouterr().err
+    assert "audio: no events captured" in capsys.readouterr().err
 
 
 def test_twitch_smoke_quiet_chat_does_not_fail_successful_audio(
@@ -497,7 +511,7 @@ def test_twitch_smoke_quiet_chat_does_not_fail_successful_audio(
     )
 
     assert code == 0
-    assert "chat quieta" in capsys.readouterr().out
+    assert "chat was quiet" in capsys.readouterr().out
 
 
 def test_twitch_smoke_strict_chat_fails_even_when_audio_succeeds(
@@ -524,7 +538,7 @@ def test_twitch_smoke_strict_chat_fails_even_when_audio_succeeds(
     )
 
     assert code == 1
-    assert "chat: nessun evento" in capsys.readouterr().err
+    assert "chat: no events captured" in capsys.readouterr().err
 
 
 def test_twitch_smoke_fails_when_requested_video_has_no_events(
@@ -550,7 +564,7 @@ def test_twitch_smoke_fails_when_requested_video_has_no_events(
     )
 
     assert code == 1
-    assert "video: nessun evento" in capsys.readouterr().err
+    assert "video: no events captured" in capsys.readouterr().err
 
 
 def test_twitch_smoke_fails_when_stats_contains_failures(tmp_path, monkeypatch, capsys):

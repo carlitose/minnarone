@@ -57,7 +57,12 @@ def test_building_view_without_textual_raises_clear_error(monkeypatch):
     with pytest.raises(RuntimeError) as excinfo:
         build_dashboard_app(lambda: DashboardState())
 
-    assert "textual" in str(excinfo.value).lower()
+    assert str(excinfo.value) == (
+        "The TUI dashboard requires 'textual', which is not installed.\n"
+        'Install it with:  pip install "minnarone[tui]"  '
+        "(or: pip install textual).\n"
+        "Note: the snapshot model (minnarone.dashboard) works without textual."
+    )
 
 
 def test_view_renders_snapshot_smoke(tmp_path):
@@ -130,14 +135,14 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
 
     assert app.panel_titles == [
         "IDLE",
-        "FINESTRA CHAT",
+        "CHAT WINDOW",
         "STREAMER",
         "CHAT",
-        "EVENTI",
+        "EVENTS",
         "MINNARONE",
-        "TRASCRIZIONE",
+        "TRANSCRIPTION",
         "VIDEO",
-        "MEMORIA",
+        "MEMORY",
     ]
 
     async def exercise_app():
@@ -155,12 +160,12 @@ def test_view_constructs_screenshot_dashboard_panels_with_fake_data():
             }
 
     updates = asyncio.run(exercise_app())
-    assert "alice aperta" in updates["FINESTRA CHAT"]
+    assert "alice open since" in updates["CHAT WINDOW"]
     assert "chat live separata" in updates["CHAT"]
-    assert "audio nel pannello" in updates["TRASCRIZIONE"]
+    assert "audio nel pannello" in updates["TRANSCRIPTION"]
     assert "video nel pannello" in updates["VIDEO"]
     assert "Minnarone osserva" in updates["MINNARONE"]
-    assert "memoria fake" in updates["MEMORIA"]
+    assert "memoria fake" in updates["MEMORY"]
 
 
 def test_view_has_separate_prompt_tab():
@@ -409,14 +414,14 @@ def test_view_renders_snapshot_not_ready_placeholder():
     )
 
     app = build_dashboard_app(
-        lambda: (_ for _ in ()).throw(DashboardSnapshotNotReady("non pronto"))
+        lambda: (_ for _ in ()).throw(DashboardSnapshotNotReady("not ready"))
     )
 
     async def exercise_app():
         async with app.run_test(size=(80, 24)):
             contents = list(app.query(".dashboard-panel-content"))
             assert contents
-            assert all(str(widget.content) == "non pronto" for widget in contents)
+            assert all(str(widget.content) == "not ready" for widget in contents)
 
     asyncio.run(exercise_app())
 
@@ -434,6 +439,16 @@ def test_view_does_not_swallow_dashboard_runtime_errors():
                 pass
 
     asyncio.run(exercise_app())
+
+
+def test_mark_streamer_feedback_uses_english_copy():
+    from minnarone.dashboard_tui import _mark_streamer_feedback
+
+    accepted = type("Result", (), {"accepted": True, "cluster_id": 7})()
+    rejected = type("Result", (), {"accepted": False, "reason": "no speech"})()
+
+    assert _mark_streamer_feedback(accepted) == "streamer marked (cluster 7)"
+    assert _mark_streamer_feedback(rejected) == ("streamer marking rejected: no speech")
 
 
 # --- Per-profile TUI panels (issue 13) ----------------------------------------
@@ -454,9 +469,9 @@ def test_tui_shows_sintetizzatore_panel_when_active():
         async with app.run_test(size=(100, 40)):
             visible = [w for w in app.query(".dashboard-panel") if w.display]
             titles = [w.border_title for w in visible]
-            assert "SINTETIZZATORE" in titles
+            assert "SYNTHESIZER" in titles
             # Content should show the message.
-            content = app.query_one("#panel-sintetizzatore .dashboard-panel-content")
+            content = app.query_one("#panel-synthesizer .dashboard-panel-content")
             return str(content.content)
 
     rendered = asyncio.run(exercise_app())
@@ -478,8 +493,8 @@ def test_tui_shows_suggerimenti_panel_when_active():
         async with app.run_test(size=(100, 40)):
             visible = [w for w in app.query(".dashboard-panel") if w.display]
             titles = [w.border_title for w in visible]
-            assert "SUGGERIMENTI" in titles
-            content = app.query_one("#panel-suggerimenti .dashboard-panel-content")
+            assert "SUGGESTIONS" in titles
+            content = app.query_one("#panel-suggestions .dashboard-panel-content")
             return str(content.content)
 
     rendered = asyncio.run(exercise_app())
@@ -502,11 +517,11 @@ def test_tui_hides_conditional_panels_when_inactive():
             return titles
 
     titles = asyncio.run(exercise_app())
-    assert "SINTETIZZATORE" not in titles
-    assert "SUGGERIMENTI" not in titles
+    assert "SYNTHESIZER" not in titles
+    assert "SUGGESTIONS" not in titles
     # Base panels are present.
     assert "MINNARONE" in titles
-    assert "MEMORIA" in titles
+    assert "MEMORY" in titles
 
 
 def test_tui_grid_adapts_to_panel_count():

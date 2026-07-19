@@ -166,8 +166,8 @@ def make_device_capture_source(
             import soundcard as sc
         except ImportError as exc:  # pragma: no cover - richiede ambiente senza extra
             raise RuntimeError(
-                "cattura audio di sistema non disponibile: installa l'extra "
-                "'os-capture' (soundcard + numpy)"
+                "system audio capture is unavailable: install the os-capture "
+                "extra (soundcard + numpy)"
             ) from exc
 
         # Apri il loopback dell'uscita di DEFAULT. Su Windows/Linux il device
@@ -178,9 +178,9 @@ def make_device_capture_source(
             loopback = sc.get_microphone(str(speaker.name), include_loopback=True)
         except Exception as exc:  # noqa: BLE001 - fallback errore operatore chiaro
             raise RuntimeError(
-                "nessun device di loopback per l'uscita di default: verifica "
-                "driver/monitor audio e permessi (macOS non supporta il "
-                "loopback: serve un device esterno come BlackHole)"
+                "no loopback device for the default output: check the audio "
+                "driver/monitor and permissions (macOS does not support "
+                "loopback: an external device such as BlackHole is required)"
             ) from exc
 
         # numframes per chunk: durata * sample_rate, almeno 1 frame.
@@ -204,8 +204,8 @@ def make_device_capture_source(
             raise
         except Exception as exc:  # noqa: BLE001 - errore operatore chiaro
             raise RuntimeError(
-                f"cattura del loopback fallita ({speaker.name}): permessi o "
-                "device non disponibili"
+                f"loopback capture failed ({speaker.name}): permissions or "
+                "device unavailable"
             ) from exc
 
     return _source()
@@ -272,8 +272,8 @@ def make_device_screen_capture_source(
             import numpy as np
         except ImportError as exc:  # pragma: no cover - richiede ambiente senza extra
             raise RuntimeError(
-                "cattura schermo non disponibile: installa l'extra "
-                "'os-capture' (mss + numpy)"
+                "screen capture is unavailable: install the os-capture extra "
+                "(mss + numpy)"
             ) from exc
 
         # Apri lo schermo alla PRIMA iterazione e seleziona il monitor per
@@ -285,9 +285,9 @@ def make_device_screen_capture_source(
                 # il contratto promette un errore chiaro per ogni indice inesistente.
                 if monitor < 0 or monitor >= len(sct.monitors):
                     raise RuntimeError(
-                        f"monitor {monitor} inesistente: sono disponibili gli "
-                        f"indici 0..{len(sct.monitors) - 1} "
-                        "(0 = tutti i monitor, 1 = primario)"
+                        f"monitor {monitor} does not exist: available indices are "
+                        f"0..{len(sct.monitors) - 1} "
+                        "(0 = all monitors, 1 = primary)"
                     )
                 target = sct.monitors[monitor]
 
@@ -309,9 +309,9 @@ def make_device_screen_capture_source(
             raise
         except Exception as exc:  # noqa: BLE001 - errore operatore chiaro
             raise RuntimeError(
-                "cattura dello schermo fallita: verifica i permessi (macOS: "
-                "'Screen Recording' in Privacy & Security) e la presenza di uno "
-                "schermo"
+                "screen capture failed: check permissions (macOS: "
+                "'Screen Recording' in Privacy & Security) and that a display "
+                "is available"
             ) from exc
 
     return _source()

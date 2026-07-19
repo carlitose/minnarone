@@ -47,8 +47,8 @@ class EventPerceiver(ABC):
         payload = event.payload
         if not isinstance(payload, self.payload_type):
             raise TypeError(
-                f"il payload di un RawEvent {self.channel!r} deve essere un "
-                f"{self.payload_type.__name__}, ricevuto {type(payload)!r}"
+                f"the payload of a {self.channel!r} RawEvent must be "
+                f"{self.payload_type.__name__}; received {type(payload)!r}"
             )
         return self._perceive_payload(payload)
 

@@ -24,6 +24,7 @@ from minnarone.config import Config, ConfigError, LlamaCppConfig, OsCaptureConfi
 from minnarone.llamacpp import (
     DEFAULT_BASE_URL,
     LLAMA_SERVER_COMMAND,
+    LLAMA_SERVER_MULTIMODAL_COMMAND,
     LlamaCppProvider,
     LlamaCppServerNotReady,
     check_server_ready,
@@ -37,6 +38,13 @@ from minnarone.openrouter import (
     build_provider,
 )
 from minnarone.output import OutputMode
+
+
+def test_operator_commands_use_english_placeholders():
+    assert "<model.gguf>" in LLAMA_SERVER_COMMAND
+    assert "<port>" in LLAMA_SERVER_COMMAND
+    assert "<model.gguf>" in LLAMA_SERVER_MULTIMODAL_COMMAND
+    assert "<port>" in LLAMA_SERVER_MULTIMODAL_COMMAND
 
 
 def _ok_response(message="ciao dal modello locale", *, cached=0, prompt_tokens=100):
@@ -271,7 +279,7 @@ def test_llamacpp_config_requires_explicit_port():
     # porta è quasi certamente un refuso e va segnalato al --check.
     with pytest.raises(ConfigError) as exc_info:
         LlamaCppConfig(base_url="http://127.0.0.1")
-    assert "porta" in str(exc_info.value)
+    assert "port" in str(exc_info.value)
 
 
 def test_llamacpp_config_normalizes_trailing_slash():
@@ -295,7 +303,7 @@ def test_llamacpp_config_rejects_port_zero():
     # come porta mancante, non lasciato passare fino al fallimento a runtime.
     with pytest.raises(ConfigError) as exc_info:
         LlamaCppConfig(base_url="http://127.0.0.1:0")
-    assert "porta" in str(exc_info.value)
+    assert "port" in str(exc_info.value)
 
 
 def test_config_from_dict_parses_llamacpp_block():
@@ -433,7 +441,7 @@ def test_check_server_ready_503_loading_is_actionable():
     with pytest.raises(LlamaCppServerNotReady) as exc_info:
         check_server_ready("http://127.0.0.1:8080", probe=probe)
     message = str(exc_info.value)
-    assert "caricando" in message
+    assert "still loading" in message
     assert LLAMA_SERVER_COMMAND in message
 
 

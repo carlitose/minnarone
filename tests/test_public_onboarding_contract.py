@@ -117,6 +117,38 @@ def test_readmes_cover_progressive_paths_and_public_safety_contract():
             assert phrase.lower() in text.lower()
 
 
+def test_english_readme_fenced_example_comments_have_no_italian_remnants():
+    text = README_PATHS[0].read_text(encoding="utf-8")
+    comments: list[str] = []
+    in_fence = False
+    for line in text.splitlines():
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence and "#" in line:
+            comments.append(line.split("#", 1)[1].strip().lower())
+
+    fenced_comments = "\n".join(comments)
+    italian_remnants = (
+        "oppure:",
+        "private = solo console locale",
+        "identità dell'agente",
+        "directory di fatti permanenti",
+        "sorgente di percezione",
+        "locale, modello fissato dal server",
+        "nome a cui l'agente risponde",
+        "porta esplicita richiesta",
+        "captiona i frame via l'istanza",
+        "condiviso col provider llm locale",
+    )
+    for remnant in italian_remnants:
+        assert remnant not in fenced_comments
+
+    # Italian remains a valid configured output language; only public comment
+    # prose in the English README is constrained by this contract.
+    assert "commentator:\n  language: it" in text
+
+
 def test_public_onboarding_examples_are_sanitized_shadow_configs():
     paths = (
         ROOT / "examples/onboarding/twitch-chat-shadow.it.yaml",

@@ -328,7 +328,7 @@ def test_build_agent_records_replayable_trigger_and_output_events(
     assert event_log.is_file()
     replay = load_replay_state(session.run_dir)
     panels = {panel.title: panel.text for panel in replay.render_panels()}
-    assert "mention <- utente1" in panels["EVENTI"]
+    assert "mention <- utente1" in panels["EVENTS"]
     assert panels["MINNARONE"] == "ciao"
     assert "replayed chat=1 audio=0 video=0 events=1 minnarone=1" in (
         replay.render_status_bar()
@@ -597,7 +597,7 @@ def test_guard_failure_wins_simultaneous_pump_completion_and_disarms_live(
         async def monitor(self, *, on_send_invalid):
             del on_send_invalid
             await rendezvous()
-            raise TwitchTokenValidationError("read token Twitch: revoked")
+            raise TwitchTokenValidationError("Twitch read token: revoked")
 
     class RecordingReactor:
         def __init__(self):
@@ -647,7 +647,7 @@ def test_guard_failure_wins_simultaneous_pump_completion_and_disarms_live(
     async def run_bounded():
         await asyncio.wait_for(agent.run(), timeout=2.0)
 
-    with pytest.raises(TwitchTokenValidationError, match="read token Twitch"):
+    with pytest.raises(TwitchTokenValidationError, match="Twitch read token"):
         asyncio.run(run_bounded())
 
     assert reactor.final_ticks == 0
@@ -710,7 +710,7 @@ def test_hourly_read_token_failure_stops_agent_and_disarms_live(tmp_path, monkey
     )
     agent = replace(agent, adapter=None, perception_queue=None, sender=sender)
 
-    with pytest.raises(TwitchTokenValidationError, match="read token Twitch"):
+    with pytest.raises(TwitchTokenValidationError, match="Twitch read token"):
         asyncio.run(asyncio.wait_for(agent.run(), timeout=2.0))
 
     assert read_calls == 2

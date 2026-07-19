@@ -36,101 +36,98 @@ def add_common_smoke_arguments(parser: argparse.ArgumentParser) -> None:
         "--audio-chunk-seconds",
         type=float,
         default=1.0,
-        help="durata di ogni chunk PCM audio",
+        help="duration of each PCM audio chunk",
     )
     parser.add_argument(
         "--max-audio-samples",
         type=int,
         default=3,
-        help="numero massimo di sample .pcm da salvare",
+        help="maximum number of .pcm samples to save",
     )
     parser.add_argument(
         "--vad-diagnostic",
         action="store_true",
-        help="segmenta l'audio con VAD e riporta conteggi/durate senza ASR",
+        help="segment audio with VAD and report counts/durations without ASR",
     )
     parser.add_argument(
         "--vad-mode",
         type=int,
         default=2,
-        help="aggressività WebRTC VAD: 0 meno aggressivo, 3 più aggressivo",
+        help="WebRTC VAD aggressiveness: 0 least aggressive, 3 most aggressive",
     )
     parser.add_argument(
         "--vad-frame-ms",
         type=int,
         default=30,
-        help="durata frame VAD in ms: 10, 20 o 30",
+        help="VAD frame duration in ms: 10, 20, or 30",
     )
     parser.add_argument(
         "--vad-padding-ms",
         type=int,
         default=300,
-        help="padding/hangover VAD in millisecondi",
+        help="VAD padding/hangover in milliseconds",
     )
     parser.add_argument(
         "--vad-max-utterance-seconds",
         type=float,
         default=30.0,
-        help="durata massima di un utterance VAD prima del flush",
+        help="maximum VAD utterance duration before flush",
     )
     parser.add_argument(
         "--video-fps",
         type=float,
         default=1.0,
-        help="frame al secondo da campionare per il video",
+        help="video frames per second to sample",
     )
     parser.add_argument(
         "--max-video-frames",
         type=int,
         default=3,
-        help="numero massimo di frame .jpg da salvare",
+        help="maximum number of .jpg frames to save",
     )
 
 
 def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Cattura Twitch in sola lettura su artifact smoke locali.",
+        description="Read-only Twitch capture to local smoke artifacts.",
     )
-    parser.add_argument("--channel", required=True, help="canale Twitch da leggere")
+    parser.add_argument("--channel", required=True, help="Twitch channel to read")
     parser.add_argument(
         "--duration",
         type=float,
         required=True,
-        help="durata della cattura in secondi",
+        help="capture duration in seconds",
     )
     parser.add_argument(
         "--output",
         required=True,
-        help="directory degli artifact smoke da scrivere",
+        help="smoke artifact directory to write",
     )
     parser.add_argument(
         "--audio",
         action="store_true",
-        help="abilita cattura audio raw via Streamlink/FFmpeg",
+        help="enable raw audio capture through Streamlink/FFmpeg",
     )
     parser.add_argument(
         "--no-chat",
         action="store_true",
-        help="disabilita la cattura chat IRC",
+        help="disable IRC chat capture",
     )
     parser.add_argument(
         "--strict-chat",
         action="store_true",
-        help=(
-            "considera zero eventi chat un fallimento anche quando audio/video "
-            "sono riusciti"
-        ),
+        help=("treat zero chat events as a failure even when audio/video succeeded"),
     )
     parser.add_argument(
         "--video",
         action="store_true",
-        help="abilita cattura video raw via Streamlink/FFmpeg",
+        help="enable raw video capture through Streamlink/FFmpeg",
     )
     parser.add_argument(
         "--quality",
         default="best",
-        help="qualità Streamlink da usare per media raw",
+        help="Streamlink quality to use for raw media",
     )
     add_common_smoke_arguments(parser)
     return parser.parse_args(list(argv))
@@ -139,19 +136,19 @@ def _parse_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
 def _parse_chat_args(argv: Sequence[str], *, prog: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Cattura chat Twitch in sola lettura su un JSONL di percezioni.",
+        description="Read-only Twitch chat capture to a perceptions JSONL file.",
     )
-    parser.add_argument("--channel", required=True, help="canale Twitch da leggere")
+    parser.add_argument("--channel", required=True, help="Twitch channel to read")
     parser.add_argument(
         "--duration",
         type=float,
         required=True,
-        help="durata della cattura in secondi",
+        help="capture duration in seconds",
     )
     parser.add_argument(
         "--output",
         required=True,
-        help="percorso del file perceptions.jsonl da scrivere",
+        help="path of the perceptions.jsonl file to write",
     )
     return parser.parse_args(list(argv))
 
@@ -167,14 +164,14 @@ def chat_main(argv: Sequence[str] | None = None) -> int:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
     if not math.isfinite(args.duration) or args.duration <= 0:
-        print("--duration deve essere > 0", file=sys.stderr)
+        print("--duration must be > 0", file=sys.stderr)
         return 2
 
     load_env_files()
     missing = _missing_twitch_env()
     if missing:
         print(
-            "credenziali Twitch mancanti: esporta " + ", ".join(missing),
+            "missing Twitch credentials: export " + ", ".join(missing),
             file=sys.stderr,
         )
         return 2
@@ -190,23 +187,23 @@ def chat_main(argv: Sequence[str] | None = None) -> int:
             )
         )
     except ValueError as exc:
-        print(f"configurazione Twitch non valida: {exc}", file=sys.stderr)
+        print(f"invalid Twitch configuration: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
-        print(f"smoke Twitch fallito: errore di connessione ({exc})", file=sys.stderr)
+        print(f"Twitch smoke failed: connection error ({exc})", file=sys.stderr)
         return 1
     except TimeoutError as exc:
-        print(f"smoke Twitch fallito: timeout operativo ({exc})", file=sys.stderr)
+        print(f"Twitch smoke failed: operational timeout ({exc})", file=sys.stderr)
         return 1
 
     if count == 0:
         print(
-            "smoke Twitch fallito: nessuna percezione chat scritta",
+            "Twitch smoke failed: no chat perceptions were written",
             file=sys.stderr,
         )
         return 1
 
-    print(f"ok: scritte {count} percezioni chat in {args.output}")
+    print(f"ok: wrote {count} chat perceptions to {args.output}")
     return 0
 
 
@@ -247,7 +244,7 @@ async def run_twitch_smoke(
     vad_diagnostic = None
     if enable_chat:
         if username is None or oauth_token is None:
-            raise ValueError("credenziali Twitch chat mancanti")
+            raise ValueError("missing Twitch chat credentials")
         adapters.append(
             chat_adapter
             or TwitchChatReader(
@@ -275,7 +272,7 @@ async def run_twitch_smoke(
                 max_utterance_seconds=vad_max_utterance_seconds,
             )
     elif enable_vad_diagnostic:
-        raise ValueError("diagnostica VAD richiede audio abilitato")
+        raise ValueError("VAD diagnostics require audio to be enabled")
     if enable_video:
         validate_video_fps(video_fps)
         adapters.append(
@@ -343,11 +340,11 @@ def _smoke_failures(
         enable_video and stats.video_events > 0
     )
     if enable_chat and stats.chat_events == 0 and (strict_chat or not successful_media):
-        failures.append("chat: nessun evento catturato")
+        failures.append("chat: no events captured")
     if enable_audio and stats.audio_events == 0:
-        failures.append("audio: nessun evento catturato")
+        failures.append("audio: no events captured")
     if enable_video and stats.video_events == 0:
-        failures.append("video: nessun evento catturato")
+        failures.append("video: no events captured")
     return failures
 
 
@@ -360,34 +357,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
     if not math.isfinite(args.duration) or args.duration <= 0:
-        print("--duration deve essere > 0", file=sys.stderr)
+        print("--duration must be > 0", file=sys.stderr)
         return 2
     if not math.isfinite(args.audio_chunk_seconds) or args.audio_chunk_seconds <= 0:
-        print("--audio-chunk-seconds deve essere > 0", file=sys.stderr)
+        print("--audio-chunk-seconds must be > 0", file=sys.stderr)
         return 2
     if not math.isfinite(args.video_fps) or args.video_fps <= 0:
-        print("--video-fps deve essere > 0", file=sys.stderr)
+        print("--video-fps must be > 0", file=sys.stderr)
         return 2
     if args.max_audio_samples < 0:
-        print("--max-audio-samples deve essere >= 0", file=sys.stderr)
+        print("--max-audio-samples must be >= 0", file=sys.stderr)
         return 2
     if args.vad_mode not in {0, 1, 2, 3}:
-        print("--vad-mode deve essere 0, 1, 2 o 3", file=sys.stderr)
+        print("--vad-mode must be 0, 1, 2, or 3", file=sys.stderr)
         return 2
     if args.vad_frame_ms not in {10, 20, 30}:
-        print("--vad-frame-ms deve essere 10, 20 o 30", file=sys.stderr)
+        print("--vad-frame-ms must be 10, 20, or 30", file=sys.stderr)
         return 2
     if args.vad_padding_ms <= 0:
-        print("--vad-padding-ms deve essere > 0", file=sys.stderr)
+        print("--vad-padding-ms must be > 0", file=sys.stderr)
         return 2
     if (
         not math.isfinite(args.vad_max_utterance_seconds)
         or args.vad_max_utterance_seconds <= 0
     ):
-        print("--vad-max-utterance-seconds deve essere > 0", file=sys.stderr)
+        print("--vad-max-utterance-seconds must be > 0", file=sys.stderr)
         return 2
     if args.max_video_frames < 0:
-        print("--max-video-frames deve essere >= 0", file=sys.stderr)
+        print("--max-video-frames must be >= 0", file=sys.stderr)
         return 2
 
     load_env_files()
@@ -395,13 +392,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     enable_audio = bool(args.audio or args.vad_diagnostic)
     enable_video = bool(args.video)
     if not enable_chat and not enable_audio and not enable_video:
-        print("abilita almeno chat, audio o video", file=sys.stderr)
+        print("enable at least chat, audio, or video", file=sys.stderr)
         return 2
 
     missing = _missing_twitch_env() if enable_chat else []
     if missing:
         print(
-            "credenziali Twitch mancanti: esporta " + ", ".join(missing),
+            "missing Twitch credentials: export " + ", ".join(missing),
             file=sys.stderr,
         )
         return 2
@@ -430,13 +427,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     except ValueError as exc:
-        print(f"configurazione Twitch non valida: {exc}", file=sys.stderr)
+        print(f"invalid Twitch configuration: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
-        print(f"smoke Twitch fallito: errore di connessione ({exc})", file=sys.stderr)
+        print(f"Twitch smoke failed: connection error ({exc})", file=sys.stderr)
         return 1
     except TimeoutError as exc:
-        print(f"smoke Twitch fallito: timeout operativo ({exc})", file=sys.stderr)
+        print(f"Twitch smoke failed: operational timeout ({exc})", file=sys.stderr)
         return 1
 
     failures = _smoke_failures(
@@ -448,15 +445,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if failures:
         print(
-            "smoke Twitch fallito: " + "; ".join(failures),
+            "Twitch smoke failed: " + "; ".join(failures),
             file=sys.stderr,
         )
         return 1
 
     if enable_chat and stats.chat_events == 0:
         print(
-            "nota: chat quieta nella finestra; audio/video richiesti sono riusciti "
-            "(usa --strict-chat per rendere zero chat bloccante)"
+            "note: chat was quiet during the window; requested audio/video "
+            "succeeded (use --strict-chat to make zero chat events fail)"
         )
 
     print(

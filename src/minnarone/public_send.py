@@ -92,9 +92,9 @@ class PublicSendPolicy:
         clock: Callable[[], float],
     ) -> None:
         if not isinstance(config, TwitchSendConfig):
-            raise TypeError("config deve essere una TwitchSendConfig")
+            raise TypeError("config must be a TwitchSendConfig")
         if not callable(clock):
-            raise TypeError("clock deve essere un callable () -> float")
+            raise TypeError("clock must be a callable () -> float")
         self._config = config
         self._clock = clock
         self._lock = RLock()

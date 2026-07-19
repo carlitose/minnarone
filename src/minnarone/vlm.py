@@ -64,7 +64,7 @@ class QwenVlConfig:
         backend = _non_empty_str(self.backend, "backend")
         if backend not in VLM_BACKENDS:
             raise QwenVlConfigError(
-                f"backend deve essere 'qwen' o 'llamacpp' (non {self.backend!r})"
+                f"backend must be 'qwen' or 'llamacpp' (not {self.backend!r})"
             )
         object.__setattr__(self, "backend", backend)
         object.__setattr__(
@@ -78,9 +78,7 @@ class QwenVlConfig:
         if device != "auto" and raw_device_map == "auto":
             raw_device_map = None
         if device != "auto" and raw_device_map is not None:
-            raise QwenVlConfigError(
-                "device_map deve essere null quando device è esplicito"
-            )
+            raise QwenVlConfigError("device_map must be null when device is explicit")
         object.__setattr__(
             self,
             "device_map",
@@ -101,7 +99,7 @@ class QwenVlConfig:
         )
         quantization = _optional_non_empty_str(self.quantization, "quantization")
         if quantization is not None and quantization not in {"4bit", "8bit"}:
-            raise QwenVlConfigError("quantization deve essere '4bit', '8bit' o null")
+            raise QwenVlConfigError("quantization must be '4bit', '8bit', or null")
         object.__setattr__(self, "quantization", quantization)
         language = _non_empty_str(self.language, "language")
         object.__setattr__(self, "language", language)
@@ -584,9 +582,9 @@ def _coerce_model_id(value: str | Path | None) -> str | None:
     elif isinstance(value, str):
         text = value.strip()
     else:
-        raise QwenVlConfigError("model deve essere una stringa o path")
+        raise QwenVlConfigError("model must be a string or path")
     if not text:
-        raise QwenVlConfigError("model deve essere non vuoto")
+        raise QwenVlConfigError("model must be non-empty")
     return text
 
 
@@ -598,34 +596,34 @@ def _optional_non_empty_str(value: object, field_name: str) -> str | None:
 
 def _non_empty_str(value: object, field_name: str) -> str:
     if not isinstance(value, str):
-        raise QwenVlConfigError(f"{field_name} deve essere una stringa non vuota")
+        raise QwenVlConfigError(f"{field_name} must be a non-empty string")
     stripped = value.strip()
     if not stripped:
-        raise QwenVlConfigError(f"{field_name} deve essere una stringa non vuota")
+        raise QwenVlConfigError(f"{field_name} must be a non-empty string")
     return stripped
 
 
 def _positive_int(value: object, field_name: str) -> int:
     if isinstance(value, bool):
-        raise QwenVlConfigError(f"{field_name} deve essere un intero >= 1")
+        raise QwenVlConfigError(f"{field_name} must be an integer >= 1")
     if isinstance(value, float) and not value.is_integer():
-        raise QwenVlConfigError(f"{field_name} deve essere un intero >= 1")
+        raise QwenVlConfigError(f"{field_name} must be an integer >= 1")
     try:
         parsed = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise QwenVlConfigError(f"{field_name} deve essere un intero >= 1") from exc
+        raise QwenVlConfigError(f"{field_name} must be an integer >= 1") from exc
     if parsed < 1:
-        raise QwenVlConfigError(f"{field_name} deve essere un intero >= 1")
+        raise QwenVlConfigError(f"{field_name} must be an integer >= 1")
     return parsed
 
 
 def _positive_float(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise QwenVlConfigError(f"{field_name} deve essere > 0")
+        raise QwenVlConfigError(f"{field_name} must be > 0")
     try:
         parsed = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise QwenVlConfigError(f"{field_name} deve essere > 0") from exc
+        raise QwenVlConfigError(f"{field_name} must be > 0") from exc
     if not math.isfinite(parsed) or parsed <= 0:
-        raise QwenVlConfigError(f"{field_name} deve essere > 0")
+        raise QwenVlConfigError(f"{field_name} must be > 0")
     return parsed

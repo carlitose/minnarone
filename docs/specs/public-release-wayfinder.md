@@ -134,6 +134,14 @@ guida operatore molto lunga.
   valida token con fallback read-stop/send-shadow. I ticket 17 e 09 sono ora
   sbloccati; restano due note non bloccanti nel ticket chiuso su coalescing di
   deadline perse e osservabilità esplicita del motivo `auth_disabled`.
+- **Onboarding pubblico task-first completato (ticket 17, 2026-07-19)**:
+  README EN/IT, golden path progressivi, skill repo-local, template sanitizzati,
+  manifest modelli autenticato e istruzioni per code agent sono verificati anche
+  da clone pulito. Implementazione nella PR stacked #42.
+- **Superfici operatore localizzate (ticket 09, 2026-07-19)**: CLI, errori
+  runtime/config, smoke tool, dashboard/TUI, README inglese ed example pubblici
+  sono coerenti in inglese; prompt/persona e documentazione italiana intenzionale
+  restano invariati. Implementazione nella PR stacked #43.
 - **Policy Twitch pubblica verificata (ticket 14, 2026-07-18)**: il primo
   golden path può restare IRC e shadow-first. IRC usa un token read con
   `chat:read`, un token send con `chat:edit` e `NICK` uguale al login
@@ -237,15 +245,17 @@ guida operatore molto lunga.
   14 done.
 - **Runtime/model profiles — risolto per il prototipo**: ticket 15 done; sei
   profili e un manifest di artifact pinned sono pronti come input del ticket 16.
-- **Onboarding guidato — risolto dal prototipo**: ticket 16 done; ticket 17
-  produce tutorial/template e le due skill sottili, senza CLI core.
-- **README e code-agent surface — sbloccato**: tutti gli input runtime, safety,
-  onboarding e model profile sono chiusi; ticket 17 può produrre golden path,
-  catalogo skill e istruzioni di repo.
+- **Onboarding guidato — completato**: ticket 16 ha selezionato la soluzione;
+  ticket 17 ha prodotto tutorial/template e le due skill sottili, senza CLI core.
+- **README e code-agent surface — completata**: ticket 17 done con golden path,
+  catalogo skill e istruzioni di repo verificati da clone pulito.
+- **Localizzazione superfici operatore — completata**: ticket 09 done; le
+  superfici pubbliche runtime/CLI/TUI e gli example inglesi sono allineati.
 - **Attriti runtime — risolti**: ticket 18 done; dotenv/smoke, quiet-chat,
   schema, token, disclosure, modelli e guide sono riallineati.
 - **Flip a pubblico**: il ticket 05 resta l'ultima azione, con conferma esplicita
-  e dopo la chiusura dei nuovi blocker 10–18 (09 può restare polish separato).
+  dopo il merge dello stack #41 → #42 → #43; il ticket 09 resta polish non
+  bloccante per la decisione di visibilità.
 
 ## Ticket Plan
 

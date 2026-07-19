@@ -345,7 +345,7 @@ def test_sherpa_backend_uses_documented_stream_flow_with_fake_extractor(tmp_path
 
 
 def test_sherpa_backend_fails_clearly_when_model_file_is_missing(tmp_path):
-    with pytest.raises(SpeakerEmbeddingError, match="model non trovato"):
+    with pytest.raises(SpeakerEmbeddingError, match="model not found"):
         SherpaOnnxSpeakerEmbeddingBackend(
             SpeakerEmbeddingConfig(model_path=tmp_path / "missing.onnx"),
             sherpa_module=object(),

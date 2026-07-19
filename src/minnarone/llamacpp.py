@@ -75,7 +75,7 @@ def _local_transport(
 #: `--parallel 1` qui l'intero `-c 8192` è disponibile per richiesta; margine
 #: ampio per il prompt `original_chat` (soul + facts + finestra chat).
 LLAMA_SERVER_COMMAND = (
-    "llama-server -m <modello.gguf> --port <porta> -ngl 99 -c 8192 "
+    "llama-server -m <model.gguf> --port <port> -ngl 99 -c 8192 "
     "--reasoning off --parallel 1"
 )
 
@@ -88,7 +88,7 @@ LLAMA_SERVER_COMMAND = (
 #: (llama-server risponderebbe 400 "exceeds the available context size"). La KV
 #: cache di E2B è piccola: 4× contesto costa ~+80 MiB VRAM.
 LLAMA_SERVER_MULTIMODAL_COMMAND = (
-    "llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port <porta> "
+    "llama-server -m <model.gguf> --mmproj <mmproj.gguf> --port <port> "
     "-ngl 99 -c 16384 --reasoning off --parallel 2"
 )
 
@@ -194,21 +194,21 @@ def check_server_ready(
         # a un altro servizio locale. urllib NON incapsula HTTPException in
         # URLError, quindi senza questo ramo sfuggirebbe come traceback nudo.
         raise LlamaCppServerNotReady(
-            f"llama-server non raggiungibile su {base_url}: il server locale "
-            f"va avviato a mano prima di minnarone, ad esempio con:\n"
+            f"llama-server is not reachable at {base_url}: start the local "
+            f"server manually before Minnarone, for example with:\n"
             f"  {LLAMA_SERVER_COMMAND}"
         ) from exc
     if status == 503:
         raise LlamaCppServerNotReady(
-            f"llama-server su {base_url} sta ancora caricando il modello "
-            f"(HTTP 503): riprova tra qualche secondo. Se non è avviato:\n"
+            f"llama-server at {base_url} is still loading the model "
+            f"(HTTP 503): retry in a few seconds. If it is not running:\n"
             f"  {LLAMA_SERVER_COMMAND}"
         )
     if status != 200:
         raise LlamaCppServerNotReady(
-            f"llama-server su {base_url} ha risposto {status} a /health "
-            f"(atteso 200): verifica che all'indirizzo ci sia un llama-server, "
-            f"ad esempio avviato con:\n  {LLAMA_SERVER_COMMAND}"
+            f"llama-server at {base_url} returned {status} for /health "
+            f"(expected 200): verify that the address points to llama-server, "
+            f"for example started with:\n  {LLAMA_SERVER_COMMAND}"
         )
 
 
@@ -266,16 +266,16 @@ def check_vision_ready(
         # HTTPError (status di errore) è sottoclasse di OSError: un 503 in
         # caricamento o un 404 finiscono qui come "non raggiungibile".
         raise LlamaCppServerNotReady(
-            f"llama-server non raggiungibile su {base_url} per il check vision "
-            f"(GET /props): avvia l'istanza multimodale a mano, ad esempio con:\n"
+            f"llama-server is not reachable at {base_url} for the vision check "
+            f"(GET /props): start the multimodal instance manually, for example with:\n"
             f"  {LLAMA_SERVER_MULTIMODAL_COMMAND}"
         ) from exc
     if not _props_report_vision(props):
         raise LlamaCppServerNotReady(
-            f"llama-server su {base_url} non espone la visione "
-            f"(modalities.vision != true): il modello è stato caricato senza "
-            f"proiettore multimodale. Riavvialo aggiungendo --mmproj <mmproj.gguf>, "
-            f"ad esempio:\n  {LLAMA_SERVER_MULTIMODAL_COMMAND}"
+            f"llama-server at {base_url} does not expose vision "
+            f"(modalities.vision != true): the model was loaded without a "
+            f"multimodal projector. Restart it with --mmproj <mmproj.gguf>, "
+            f"for example:\n  {LLAMA_SERVER_MULTIMODAL_COMMAND}"
         )
 
 

@@ -49,11 +49,11 @@ def test_replay_loads_run_directory_into_dashboard_state(tmp_path):
 
     panels = {panel.title: panel.text for panel in state.render_panels()}
     assert "ciao Minnarone" in panels["CHAT"]
-    assert "sto preparando il boss" in panels["TRASCRIZIONE"]
+    assert "sto preparando il boss" in panels["TRANSCRIPTION"]
     assert "menu del gioco aperto" in panels["VIDEO"]
-    assert "reaction <- Minnarone" in panels["EVENTI"]
+    assert "reaction <- Minnarone" in panels["EVENTS"]
     assert "Bella run, chat." in panels["MINNARONE"]
-    assert "alice: ciao Minnarone" in panels["MEMORIA"]
+    assert "alice: ciao Minnarone" in panels["MEMORY"]
 
 
 def test_replay_loads_direct_perception_jsonl_path(tmp_path):
@@ -186,7 +186,7 @@ def test_replay_surfaces_newest_prompt_capture_failure_without_fallback(tmp_path
     state = load_replay_state(run_dir)
 
     assert state.latest_prompt is None
-    assert state.render_prompt_view() == "(nessun prompt catturato)"
+    assert state.render_prompt_view() == "(no prompt captured)"
     assert any(
         failure.channel == "replay"
         and failure.stage == "prompt"
@@ -296,7 +296,7 @@ def test_replay_surfaces_malformed_jsonl_rows_as_events(tmp_path):
 
     state = load_replay_state(run_dir)
 
-    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTI"]
+    event_text = {panel.title: panel.text for panel in state.render_panels()}["EVENTS"]
     assert "replay/jsonl" in event_text
     assert "malformed perception row" in event_text
 
@@ -370,7 +370,7 @@ def test_replay_loads_run_event_artifacts_into_events_and_minnarone(tmp_path):
     state = load_replay_state(run_dir)
 
     panels = {panel.title: panel.text for panel in state.render_panels()}
-    assert "mention <- alice" in panels["EVENTI"]
+    assert "mention <- alice" in panels["EVENTS"]
     assert panels["MINNARONE"] == "ciao alice"
     assert "events=1 minnarone=1" in state.render_status_bar()
 

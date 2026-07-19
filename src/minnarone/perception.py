@@ -54,21 +54,21 @@ class Perception:
 
     def __post_init__(self) -> None:
         if not isinstance(self.ts, (int, float)):
-            raise ValueError(f"ts deve essere numerico, ricevuto {type(self.ts)!r}")
+            raise ValueError(f"ts must be numeric; received {type(self.ts)!r}")
         if not isinstance(self.source, Source):
-            raise ValueError(f"source non valido: {self.source!r}")
+            raise ValueError(f"invalid source: {self.source!r}")
         if not isinstance(self.type, str) or not self.type:
-            raise ValueError("type deve essere una stringa non vuota")
+            raise ValueError("type must be a non-empty string")
         valid = VALID_TYPES[self.source]
         if self.type not in valid:
             raise ValueError(
-                f"type {self.type!r} non valido per source {self.source.value!r} "
-                f"(ammessi: {sorted(valid)})"
+                f"type {self.type!r} is invalid for source {self.source.value!r} "
+                f"(allowed: {sorted(valid)})"
             )
         if not isinstance(self.text, str):
-            raise ValueError("text deve essere una stringa")
+            raise ValueError("text must be a string")
         if self.speaker is not None and not isinstance(self.speaker, str):
-            raise ValueError("speaker deve essere una stringa o None")
+            raise ValueError("speaker must be a string or None")
 
     def to_json(self) -> str:
         """Serializza in una singola riga JSON (formato del perception store)."""
@@ -93,19 +93,19 @@ class Perception:
         try:
             data = json.loads(line)
         except ValueError as exc:  # JSONDecodeError è sottoclasse di ValueError
-            raise ValueError(f"riga JSON non decodificabile: {line!r}") from exc
+            raise ValueError(f"cannot decode JSON line: {line!r}") from exc
         if not isinstance(data, dict):
-            raise ValueError(f"riga JSON non è un oggetto in {line!r}")
+            raise ValueError(f"JSON line is not an object: {line!r}")
         try:
             source = Source(data["source"])
         except (KeyError, ValueError) as exc:
-            raise ValueError(f"source mancante o non valido in {line!r}") from exc
+            raise ValueError(f"source is missing or invalid in {line!r}") from exc
         try:
             ts = data["ts"]
             type_ = data["type"]
             text = data["text"]
         except KeyError as exc:
-            raise ValueError(f"campo {exc.args[0]!r} mancante in {line!r}") from exc
+            raise ValueError(f"field {exc.args[0]!r} is missing in {line!r}") from exc
         return cls(
             ts=ts,
             source=source,

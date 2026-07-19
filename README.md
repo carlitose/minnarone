@@ -359,7 +359,7 @@ OS capture lives in the `os-capture` extra (system audio via `soundcard`,
 screen via `mss`):
 
 ```bash
-pip install -e '.[os-capture]'   # oppure: uv sync --extra os-capture
+pip install -e '.[os-capture]'   # or: uv sync --extra os-capture
 ```
 
 The `os-capture` extra covers only the **raw capture**. To actually run the
@@ -490,24 +490,24 @@ see the examples in [examples/](examples/): `twitch-commentator.example.yaml`,
 `teams-meeting-assistant.yaml`, `teams-meeting-full.yaml`.
 
 ```yaml
-mode: public              # public | private (private = solo console locale)
-soul_path: soul.md        # identità dell'agente
-facts_dir: facts          # directory di fatti permanenti (uno o più file)
-adapter: twitch           # sorgente di percezione (twitch | os_capture)
-llm_provider: grok        # grok | deepseek (slug via llm_params.model) | llamacpp (locale, modello fissato dal server)
-agent_name: minnarone     # nome a cui l'agente risponde (rilevamento menzioni)
+mode: public              # public | private (private = local console only)
+soul_path: soul.md        # agent identity
+facts_dir: facts          # persistent facts directory (one or more files)
+adapter: twitch           # perception source (twitch | os_capture)
+llm_provider: grok        # grok | deepseek (slug via llm_params.model) | llamacpp (local, model fixed by the server)
+agent_name: minnarone     # name the agent responds to (mention detection)
 
 twitch:
   channel: minnarone
   quality: best
   chat: true
-  audio: false            # true = percezione audio locale (richiede extra audio + model_path)
-  video: false            # true = frame video (richiede extra video/vlm + vlm.model)
+  audio: false            # true = local audio perception (requires audio extra + model_path)
+  video: false            # true = video frames (requires video/vlm extras + vlm.model)
   audio_chunk_seconds: 1.0
   video_fps: 1.0
-  # Invio pubblico gated. Default off. Vedi docs/twitch-operator.md prima di live.
+  # Gated public sending. Default: off. Read docs/twitch-operator.md before live.
   send:
-    mode: off             # off | shadow | live  (quota il valore: YAML legge on/off come bool)
+    mode: off             # off | shadow | live (quote it: YAML reads on/off as bool)
     allowed_channels: []
     max_per_minute: 1
     max_per_hour: 20
@@ -520,13 +520,13 @@ llm_params:
 
 senser_interval: 0.5
 idle_interval: 150.0
-summarizer_interval: 30.0   # cadenza del Summarizer (memoria a breve termine)
+summarizer_interval: 30.0   # Summarizer cadence (short-term memory)
 recent_chat_window: 15
-perception_queue_size: 32   # tetto della work queue percezioni (backpressure)
+perception_queue_size: 32   # perception work-queue cap (backpressure)
 perception_shutdown_timeout: 5.0
 
 vad:
-  mode: 2                   # 0 meno aggressivo, 3 più aggressivo
+  mode: 2                   # 0 least aggressive, 3 most aggressive
   frame_ms: 30              # 10 | 20 | 30
   padding_ms: 300           # ring/hangover VAD
   max_utterance_seconds: 30.0
@@ -551,32 +551,32 @@ speaker_clustering:
   min_update_seconds: 1.0
 
 video:
-  sample_every: 1              # ulteriore sampling prima del captioner
-  dedup_change_threshold: 0.0  # 0 = salta solo frame byte-identici
+  sample_every: 1              # additional sampling before the captioner
+  dedup_change_threshold: 0.0  # 0 = skip only byte-identical frames
 
 vlm:
-  backend: qwen                # qwen (torch locale) | llamacpp (llama-server multimodale)
-  model: null                  # percorso/id locale Qwen2-VL-compatible (solo backend qwen)
+  backend: qwen                # qwen (local torch) | llamacpp (multimodal llama-server)
+  model: null                  # local Qwen2-VL-compatible path/id (qwen backend only)
   device: auto
   device_map: auto
   torch_dtype: auto
   max_new_tokens: 48
   timeout_seconds: 30.0
-  language: en                 # caption concise in inglese di default
+  language: en                 # concise English captions by default
 
 commentator:
   language: it
-  # Nessun profilo = commentatore spento. Per attivarlo aggiungi un profilo, es.:
+  # No profiles = commentator disabled. Add a profile to enable it, for example:
   #   profiles:
-  #     original_chat:        # persona chat pubblica (unica ammessa con twitch + public)
+  #     original_chat:        # public-chat persona (only one allowed with twitch + public)
   #       idle_interval: 30.0
 
-# --- punti di estensione v2 (presenti ma INERTI nell'MVP) ---
+# --- v2 extension points (present but INERT in the MVP) ---
 disclosure:
-  announce_ai: false    # l'unico cablato: stance di disclosure nel prompt
+  announce_ai: false    # the only active field: disclosure stance in the prompt
 retention:
-  perceptions_days: 7   # inerte in MVP
-auto_memory: false      # inerte in MVP
+  perceptions_days: 7   # inert in the MVP
+auto_memory: false      # inert in the MVP
 ```
 
 The `retention` and `auto_memory` items are present in the schema but do not alter
@@ -682,7 +682,7 @@ Config (full example in
 ```yaml
 llm_provider: llamacpp
 llamacpp:
-  base_url: http://127.0.0.1:8080   # default; porta esplicita richiesta
+  base_url: http://127.0.0.1:8080   # default; explicit port required
 ```
 
 Notes:
@@ -712,7 +712,7 @@ Start the multimodal instance by hand, adding the `--mmproj` projector and
 instance, cost ~10 MiB VRAM):
 
 ```bash
-llama-server -m <modello.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 16384 --reasoning off --parallel 2
+llama-server -m <model.gguf> --mmproj <mmproj.gguf> --port 8080 -ngl 99 -c 16384 --reasoning off --parallel 2
 ```
 
 > **Context and `--parallel`**: `llama-server` splits `-c` across the slots, so
@@ -728,9 +728,9 @@ stay in the `vlm:` block:
 
 ```yaml
 vlm:
-  backend: llamacpp     # captiona i frame via l'istanza llama-server multimodale
+  backend: llamacpp     # caption frames through the multimodal llama-server instance
 llamacpp:
-  base_url: http://127.0.0.1:8080   # condiviso col provider LLM locale
+  base_url: http://127.0.0.1:8080   # shared with the local LLM provider
 ```
 
 Notes:

@@ -161,7 +161,7 @@ def render(text: str, values: dict[str, str]) -> str:
     def _repl(match: re.Match[str]) -> str:
         name = match.group(1)
         if name not in values:
-            raise PromptError(f"placeholder non risolto: {{{{{name}}}}}")
+            raise PromptError(f"unresolved placeholder: {{{{{name}}}}}")
         # re.sub con funzione: il ritorno è usato LETTERALMENTE (nessun
         # processing di backreference, nessuna ri-scansione).
         return values[name]
@@ -226,19 +226,19 @@ class PromptSet:
                     return candidate.read_text(encoding="utf-8"), "override"
                 except (OSError, UnicodeDecodeError) as exc:
                     raise PromptError(
-                        f"override illeggibile: {candidate}: {exc}"
+                        f"cannot read override: {candidate}: {exc}"
                     ) from exc
 
         resource = self._default_root / filename
         if not resource.is_file():
             raise PromptError(
-                f"file di prompt obbligatorio mancante: '{filename}' "
-                f"(né in override {self._override_dir} né nel set default)"
+                f"required prompt file missing: '{filename}' "
+                f"(not in override {self._override_dir} or the default set)"
             )
         try:
             return resource.read_text(encoding="utf-8"), "default"
         except (OSError, UnicodeDecodeError) as exc:
-            raise PromptError(f"default illeggibile: {filename}: {exc}") from exc
+            raise PromptError(f"cannot read default: {filename}: {exc}") from exc
 
     def _load_all(self) -> None:
         for spec in self._set_spec.specs:
@@ -249,8 +249,8 @@ class PromptSet:
     def _validate(cls, spec: PromptSpec, text: str) -> LoadedPrompt:
         if not text.strip():
             raise PromptError(
-                f"contenuto obbligatorio vuoto: '{spec.filename}' "
-                "(mai vuoto silenzioso per un prompt richiesto)"
+                f"required content is empty: '{spec.filename}' "
+                "(a required prompt must not be silently empty)"
             )
 
         # I file a-chiavi si validano PRIMA per-sezione: gli errori dentro una
@@ -266,12 +266,13 @@ class PromptSet:
             missing_keys = required_keys - sections.keys()
             if missing_keys:
                 raise PromptError(
-                    f"sezioni chiave mancanti in '{spec.filename}': "
-                    f"{sorted(missing_keys)}"
+                    f"missing key sections in '{spec.filename}': {sorted(missing_keys)}"
                 )
             for key, body in sections.items():
                 if not body.strip():
-                    raise PromptError(f"sezione '## {key}' vuota in '{spec.filename}'")
+                    raise PromptError(
+                        f"section '## {key}' is empty in '{spec.filename}'"
+                    )
             cls._validate_key_specs(spec, sections)
 
         found = find_placeholders(text)
@@ -286,21 +287,21 @@ class PromptSet:
         unknown = found - allowed
         if unknown:
             raise PromptError(
-                f"placeholder ignoti in '{spec.filename}': "
-                f"{sorted(unknown)} (ammessi: {sorted(allowed)})"
+                f"unknown placeholders in '{spec.filename}': "
+                f"{sorted(unknown)} (allowed: {sorted(allowed)})"
             )
         missing_ph = spec.required_placeholders - found
         if missing_ph:
             raise PromptError(
-                f"placeholder obbligatori mancanti in '{spec.filename}': "
+                f"required placeholders missing in '{spec.filename}': "
                 f"{sorted(missing_ph)}"
             )
 
         for token in spec.required_tokens:
             if token not in text:
                 raise PromptError(
-                    f"token di controllo mancante in '{spec.filename}': "
-                    f"{token!r} (il parser dell'output ne dipende)"
+                    f"control token missing in '{spec.filename}': "
+                    f"{token!r} (the output parser depends on it)"
                 )
 
         return LoadedPrompt(spec.filename, text, sections)
@@ -323,21 +324,21 @@ class PromptSet:
             unknown = found - allowed
             if unknown:
                 raise PromptError(
-                    f"placeholder ignoti in '{spec.filename}' sezione '{key}': "
-                    f"{sorted(unknown)} (ammessi: {sorted(allowed)})"
+                    f"unknown placeholders in '{spec.filename}' section '{key}': "
+                    f"{sorted(unknown)} (allowed: {sorted(allowed)})"
                 )
             missing_ph = key_spec.required_placeholders - found
             if missing_ph:
                 raise PromptError(
-                    f"placeholder obbligatori mancanti in '{spec.filename}' "
-                    f"sezione '{key}': {sorted(missing_ph)}"
+                    f"required placeholders missing in '{spec.filename}' "
+                    f"section '{key}': {sorted(missing_ph)}"
                 )
             for token in key_spec.required_tokens:
                 if token not in body:
                     raise PromptError(
-                        f"token di controllo mancante in '{spec.filename}' "
-                        f"sezione '{key}': {token!r} "
-                        "(il parser dell'output ne dipende)"
+                        f"control token missing in '{spec.filename}' "
+                        f"section '{key}': {token!r} "
+                        "(the output parser depends on it)"
                     )
 
     # --- accesso (a runtime: rendering) ---
@@ -351,7 +352,7 @@ class PromptSet:
         try:
             return self._loaded[filename]
         except KeyError:
-            raise PromptError(f"prompt non registrato: {filename!r}") from None
+            raise PromptError(f"unregistered prompt: {filename!r}") from None
 
     def text(self, filename: str, **values: str) -> str:
         """Testo di un prompt di prosa, con i `{{...}}` sostituiti.
@@ -366,7 +367,7 @@ class PromptSet:
         """Corpo di una sezione `## <key>` di un file a-chiavi, sostituito."""
         loaded = self._get(filename)
         if key not in loaded.sections:
-            raise PromptError(f"chiave sconosciuta '{key}' in '{filename}'")
+            raise PromptError(f"unknown key '{key}' in '{filename}'")
         return render(loaded.sections[key], values)
 
     def keys(self, filename: str) -> frozenset[str]:

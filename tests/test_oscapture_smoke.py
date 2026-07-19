@@ -306,7 +306,11 @@ def test_cli_help_opens(capsys):
     # argparse solleva SystemExit(0) su --help; main lo intercetta e ritorna 0.
     code = main(["--help"])
     assert code == 0
-    assert "minnarone-oscapture-smoke" in capsys.readouterr().out
+    help_text = capsys.readouterr().out
+    assert "minnarone-oscapture-smoke" in help_text
+    assert "Capture local OS audio/video" in help_text
+    assert "capture duration in seconds" in help_text
+    assert "Cattura" not in help_text
 
 
 def test_cli_audio_and_video_success(tmp_path, monkeypatch):
@@ -344,7 +348,7 @@ def test_cli_requires_at_least_one_channel(tmp_path, monkeypatch, capsys):
     code = main(_base_args(tmp_path))
 
     assert code == 2
-    assert "almeno" in capsys.readouterr().err
+    assert "at least" in capsys.readouterr().err
 
 
 def test_cli_rejects_non_positive_duration(tmp_path, capsys):
@@ -396,7 +400,7 @@ def test_cli_capture_failure_maps_to_exit_1(tmp_path, monkeypatch, capsys):
     code = main(_base_args(tmp_path) + ["--audio"])
 
     assert code == 1
-    assert "fallito" in capsys.readouterr().err
+    assert "failed" in capsys.readouterr().err
 
 
 def test_cli_zero_events_maps_to_exit_1(tmp_path, monkeypatch, capsys):
@@ -408,7 +412,7 @@ def test_cli_zero_events_maps_to_exit_1(tmp_path, monkeypatch, capsys):
     code = main(_base_args(tmp_path) + ["--audio"])
 
     assert code == 1
-    assert "fallito" in capsys.readouterr().err
+    assert "failed" in capsys.readouterr().err
 
 
 def test_cli_vad_diagnostic_reports_utterances(tmp_path, monkeypatch, capsys):

@@ -80,7 +80,7 @@ class LlamaCppCaptioner:
             # risposta) NON e' incapsulata da urllib e sfuggirebbe a _open_request:
             # la catturiamo qui come fanno check_server_ready/check_vision_ready.
             # Best-effort: salta il frame senza contarlo come fallimento opaco.
-            _logger.warning("llama-server caption: errore di trasporto: %s", exc)
+            _logger.warning("llama-server caption: transport error: %s", exc)
             return ""
         raw = self._extract_caption(response)
         if raw is None:
@@ -126,9 +126,9 @@ class LlamaCppCaptioner:
             payload = json.loads(response.body)  # type: ignore[union-attr]
             content = payload["choices"][0]["message"]["content"]
         except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
-            _logger.warning("llama-server caption: risposta malformata: %s", exc)
+            _logger.warning("llama-server caption: malformed response: %s", exc)
             return None
         if not isinstance(content, str):
-            _logger.warning("llama-server caption: content non testuale")
+            _logger.warning("llama-server caption: content is not text")
             return None
         return content

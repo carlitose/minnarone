@@ -56,9 +56,9 @@ class TwitchSmokeArtifacts:
         vad: Vad | None = None,
     ) -> None:
         if max_audio_samples < 0:
-            raise ValueError("max_audio_samples deve essere >= 0")
+            raise ValueError("max_audio_samples must be >= 0")
         if max_video_frames < 0:
-            raise ValueError("max_video_frames deve essere >= 0")
+            raise ValueError("max_video_frames must be >= 0")
         self._dir = Path(output_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._audio_dir = self._dir / "raw" / "audio"
@@ -104,7 +104,7 @@ class TwitchSmokeArtifacts:
                 sample_path = self._audio_dir / f"audio-{index:04d}.pcm"
                 samples = event.payload.samples
                 if not isinstance(samples, (bytes, bytearray, memoryview)):
-                    raise TypeError("AudioChunk.samples deve essere bytes-like")
+                    raise TypeError("AudioChunk.samples must be bytes-like")
                 sample_path.write_bytes(bytes(samples))
                 self.stats.audio_samples_saved += 1
             return True
@@ -167,8 +167,8 @@ def _save_frame_as_jpeg(pixels: object, path: Path) -> None:
         from PIL import Image  # noqa: PLC0415 - import lazy opzionale
     except ImportError as exc:  # pragma: no cover - richiede ambiente senza Pillow
         raise TypeError(
-            "VideoFrame.pixels non è bytes-like e Pillow non è disponibile: "
-            "impossibile salvare il frame come JPEG (installa l'extra os-capture)"
+            "VideoFrame.pixels is not bytes-like and Pillow is unavailable: "
+            "cannot save the frame as JPEG (install the os-capture extra)"
         ) from exc
     image = pixels if hasattr(pixels, "save") else Image.fromarray(pixels)
     image.convert("RGB").save(path, "JPEG")
@@ -177,7 +177,7 @@ def _save_frame_as_jpeg(pixels: object, path: Path) -> None:
 def _segment_duration_ms(segment: SpeechSegment) -> float:
     samples = segment.samples
     if not isinstance(samples, (bytes, bytearray, memoryview)):
-        raise TypeError("SpeechSegment.samples deve essere bytes-like")
+        raise TypeError("SpeechSegment.samples must be bytes-like")
     return round((len(samples) / (segment.sample_rate * 2)) * 1000, 3)
 
 
@@ -193,7 +193,7 @@ async def capture_twitch_smoke(
 ) -> SmokeStats:
     """Run enabled adapters for a bounded duration and write smoke artifacts."""
     if not adapters:
-        raise ValueError("almeno un canale smoke deve essere abilitato")
+        raise ValueError("at least one smoke channel must be enabled")
     artifacts = TwitchSmokeArtifacts(
         output_dir,
         max_audio_samples=max_audio_samples,
