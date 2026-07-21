@@ -145,6 +145,8 @@ Minnarone è stato ideato e costruito da **enkk**, che ne è l'autore e designer
 
 Questo repository generalizza quell'idea in un framework riusabile: lo stesso motore di percezione + reazione serve casi d'uso diversi (Twitch, riunioni Teams) cambiando solo la configurazione.
 
+> **Disclaimer**: questo progetto è ispirato all'idea e al video di Enkk. Tuttavia, non è affiliato a lui, e lui non è coinvolto nella manutenzione di questo repository.
+
 ## Documentazione
 
 - **[Specifica di progetto](docs/SPECIFICATION.md)** — requisiti, user stories, use case, edge case, system design e roadmap.
@@ -256,7 +258,8 @@ setup nei test è ammessa). Gli stessi tool girano al commit via
 riferimento in `spike/` è escluso da tutti.
 
 Per contributor e code agent che lavorano sui prompt esternalizzati esiste una
-skill Claude Code locale al repo in [`.claude/skills/minnarone-prompts/`](.claude/skills/minnarone-prompts/SKILL.md):
+skill Claude Code locale al repo in [`.agents/skills/minnarone-prompts/`](.agents/skills/minnarone-prompts/SKILL.md)
+(raggiungibile anche via l'alias symlink opzionale `.claude/skills/`):
 documenta la mappa dei file e i vincoli non ovvi (placeholder obbligatori,
 token di controllo, il confine di sicurezza cablato, la byte-invarianza dei
 default impacchettati) e prescrive il flusso sicuro — modifica →
