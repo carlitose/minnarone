@@ -88,10 +88,15 @@ clone, issue/PR esterne) — non "viralità" generica.
   inglese approvato per Show HN, X, LinkedIn e r/SideProject, risposte FAQ e
   calendario 25–28 luglio. r/LocalLLaMA resta opzionale perché richiede copy
   scritto personalmente dall'autore.
+- **Lancio preparato** (ticket 06, 2026-07-21) →
+  [repo-promotion-launch-log.md](repo-promotion-launch-log.md) registra baseline
+  pre-lancio, gate Day 0, URL dei post, presidio e metriche. Il ticket resta
+  aperto fino alle pubblicazioni e ai checkpoint a 72 ore e 30 giorni.
 
 ## Not Yet Specified
 
-- Nessun punto residuo per il launch kit: asset, canali e timing sono decisi.
+- Nessuna decisione di lancio residua: asset, canali, copy e timing sono
+  approvati. Restano esecuzione e misurazione del ticket 06.
 
 ## Out of Scope
 
@@ -143,7 +148,12 @@ clone, issue/PR esterne) — non "viralità" generica.
 
 ## Next Review
 
-Dopo i ticket 01-04: rileggere la mappa, fissare i canali definitivi e il
-calendario nel ticket 05, e solo dopo l'approvazione dei testi eseguire il 06.
-Housekeeping collegato: riconciliare `docs/tickets/public-release/05-task-flip-visibility.md`
-(il flip è avvenuto — spostarlo in done/ dopo la verifica post-flip descritta lì).
+Eseguire il gate Day 0 del ticket 06 sabato 2026-07-25 alle 18:00 CEST. Se
+account, composer e disponibilità sono confermati, pubblicare Show HN e X
+domenica 26, LinkedIn lunedì 27 e r/SideProject martedì 28, registrando subito
+gli URL nel launch log. Prossime review metriche: 72 ore il 29 luglio,
+preservation snapshot l'11 agosto e verdetto a 30 giorni il 25 agosto.
+
+Housekeeping non bloccante: riconciliare
+`docs/tickets/public-release/05-task-flip-visibility.md` (il flip è avvenuto —
+spostarlo in done/ dopo la verifica post-flip descritta lì).

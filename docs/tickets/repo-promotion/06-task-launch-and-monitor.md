@@ -47,6 +47,22 @@ post senza risposte dell'autore muore in poche ore.
 
 - Link ai post pubblicati; snapshot metriche a 72h e 30gg; temi ricorrenti.
 
+## Progress (2026-07-21)
+
+- Dipendenze 02 e 05 chiuse: vetrina GitHub verificata, copy e calendario
+  approvati.
+- Creato il [launch log](../../specs/repo-promotion-launch-log.md) con gate Day
+  0, record URL, finestre di presidio, checkpoint e tabella feedback.
+- Baseline pre-lancio registrata alle `2026-07-21T20:55:11Z`: 1 stella, 0
+  fork, 0 issue/PR esterne; finestra Traffic mobile di 14 giorni con 80 view / 8
+  unici e 74 clone / 25 unici. I valori non sono zero e non vanno attribuiti al
+  lancio.
+- Prossimo gate umano: sabato 2026-07-25 alle 18:00 CEST, verifica account e
+  composer. Prima pubblicazione: Show HN domenica 2026-07-26 alle 09:00 CEST.
+- Il ticket resta aperto: pubblicazioni, presidio 72h e misurazione a 30 giorni
+  sono necessariamente futuri e richiedono gli account dell'autore.
+
+
 ## Out of Scope
 
 - Contenuti di follow-up (ticket 07); rilanci ripetuti sugli stessi canali.
