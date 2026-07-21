@@ -1,0 +1,144 @@
+# Promozione pubblica del repo Minnarone
+
+## Type
+
+Wayfinding spec
+
+## Status
+
+Active
+
+## Destination
+
+Minnarone è conosciuto nelle comunità rilevanti (dev AI/agenti, streaming/Twitch,
+tech italiana): il repo ha una vetrina GitHub curata, un asset demo che mostra il
+progetto in 30 secondi, ed è stato lanciato sui canali scelti con messaggi adatti a
+ciascuno. Il successo è misurato con le metriche decise nel grilling 01 (es. stelle,
+clone, issue/PR esterne) — non "viralità" generica.
+
+## Decisions So Far
+
+- **Repo pubblico** — verificato 2026-07-21 (`gh repo view`: visibility PUBLIC,
+  1 stella). Il flip del piano [public-release](public-release-wayfinder.md)
+  è avvenuto; il ticket 05 di quella mappa risulta però ancora tra gli aperti
+  (da riconciliare, vedi Next Review).
+- **Disclaimer di non-affiliazione con Enkk** — richiesto esplicitamente da
+  Enrico Mensa (chat LinkedIn 2026-07-21) e aggiunto lo stesso giorno in coda
+  alla sezione "Origin and credits" di `README.md` e `README.it.md`. **Vincolo
+  duro per la promozione**: ogni messaggio pubblico può citare l'ispirazione
+  ("inspired by Enkk's video") ma non deve mai suggerire affiliazione,
+  endorsement o coinvolgimento suo; Enkk non vuole ricevere mail o contatti
+  in merito al progetto.
+- **README in inglese + README.it.md** — già fatto (public-release ticket 08).
+  Il materiale di lancio internazionale può linkare direttamente il README.
+- **Licenza MIT, gitleaks pulito, pytest verde su main** — prerequisiti di
+  credibilità già chiusi dal piano public-release.
+- **Link "Buy me a coffee" (PayPal)** già nel README — la monetizzazione soft
+  esiste, non serve deciderla ora.
+- **Obiettivo: utenti reali** (grilling 01, 2026-07-21) — successo a 30 giorni
+  = persone che installano il framework e aprono issue/domande, non stelle.
+- **Pubblico primario: dev AI/agenti** (grilling 01, 2026-07-21) — pitch
+  tecnico "framework per agenti con percezione multimodale live, tutto in
+  locale (anche su GPU da 4 GB)". Streamer e community italiana restano
+  pubblici secondari.
+- **Canali: HN (Show HN), Reddit, X/LinkedIn** (grilling 01, 2026-07-21) —
+  lobste.rs e community italiane dedicate non selezionati.
+- **Tempo di presidio: ~1h/giorno nelle 72h post-lancio** (grilling 01,
+  2026-07-21). Implicazione: Show HN senza presidio real-time è rischioso —
+  il research 04 deve raccomandare giorno/ora compatibili (es. weekend) e il
+  launch kit deve includere risposte-tipo pronte per le domande prevedibili.
+- **Tono: tecnico + gancio narrativo** (grilling 01, 2026-07-21) — una riga di
+  apertura sulla storia ("nato generalizzando un bot che passava un Turing
+  test nella chat di Twitch"), poi solo sostanza tecnica. Compatibile col
+  vincolo di non-affiliazione.
+- **Tutto il materiale pubblico sempre in inglese** (autore, 2026-07-21) —
+  description, topics, post di lancio, risposte: inglese ovunque, anche su
+  X/LinkedIn.
+- **Demo e superficie runtime in inglese** (autore, 2026-07-21): la demo
+  (ticket 03) e l'esperienza del nuovo utente devono essere in inglese.
+  **Già soddisfatto**: il ticket
+  [public-release/09](../tickets/public-release/done/09-task-localize-cli-messages.md)
+  era già stato implementato e mergiato su main con la PR #43
+  ("refactor: localize operator surfaces in English", 2026-07-19). Verifica
+  2026-07-21 su origin/main: nessuna stringa italiana in print/raise/log
+  user-facing; restano solo docstring e commenti interni in italiano (fuori
+  scope). Resta da garantire che il *run* della demo percepisca contenuto in
+  inglese e produca reazioni in inglese (config del run, ticket 03).
+- **Description e topics GitHub applicati** (ticket 02, 2026-07-21):
+  description "Framework for AI agents that perceive live multimodal context
+  (audio, video, chat) and react in real time - fully local"; topics
+  `ai-agents, multimodal, twitch, llm, llamacpp, speech-recognition,
+  speaker-diarization, python`. Restano del ticket 02: social preview
+  (upload manuale), decisione release v0.x, verifica card da sessione anonima.
+
+- **Mappa canali completata** (research 04, 2026-07-21) →
+  [repo-promotion-channels.md](repo-promotion-channels.md) con regole citate,
+  formati e calendario raccomandato (Day 1 Show HN domenica mattina UTC + X;
+  Day 2 r/LocalLLaMA + LinkedIn; Day 3 r/opensource o r/SideProject; week 2
+  r/MachineLearning). r/Python e r/Twitch fuori dal lancio standard.
+
+## Not Yet Specified
+
+- **Asset demo**: GIF del TUI? clip video breve? screenshot annotati? Cosa è
+  producibile senza una live Twitch reale? → ticket 03.
+- **Subreddit specifici e timing**: quali subreddit ammettono il post e quando
+  lanciare su HN dato il presidio ~1h/giorno. → research 04.
+
+## Out of Scope
+
+- Contattare Enkk o chiedergli condivisioni/endorsement (esplicitamente
+  escluso da sua richiesta).
+- Paid advertising di qualsiasi tipo.
+- Rebranding, rinomina del progetto, sito dedicato.
+- Traduzione dei docs operativi in inglese (resta fuori come nel piano
+  public-release).
+
+## Frontier / Blocking Edges
+
+- **Vetrina GitHub spoglia**: description vuota, zero topics, nessuna
+  homepage/social-preview. Chi arriva dal link vede un repo anonimo; qualunque
+  lancio spreca traffico finché non è sistemata. Non dipende da decisioni →
+  ticket 02, eseguibile subito.
+- ~~Obiettivi/pubblico/canali non decisi~~: risolto (grilling 01 chiuso,
+  2026-07-21 — vedi Decisions So Far).
+- ~~Runtime/TUI in italiano~~: risolto — già mergiato su main con la PR #43
+  (public-release/09, 2026-07-19); verificato su origin/main il 2026-07-21.
+- **Nessun asset demo**: i lanci "show don't tell" (HN, Reddit) performano in
+  base alla demo, non al testo. Richiede un run su contenuto in inglese con
+  reazioni in inglese. → ticket 03 (ora sbloccato).
+- ~~Regole di self-promotion dei canali non verificate~~: risolto (research
+  04 chiuso 2026-07-21) → [repo-promotion-channels.md](repo-promotion-channels.md).
+  Vincoli emersi: r/Python vietato per showcase AI (solo thread mensile),
+  r/Twitch solo previa modmail, Show HN domenica mattina UTC all'inizio della
+  finestra di presidio.
+- **Vetrina GitHub — residuo del ticket 02**: social preview da caricare a
+  mano (Settings → Social preview) e decisione sulla release v0.x. La scelta
+  dell'immagine dipende dall'asset del ticket 03.
+
+## Ticket Plan
+
+- 01 — grilling — Obiettivi, pubblico primario, canali, tono e budget di tempo
+  → decisioni registrate nella mappa.
+- 02 — task — Vetrina GitHub: description, topics, About, social preview image,
+  eventuale release taggata v0.x → repo presentabile da link nudo.
+- 03 — task — Asset demo (GIF/clip del TUI o replay, screenshot curati) →
+  asset riusabile nel README e nei post di lancio.
+- 04 — research — Mappa canali: regole di self-promotion, formato vincente ed
+  esempi riusciti per HN/Reddit/lobste.rs/X/LinkedIn/community italiane, con
+  fonti citate → tabella canale→regole→formato→giorno/ora consigliati.
+- 05 — task — Launch kit: testo per ciascun canale scelto (Show HN, post
+  Reddit, thread X/LinkedIn, post community IT), coerente col vincolo
+  non-affiliazione → testi pronti approvati dall'autore.
+- 06 — task — Lancio coordinato e presidio: pubblicazione secondo il
+  calendario, risposta a commenti/issue nelle prime 48-72h → lancio eseguito,
+  esiti registrati nella mappa.
+- 07 — task (opzionale, post-lancio) — Contenuto di follow-up: blog post o
+  video tecnico su un aspetto distintivo (es. diarization streamer/altro,
+  llama.cpp multimodale su GPU piccole) → contenuto pubblicato.
+
+## Next Review
+
+Dopo i ticket 01-04: rileggere la mappa, fissare i canali definitivi e il
+calendario nel ticket 05, e solo dopo l'approvazione dei testi eseguire il 06.
+Housekeeping collegato: riconciliare `docs/tickets/public-release/05-task-flip-visibility.md`
+(il flip è avvenuto — spostarlo in done/ dopo la verifica post-flip descritta lì).

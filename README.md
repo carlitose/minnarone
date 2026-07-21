@@ -143,6 +143,8 @@ Minnarone was conceived and built by **enkk**, its original author and designer:
 
 This repository generalizes that idea into a reusable framework: the same perception + reaction engine serves different use cases (Twitch, Teams meetings) by changing only the configuration.
 
+> **Disclaimer**: This project was inspired by Enkk's idea and video. However, it is not affiliated with him, and he is not involved in the maintenance of this repository.
+
 ## Documentation
 
 - **[Project specification](docs/SPECIFICATION.md)** — requirements, user stories, use cases, edge cases, system design and roadmap.
@@ -255,7 +257,8 @@ allowed to repeat). The same tools run at commit time via
 is excluded from all of them.
 
 For contributors and code agents working on the externalized prompts there is a
-repo-local Claude Code skill in [`.claude/skills/minnarone-prompts/`](.claude/skills/minnarone-prompts/SKILL.md):
+repo-local Claude Code skill in [`.agents/skills/minnarone-prompts/`](.agents/skills/minnarone-prompts/SKILL.md)
+(also reachable via the optional `.claude/skills/` symlink alias):
 it documents the file map and the non-obvious constraints (required
 placeholders, control tokens, the hard-coded security boundary, byte-invariance
 of the packaged defaults) and prescribes the safe flow — edit →
