@@ -13,6 +13,11 @@ A reusable framework for building AI agents that **perceive a live multimodal co
 
 It grew out of the generalization of **Minnarone**, a bot that watched Twitch live streams and interacted in chat in a way indistinguishable from a human.
 
+<p align="center">
+  <img src="docs/assets/minnarone-tui-demo.gif" alt="Minnarone observability dashboard turning live chat, speech transcription, and video captions into a shadow reaction" width="960">
+</p>
+<p align="center"><em>An English Twitch shadow run: live chat, speech, and video become context, then Minnarone produces a candidate reaction without sending it.</em></p>
+
 ## Quickstart: chat-only shadow
 
 The first supported task is a **chat-only shadow** rehearsal: Minnarone reads

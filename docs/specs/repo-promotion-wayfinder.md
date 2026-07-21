@@ -76,13 +76,16 @@ clone, issue/PR esterne) — non "viralità" generica.
   formati e calendario raccomandato (Day 1 Show HN domenica mattina UTC + X;
   Day 2 r/LocalLLaMA + LinkedIn; Day 3 r/opensource o r/SideProject; week 2
   r/MachineLearning). r/Python e r/Twitch fuori dal lancio standard.
+- **Asset demo completato** (ticket 03, 2026-07-21) → GIF inglese di 30 secondi
+  in [`docs/assets/minnarone-tui-demo.gif`](../assets/minnarone-tui-demo.gif),
+  0,98 MB, inserita sotto la hero del README. Mostra chat, trascrizione, video e
+  memoria che portano a una nuova reazione shadow; il pannello della reazione è
+  evidenziato per quattro secondi. L'autore ha accettato esplicitamente gli
+  handle e i messaggi provenienti dalla chat Twitch pubblica mostrata nel run.
 
 ## Not Yet Specified
 
-- **Asset demo**: GIF del TUI? clip video breve? screenshot annotati? Cosa è
-  producibile senza una live Twitch reale? → ticket 03.
-- **Subreddit specifici e timing**: quali subreddit ammettono il post e quando
-  lanciare su HN dato il presidio ~1h/giorno. → research 04.
+- Nessun punto residuo per il launch kit: asset, canali e timing sono decisi.
 
 ## Out of Scope
 
@@ -103,9 +106,9 @@ clone, issue/PR esterne) — non "viralità" generica.
   2026-07-21 — vedi Decisions So Far).
 - ~~Runtime/TUI in italiano~~: risolto — già mergiato su main con la PR #43
   (public-release/09, 2026-07-19); verificato su origin/main il 2026-07-21.
-- **Nessun asset demo**: i lanci "show don't tell" (HN, Reddit) performano in
-  base alla demo, non al testo. Richiede un run su contenuto in inglese con
-  reazioni in inglese. → ticket 03 (ora sbloccato).
+- ~~**Nessun asset demo**~~: risolto — GIF inglese di 30 secondi sotto la hero
+  del README, con percezioni multimodali e reazione shadow evidenziata (ticket
+  03 chiuso 2026-07-21).
 - ~~Regole di self-promotion dei canali non verificate~~: risolto (research
   04 chiuso 2026-07-21) → [repo-promotion-channels.md](repo-promotion-channels.md).
   Vincoli emersi: r/Python vietato per showcase AI (solo thread mensile),
@@ -122,7 +125,7 @@ clone, issue/PR esterne) — non "viralità" generica.
 - 02 — task — Vetrina GitHub: description, topics, About, social preview image,
   eventuale release taggata v0.x → repo presentabile da link nudo.
 - 03 — task — Asset demo (GIF/clip del TUI o replay, screenshot curati) →
-  asset riusabile nel README e nei post di lancio.
+  completato; asset riusabile nel README e nei post di lancio.
 - 04 — research — Mappa canali: regole di self-promotion, formato vincente ed
   esempi riusciti per HN/Reddit/lobste.rs/X/LinkedIn/community italiane, con
   fonti citate → tabella canale→regole→formato→giorno/ora consigliati.
