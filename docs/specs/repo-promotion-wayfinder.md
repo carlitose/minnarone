@@ -64,12 +64,13 @@ clone, issue/PR esterne) — non "viralità" generica.
   user-facing; restano solo docstring e commenti interni in italiano (fuori
   scope). Resta da garantire che il *run* della demo percepisca contenuto in
   inglese e produca reazioni in inglese (config del run, ticket 03).
-- **Description e topics GitHub applicati** (ticket 02, 2026-07-21):
+- **Description, topics e release GitHub applicati** (ticket 02, 2026-07-21):
   description "Framework for AI agents that perceive live multimodal context
   (audio, video, chat) and react in real time - fully local"; topics
   `ai-agents, multimodal, twitch, llm, llamacpp, speech-recognition,
-  speaker-diarization, python`. Restano del ticket 02: social preview
-  (upload manuale), decisione release v0.x, verifica card da sessione anonima.
+  speaker-diarization, python`; release `v0.1.0` pubblicata. La social preview
+  1280×640 in `docs/assets/minnarone-social-preview.jpg` è caricata e verificata
+  dalla pagina pubblica tramite `og:image` (hash remoto uguale al locale).
 
 - **Mappa canali completata** (research 04, 2026-07-21) →
   [repo-promotion-channels.md](repo-promotion-channels.md) con regole citate,
@@ -103,10 +104,9 @@ clone, issue/PR esterne) — non "viralità" generica.
 
 ## Frontier / Blocking Edges
 
-- **Vetrina GitHub spoglia**: description vuota, zero topics, nessuna
-  homepage/social-preview. Chi arriva dal link vede un repo anonimo; qualunque
-  lancio spreca traffico finché non è sistemata. Non dipende da decisioni →
-  ticket 02, eseguibile subito.
+- ~~**Vetrina GitHub spoglia**~~: risolto — description, topics, release e
+  social preview pubblica sono presenti e verificati (ticket 02 chiuso
+  2026-07-21).
 - ~~Obiettivi/pubblico/canali non decisi~~: risolto (grilling 01 chiuso,
   2026-07-21 — vedi Decisions So Far).
 - ~~Runtime/TUI in italiano~~: risolto — già mergiato su main con la PR #43
@@ -119,16 +119,13 @@ clone, issue/PR esterne) — non "viralità" generica.
   Vincoli emersi: r/Python vietato per showcase AI (solo thread mensile),
   r/Twitch solo previa modmail, Show HN domenica mattina UTC all'inizio della
   finestra di presidio.
-- **Vetrina GitHub — residuo del ticket 02**: social preview da caricare a
-  mano (Settings → Social preview) e decisione sulla release v0.x. La scelta
-  dell'immagine dipende dall'asset del ticket 03.
 
 ## Ticket Plan
 
 - 01 — grilling — Obiettivi, pubblico primario, canali, tono e budget di tempo
   → decisioni registrate nella mappa.
 - 02 — task — Vetrina GitHub: description, topics, About, social preview image,
-  eventuale release taggata v0.x → repo presentabile da link nudo.
+  eventuale release taggata v0.x → completato; repo presentabile da link nudo.
 - 03 — task — Asset demo (GIF/clip del TUI o replay, screenshot curati) →
   completato; asset riusabile nel README e nei post di lancio.
 - 04 — research — Mappa canali: regole di self-promotion, formato vincente ed
