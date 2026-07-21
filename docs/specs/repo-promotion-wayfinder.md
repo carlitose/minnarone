@@ -82,6 +82,11 @@ clone, issue/PR esterne) — non "viralità" generica.
   memoria che portano a una nuova reazione shadow; il pannello della reazione è
   evidenziato per quattro secondi. L'autore ha accettato esplicitamente gli
   handle e i messaggi provenienti dalla chat Twitch pubblica mostrata nel run.
+- **Launch kit approvato** (ticket 05, 2026-07-21) →
+  [repo-promotion-launch-kit.md](repo-promotion-launch-kit.md) contiene copy
+  inglese approvato per Show HN, X, LinkedIn e r/SideProject, risposte FAQ e
+  calendario 25–28 luglio. r/LocalLLaMA resta opzionale perché richiede copy
+  scritto personalmente dall'autore.
 
 ## Not Yet Specified
 
@@ -131,7 +136,7 @@ clone, issue/PR esterne) — non "viralità" generica.
   fonti citate → tabella canale→regole→formato→giorno/ora consigliati.
 - 05 — task — Launch kit: testo per ciascun canale scelto (Show HN, post
   Reddit, thread X/LinkedIn, post community IT), coerente col vincolo
-  non-affiliazione → testi pronti approvati dall'autore.
+  non-affiliazione → completato; testi e calendario approvati dall'autore.
 - 06 — task — Lancio coordinato e presidio: pubblicazione secondo il
   calendario, risposta a commenti/issue nelle prime 48-72h → lancio eseguito,
   esiti registrati nella mappa.
