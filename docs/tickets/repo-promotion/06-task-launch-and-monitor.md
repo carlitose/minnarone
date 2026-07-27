@@ -58,7 +58,7 @@ post senza risposte dell'autore muore in poche ore.
   unici e 74 clone / 25 unici. I valori non sono zero e non vanno attribuiti al
   lancio.
 - Prossimo gate umano: sabato 2026-07-25 alle 18:00 CEST, verifica account e
-  composer. Prima pubblicazione: Show HN domenica 2026-07-26 alle 09:00 CEST.
+  composer. Prima pubblicazione: Show HN domenica 2026-07-26 alle 17:00 CEST.
 - Il ticket resta aperto: pubblicazioni, presidio 72h e misurazione a 30 giorni
   sono necessariamente futuri e richiedono gli account dell'autore.
 

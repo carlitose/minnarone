@@ -110,7 +110,7 @@ accettazione public-TUI **non ci sono** a `3d531b7` — sono nel blob `14e7c9b`.
   split secondo la decisione. Bloccato da E1 + E2. → ticket 03 (solo su richiesta
   esplicita di esecuzione).
 - **E4 — Accettazione live meeting-synth** (HITL): già tracciata in
-  `docs/issues/meeting-synthesizer-and-suggester/15-hitl-live-meeting-acceptance.md`.
+  `docs/tickets/meeting-synthesizer-and-suggester/15-hitl-live-meeting-acceptance.md`.
   Non duplicare.
 
 ## Ticket Plan

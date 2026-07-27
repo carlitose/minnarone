@@ -349,8 +349,8 @@ Tutte consultate il 2026-07-18.
 - [`pyproject.toml`](../../pyproject.toml), [`uv.lock`](../../uv.lock),
   [guida operatore](../twitch-operator.md),
   [example llama.cpp](../../examples/llamacpp-local.example.yaml), run di
-  accettazione [full Twitch](../issues/local-twitch-perception-runtime/done/12-full-twitch-commentator-acceptance-run.md)
-  e [speaker HITL](../issues/speaker-diarization-over-segmentation/done/05-hitl-accettazione-diarizzazione-live.md).
+  accettazione [full Twitch](../tickets/local-twitch-perception-runtime/done/12-full-twitch-commentator-acceptance-run.md)
+  e [speaker HITL](../tickets/speaker-diarization-over-segmentation/done/05-hitl-accettazione-diarizzazione-live.md).
 
 ## Next step
 

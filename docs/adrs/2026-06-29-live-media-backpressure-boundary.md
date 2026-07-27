@@ -120,4 +120,4 @@ Implement the decision in vertical slices:
 
 ## Follow-Up Work
 
-- `docs/issues/live-media-backpressure-runtime/01-live-media-throughput-boundary.md`
+- `docs/tickets/live-media-backpressure-runtime/done/01-live-media-throughput-boundary.md`

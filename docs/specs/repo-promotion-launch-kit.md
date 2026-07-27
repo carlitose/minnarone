@@ -250,9 +250,9 @@ scheduled at the beginning of the author's one-hour availability window.
 | Date | Local time | Action | One-hour focus |
 | --- | --- | --- | --- |
 | Sat 2026-07-25 | 18:00 | Day 0 gate: merge launch-kit PR, complete the social preview/card check, verify README and native GIF uploads, and confirm all accounts are ready. | Do not launch if ticket 02 remains open. |
-| Sun 2026-07-26 | 09:00 | Submit Show HN; immediately add the prepared first comment. Publish the X thread at about 09:15. | HN replies first, then X replies. One optional HN check later that day if time permits. |
-| Mon 2026-07-27 | 09:00 | Publish LinkedIn with native media. Publish r/LocalLLaMA only if the author-written post is ready and current account/rules checks pass. | LinkedIn, Reddit, then HN stragglers. |
-| Tue 2026-07-28 | 09:00 | Publish r/SideProject if r/LocalLLaMA was skipped; otherwise hold it for week 2 to avoid campaign-like Reddit behavior. | Reddit replies and cross-channel issue triage. |
+| Sun 2026-07-26 | 17:00 | Submit Show HN; immediately add the prepared first comment. Publish the X thread at about 17:15. | HN replies first, then X replies. One optional HN check later that day if time permits. |
+| Mon 2026-07-27 | 10:00 | Publish LinkedIn with native media. Publish r/LocalLLaMA only if the author-written post is ready and current account/rules checks pass. | LinkedIn, Reddit, then HN stragglers. |
+| Tue 2026-07-28 | 10:00 | Publish r/SideProject if r/LocalLLaMA was skipped; otherwise hold it for week 2 to avoid campaign-like Reddit behavior. | Reddit replies and cross-channel issue triage. |
 | Sun 2026-08-02 or later | 09:00 | Optional second Reddit post, rewritten for that community, only if account history and the first launch response justify it. | Never native-crosspost identical copy. |
 
 ## Author approval checklist
