@@ -62,6 +62,12 @@ post senza risposte dell'autore muore in poche ore.
 - Il ticket resta aperto: pubblicazioni, presidio 72h e misurazione a 30 giorni
   sono necessariamente futuri e richiedono gli account dell'autore.
 
+## Progress (2026-07-28)
+
+- Pubblicati tutti e quattro i post selezionati: Show HN, X, LinkedIn e
+  [r/SideProject](https://www.reddit.com/r/SideProject/comments/1v8w477/minnarone_multimodal_agents_that_watch_listen_and/).
+- Il presidio post-lancio resta attivo; checkpoint a 72 ore previsto per il
+  2026-07-29 e verdetto a 30 giorni per il 2026-08-25.
 
 ## Out of Scope
 

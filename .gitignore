@@ -42,6 +42,8 @@ perceptions.jsonl
 !.agents/skills/minnarone-twitch-onboarding/
 !.agents/skills/minnarone-runtime-doctor/
 .tokensave/
+.codex/
+.playwright-mcp/
 .ruff_cache/
 wiki/
 skills-lock.json

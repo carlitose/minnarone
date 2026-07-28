@@ -8,7 +8,7 @@
 
 ## Launch status
 
-- Phase: pre-launch.
+- Phase: launch in progress.
 - Primary outcome: real users who try the framework and open useful questions
   or issues; stars alone are not success.
 - Selected channels: Show HN, X, LinkedIn, and r/SideProject.
@@ -116,8 +116,8 @@ time immediately after each action.
 | --- | --- | --- | --- | --- |
 | Show HN | Sun 2026-07-26 17:00 CEST; add the approved first comment immediately | 2026-07-26 17:10:49 CEST | <https://news.ycombinator.com/item?id=49058933> | published; first comment verified |
 | X | Sun 2026-07-26 about 17:15 CEST; native GIF on post 1, repo link on post 2 | 2026-07-26 17:20:24 CEST | <https://x.com/carlog_sergi/status/2081399240270459049> | published; first post and media verified |
-| LinkedIn | Mon 2026-07-27 10:00 CEST; native GIF, repo link in first comment | — | — | pending |
-| r/SideProject | Tue 2026-07-28 10:00 CEST; text post with embedded demo | — | — | pending |
+| LinkedIn | Mon 2026-07-27 10:00 CEST; native GIF, repo link in first comment | 2026-07-27 11:26:01 CEST | <https://www.linkedin.com/posts/carlo-giuseppe-sergi_ive-open-sourced-minnarone-a-python-framework-share-7487438136994693120-eEDx/> | published; native GIF and first comment author-confirmed |
+| r/SideProject | Tue 2026-07-28 10:00 CEST; text post with embedded demo | by 2026-07-28 13:47:35 CEST | <https://www.reddit.com/r/SideProject/comments/1v8w477/minnarone_multimodal_agents_that_watch_listen_and/> | published; canonical URL author-confirmed |
 
 Show HN verification: the official Hacker News API reported the approved title,
 repository URL, and author `carlitose`; the first comment appeared at
@@ -126,6 +126,12 @@ repository URL, and author `carlitose`; the first comment appeared at
 X verification: the official oEmbed endpoint reported author `Carlo Giuseppe`
 (`@carlog_sergi`), the canonical status URL, and attached media on the first
 post. The X snowflake timestamp resolves to 2026-07-26 17:20:24 CEST.
+
+Reddit publication was author-confirmed in chat by 2026-07-28 13:47:35 CEST.
+r/SideProject did not permit inline images but allowed video, so the approved
+30-second GIF was converted to an H.264 MP4 for the post. Unauthenticated
+Reddit endpoints returned HTTP 403, so media and comment checks must use the
+author's session.
 
 Early launch milestone: at 2026-07-26 17:25:38 CEST the public GitHub API
 reported 2 stars, 0 forks, and 0 open issues. Against the pre-launch baseline
@@ -150,8 +156,8 @@ threads into the repository.
 | Window | Channel checks | Questions answered | Actionable themes / issue links |
 | --- | --- | ---: | --- |
 | Sun 2026-07-26 17:00–18:00 CEST | HN and X published; final HN/GitHub check at 18:00 CEST; author confirmed no X replies at 18:01 CEST; window closed | 0 | HN score 1 with no external replies; GitHub 3 stars (+2 from baseline), 0 forks, 0 open issues |
-| Mon 2026-07-27 10:00–11:00 CEST | LinkedIn, HN/X follow-up | — | — |
-| Tue 2026-07-28 10:00–11:00 CEST | r/SideProject, then all channels | — | — |
+| Mon 2026-07-27 10:00–12:26 CEST | LinkedIn published at 11:26 CEST; LinkedIn and HN/X follow-up monitored through 12:26 CEST; window closed | 0 | No external questions or actionable feedback reported |
+| Tue 2026-07-28 13:47–14:47 CEST | r/SideProject published by 13:47 CEST; HN/GitHub opening pass at 13:49 CEST; Reddit author-session monitoring in progress | — | GitHub 3 stars, 0 forks, 0 open issues; HN score 1 with 0 comments |
 | Wed 2026-07-29 17:00 CEST | 72-hour final pass | — | — |
 
 ## Metric checkpoints
