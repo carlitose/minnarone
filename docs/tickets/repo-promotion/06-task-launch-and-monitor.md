@@ -16,7 +16,7 @@ ricorrente) sono registrati nella mappa.
 
 ## Acceptance Criteria
 
-- [ ] Ogni post pubblicato dal canale/account dell'autore secondo calendario.
+- [x] Ogni post pubblicato dal canale/account dell'autore secondo calendario.
 - [ ] Commenti e issue presidiate nelle prime 48-72h (budget di tempo dal
       grilling 01).
 - [ ] Metriche registrate a 72h e a 30 giorni (stelle, traffico da Insights,
@@ -90,7 +90,6 @@ post senza risposte dell'autore muore in poche ore.
   emerso feedback ricorrente da trasformare in nuovi ticket. Il ticket 06
   resta aperto per il preservation snapshot dell'11 agosto e il verdetto a 30
   giorni del 25 agosto.
-
 ## Out of Scope
 
 - Contenuti di follow-up (ticket 07); rilanci ripetuti sugli stessi canali.
