@@ -42,6 +42,12 @@ mostra trazione.
 
 - URL del contenuto pubblicato e reazioni.
 
+## Progress (2026-08-02)
+
+- Il ticket resta bloccato dal 06. Il lancio registrato non ha ancora prodotto
+  domande o feedback ricorrenti sufficienti per scegliere il tema in base a
+  evidenza reale; non si avvia quindi un contenuto di follow-up per inerzia.
+
 ## Out of Scope
 
 - Serie di contenuti continuativa; SEO a lungo termine.

@@ -88,16 +88,21 @@ clone, issue/PR esterne) — non "viralità" generica.
   inglese approvato per Show HN, X, LinkedIn e r/SideProject, risposte FAQ e
   calendario 25–28 luglio. r/LocalLLaMA resta opzionale perché richiede copy
   scritto personalmente dall'autore.
-- **Lancio attivo** (ticket 06, aggiornato 2026-07-28) →
-  [repo-promotion-launch-log.md](repo-promotion-launch-log.md) registra baseline,
-  gate Day 0 e URL dei post. Show HN, X, LinkedIn e r/SideProject sono stati
-  pubblicati; il ticket resta aperto per il presidio e i checkpoint a 72 ore e
-  30 giorni.
+- **Pubblicazioni di lancio completate** (ticket 06, aggiornamento 2026-08-02) →
+  [repo-promotion-launch-log.md](repo-promotion-launch-log.md) registra baseline
+  pre-lancio, gate Day 0, URL e presidio. Show HN e X sono stati pubblicati il
+  26 luglio, LinkedIn il 27 luglio e r/SideProject il 28 luglio. Il checkpoint
+  delle 72 ore è stato ricostruito in ritardo il 2 agosto: 4 stelle attive già
+  create entro il confine, 0 fork e nessuna issue/PR esterna al momento della
+  verifica. LinkedIn riportava 1.006 impressioni, 3 reazioni, 2 commenti e 1
+  repost; Reddit 1 voto e 1 commento, senza feedback ricorrente azionabile. Il
+  ticket resta aperto per gli snapshot dell'11 e del 25 agosto.
 
 ## Not Yet Specified
 
-- Nessuna decisione di lancio residua: asset, canali, copy e timing sono
-  approvati. Restano esecuzione e misurazione del ticket 06.
+- Nessun elemento relativo alla pubblicazione: tutti e quattro i post previsti
+  sono verificati. Il verdetto finale dipende dai checkpoint metrici già
+  definiti, non da una nuova decisione di lancio.
 
 ## Out of Scope
 
@@ -141,17 +146,18 @@ clone, issue/PR esterne) — non "viralità" generica.
   Reddit, thread X/LinkedIn, post community IT), coerente col vincolo
   non-affiliazione → completato; testi e calendario approvati dall'autore.
 - 06 — task — Lancio coordinato e presidio: pubblicazione secondo il
-  calendario, risposta a commenti/issue nelle prime 48-72h → lancio eseguito,
-  esiti registrati nella mappa.
+  calendario, risposta a commenti/issue nelle prime 48-72h → tutti e quattro
+  i canali pubblicati e verificati; checkpoint 72h ricostruito in ritardo,
+  preservation snapshot e misurazione a 30 giorni ancora futuri.
 - 07 — task (opzionale, post-lancio) — Contenuto di follow-up: blog post o
   video tecnico su un aspetto distintivo (es. diarization streamer/altro,
   llama.cpp multimodale su GPU piccole) → contenuto pubblicato.
 
 ## Next Review
 
-Continuare il presidio dei quattro canali e svolgere il checkpoint a 72 ore il
-29 luglio alle 17:00 CEST. Review successive: preservation snapshot l'11 agosto
-e verdetto a 30 giorni il 25 agosto.
+Le pubblicazioni sono tutte documentate; non ripubblicare né creare duplicati.
+Prossime review metriche: preservation snapshot l'11 agosto e verdetto a 30
+giorni il 25 agosto.
 
 Housekeeping non bloccante: riconciliare
 `docs/tickets/public-release/05-task-flip-visibility.md` (il flip è avvenuto —

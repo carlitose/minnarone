@@ -8,15 +8,18 @@
 
 ## Launch status
 
-- Phase: launch in progress.
+- Phase: all four selected channels are published; launch follow-up remains
+  incomplete until the preservation and 30-day metric checkpoints.
 - Primary outcome: real users who try the framework and open useful questions
   or issues; stars alone are not success.
 - Selected channels: Show HN, X, LinkedIn, and r/SideProject.
 - r/LocalLLaMA is not in this launch because it requires author-written copy.
 - Author availability: one focused hour per day during the first 72 hours.
-- First public post: Sunday 2026-07-26 at 17:00 CEST (15:00 UTC).
-- 72-hour checkpoint: Wednesday 2026-07-29 at 17:00 CEST.
-- 30-day checkpoint: Tuesday 2026-08-25 at 17:00 CEST.
+- First public post: Show HN on Sunday 2026-07-26 at 17:10:49 CEST
+  (15:10:49 UTC), after the final 17:00 CEST reschedule.
+- Scheduled 72-hour checkpoint: Wednesday 2026-07-29 at 17:00 CEST; the exact
+  72-hour boundary after the first post was 17:10:49 CEST and was also missed.
+- 30-day checkpoint: Tuesday 2026-08-25 at 17:10:49 CEST.
 - Schedule amended by the author on Saturday 2026-07-25 at 18:42 CEST:
   Sunday launch moved from 09:00 to 12:00 CEST; downstream checkpoints moved
   by the same three hours.
@@ -25,6 +28,33 @@
 - The Sunday 12:00 window was missed with no posts published. At 16:30 CEST
   the author moved Show HN to 17:00, X to 17:15, and confirmed monitoring
   availability through 18:00; downstream checkpoints moved by five hours.
+
+## Late status reconstruction — Sunday 2026-08-02
+
+The 72-hour checkpoint was not recorded at its scheduled time. A read-only
+reconstruction at `2026-08-02T11:06:14Z` established the following without
+presenting late observations as an on-time snapshot:
+
+- Show HN, X, LinkedIn, and r/SideProject have canonical publication URLs and
+  verified publication times. LinkedIn and r/SideProject were published after
+  their planned windows but before this reconstruction.
+- The four currently active stars were all created before the 72-hour
+  boundary: one baseline star, two shortly after launch, and one at
+  `2026-07-29T04:24:41Z`. No external issue or pull request was found across
+  all states; the current fork count is zero.
+- The current rolling Traffic window reports 175 views / 96 unique visitors
+  and 136 clones / 72 unique cloners. These are late-window totals, not exact
+  72-hour totals. The recoverable UTC rows for 2026-07-26 through 2026-07-28
+  total 116 views, 86 view-unique-days, 11 clones, and 9 clone-unique-days.
+- Current top referrers include Hacker News (14 views / 12 unique) and HN
+  Algolia (6 / 2). LinkedIn reports 2 / 1, which is evidence of a visit, not
+  evidence that the planned LinkedIn post was published.
+- The official Hacker News item API still reports score 1 and no external
+  discussion. At verification, LinkedIn reported 1,006 impressions, 3
+  reactions, 2 comments, and 1 repost; r/SideProject reported 1 vote and 1
+  comment. The LinkedIn author comment contains the GitHub link, while the
+  other visible comment is generic and not actionable. No recurring product
+  feedback is available to distill into a follow-up ticket.
 
 ## Baseline before launch
 
@@ -50,7 +80,8 @@ pre-release activity and must not be attributed to the launch.
 GitHub Traffic is a rolling 14-day window. Preserve daily arrays at every
 checkpoint; totals from two distant snapshots cannot be subtracted safely.
 Daily buckets use UTC midnight boundaries: the `2026-07-26` bucket contains
-seven hours before the 07:00 UTC launch and is only partially attributable.
+15 hours, 10 minutes, and 49 seconds before the 15:10:49 UTC launch and is only
+partially attributable.
 Counts can be summed after de-duplicating calendar dates across snapshots.
 Daily `uniques` cannot be summed into a de-duplicated multi-day person count;
 if summed, label the result `unique-day total`. Minnarone has no installation
@@ -116,8 +147,8 @@ time immediately after each action.
 | --- | --- | --- | --- | --- |
 | Show HN | Sun 2026-07-26 17:00 CEST; add the approved first comment immediately | 2026-07-26 17:10:49 CEST | <https://news.ycombinator.com/item?id=49058933> | published; first comment verified |
 | X | Sun 2026-07-26 about 17:15 CEST; native GIF on post 1, repo link on post 2 | 2026-07-26 17:20:24 CEST | <https://x.com/carlog_sergi/status/2081399240270459049> | published; first post and media verified |
-| LinkedIn | Mon 2026-07-27 10:00 CEST; native GIF, repo link in first comment | 2026-07-27 11:26:01 CEST | <https://www.linkedin.com/posts/carlo-giuseppe-sergi_ive-open-sourced-minnarone-a-python-framework-share-7487438136994693120-eEDx/> | published; native GIF and first comment author-confirmed |
-| r/SideProject | Tue 2026-07-28 10:00 CEST; text post with embedded demo | by 2026-07-28 13:47:35 CEST | <https://www.reddit.com/r/SideProject/comments/1v8w477/minnarone_multimodal_agents_that_watch_listen_and/> | published; canonical URL author-confirmed |
+| LinkedIn | Mon 2026-07-27 10:00 CEST; native GIF, repo link in first comment | 2026-07-27 11:26:02 CEST | <https://www.linkedin.com/feed/update/urn:li:activity:7487438139456917504/> | published; native GIF, post, and first-comment repository link verified |
+| r/SideProject | Tue 2026-07-28 10:00 CEST; text post with embedded demo | 2026-07-28 13:46:48 CEST | <https://www.reddit.com/r/SideProject/comments/1v8w477/minnarone_multimodal_agents_that_watch_listen_and/> | published; public post, author, and converted MP4 verified |
 
 Show HN verification: the official Hacker News API reported the approved title,
 repository URL, and author `carlitose`; the first comment appeared at
@@ -126,6 +157,17 @@ repository URL, and author `carlitose`; the first comment appeared at
 X verification: the official oEmbed endpoint reported author `Carlo Giuseppe`
 (`@carlog_sergi`), the canonical status URL, and attached media on the first
 post. The X snowflake timestamp resolves to 2026-07-26 17:20:24 CEST.
+
+LinkedIn verification: the public post detail identifies activity
+`7487438139456917504` and a publication time of 2026-07-27 11:26:02 CEST. At
+the 2026-08-02 verification it reported 1,006 impressions, 3 reactions, 2
+comments, and 1 repost. The author's first comment contains the GitHub link;
+the other visible comment does not contain actionable Minnarone feedback.
+
+r/SideProject verification: the public Reddit post identifies author
+`u/carlitose86`, post `1v8w477`, and a publication time of 2026-07-28 13:46:48
+CEST. At the 2026-08-02 verification it reported 1 vote and 1 comment, with no
+recurring product-feedback theme to record.
 
 Reddit publication was author-confirmed in chat by 2026-07-28 13:47:35 CEST.
 r/SideProject did not permit inline images but allowed video, so the approved
@@ -156,9 +198,9 @@ threads into the repository.
 | Window | Channel checks | Questions answered | Actionable themes / issue links |
 | --- | --- | ---: | --- |
 | Sun 2026-07-26 17:00–18:00 CEST | HN and X published; final HN/GitHub check at 18:00 CEST; author confirmed no X replies at 18:01 CEST; window closed | 0 | HN score 1 with no external replies; GitHub 3 stars (+2 from baseline), 0 forks, 0 open issues |
-| Mon 2026-07-27 10:00–12:26 CEST | LinkedIn published at 11:26 CEST; LinkedIn and HN/X follow-up monitored through 12:26 CEST; window closed | 0 | No external questions or actionable feedback reported |
-| Tue 2026-07-28 13:47–14:47 CEST | r/SideProject published by 13:47 CEST; HN/GitHub opening pass at 13:49 CEST; Reddit author-session monitoring in progress | — | GitHub 3 stars, 0 forks, 0 open issues; HN score 1 with 0 comments |
-| Wed 2026-07-29 17:00 CEST | 72-hour final pass | — | — |
+| Mon 2026-07-27 10:00–12:26 CEST | LinkedIn published at 11:26 CEST; LinkedIn and HN/X follow-up monitored through 12:26 CEST; window closed | 0 | At late verification: 1,006 impressions, 3 reactions, 2 comments, and 1 repost; the only visible external comment was generic, with no actionable product feedback |
+| Tue 2026-07-28 13:47–14:47 CEST | r/SideProject published at 13:46 CEST; HN/GitHub opening pass at 13:49 CEST; Reddit author-session monitoring recorded | 0 recorded | GitHub 3 stars, 0 forks, 0 open issues and HN score 1 at the opening pass; Reddit reported 1 vote and 1 comment at late verification, with no recurring feedback theme |
+| Wed 2026-07-29 17:00 CEST | Scheduled 72-hour pass was missed; reconstructed late on 2026-08-02 | — | No recurring feedback recorded; see late reconstruction above |
 
 ## Metric checkpoints
 
@@ -171,15 +213,66 @@ partial bucket and never present summed daily uniques as de-duplicated people.
 | Checkpoint | Stars | Forks | External issues | External PRs | Rolling 14d views / unique | Rolling 14d clones / unique | User evidence |
 | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
 | Baseline — 2026-07-21 | 1 | 0 | 0 | 0 | 80 / 8 (rolling 14d) | 74 / 25 (rolling 14d) | None recorded |
-| 72h — 2026-07-29 | — | — | — | — | — | — | — |
+| 72h — 2026-07-29 (late reconstruction captured 2026-08-02) | 4 extant stars timestamped by the boundary | 0 at late capture | 0 at late capture | 0 at late capture | 175 / 96 (late rolling window) | 136 / 72 (late rolling window) | No external issue, PR, or recurring question recorded |
 | Preservation snapshot — 2026-08-11 | — | — | — | — | — | — | Preserve daily Traffic before it rolls out |
 | 30d — 2026-08-25 | — | — | — | — | — | — | — |
 
-### Raw Traffic snapshot — 72h
+### Raw Traffic snapshot — late 72h reconstruction
 
-Pending capture at `2026-07-29T15:00:00Z`; hard deadline before
-`2026-07-30T00:00:00Z`. The response must retain complete UTC rows through
-`2026-07-28`, plus the partial launch-day row for `2026-07-26`.
+Captured late at `2026-08-02T11:06:14Z` from
+`GET /repos/carlitose/minnarone/traffic/views`,
+`GET /repos/carlitose/minnarone/traffic/clones`,
+`GET /repos/carlitose/minnarone/traffic/popular/referrers`, and
+`GET /repos/carlitose/minnarone/traffic/popular/paths`. GitHub returned daily
+rows through 2026-07-31. The rolling totals are capture-time values; the rows
+preserve the UTC dates needed for the missed 72-hour checkpoint.
+
+| UTC date | Views | View uniques | Clones | Clone uniques |
+| --- | ---: | ---: | ---: | ---: |
+| 2026-07-18 | 10 | 1 | 0 | 0 |
+| 2026-07-19 | 4 | 3 | 44 | 20 |
+| 2026-07-20 | 14 | 4 | 30 | 13 |
+| 2026-07-21 | 14 | 2 | 39 | 32 |
+| 2026-07-22 | 3 | 1 | 4 | 3 |
+| 2026-07-23 | 0 | 0 | 0 | 0 |
+| 2026-07-24 | 2 | 1 | 1 | 1 |
+| 2026-07-25 | 0 | 0 | 0 | 0 |
+| 2026-07-26 | 95 | 73 | 1 | 1 |
+| 2026-07-27 | 12 | 9 | 3 | 3 |
+| 2026-07-28 | 9 | 4 | 7 | 5 |
+| 2026-07-29 | 3 | 3 | 3 | 3 |
+| 2026-07-30 | 7 | 2 | 3 | 2 |
+| 2026-07-31 | 2 | 2 | 1 | 1 |
+
+The API-level rolling totals were 175 views / 96 unique visitors and 136
+clones / 72 unique cloners. Daily uniques are not de-duplicated across dates;
+their sums must not be presented as people.
+
+#### Popular referrers at late capture
+
+| Referrer | Views | Uniques |
+| --- | ---: | ---: |
+| `github.com` | 48 | 5 |
+| `news.ycombinator.com` | 14 | 12 |
+| `hn.algolia.com` | 6 | 2 |
+| Google | 2 | 2 |
+| `linkedin.com` | 2 | 1 |
+| `web.telegram.org` | 1 | 1 |
+
+#### Popular paths at late capture
+
+| Path | Views | Uniques |
+| --- | ---: | ---: |
+| `/carlitose/minnarone` | 88 | 55 |
+| `/carlitose/minnarone/pulls` | 6 | 3 |
+| `/carlitose/minnarone/blob/main/docs/SPECIFICATION.md` | 4 | 3 |
+| `/carlitose/minnarone/pulse` | 4 | 1 |
+| `/carlitose/minnarone/blob/main/README.it.md` | 3 | 3 |
+| `/carlitose/minnarone/commit/c6ec5757065b3a5038efdf37f64b344b06b41fbb` | 2 | 2 |
+| `/carlitose/minnarone/issues` | 2 | 2 |
+| `/carlitose/minnarone/tree/main/examples/prompts-en` | 2 | 2 |
+| `/carlitose/minnarone/commits` | 2 | 1 |
+| `/carlitose/minnarone/pull/35` | 2 | 1 |
 
 ### Raw Traffic snapshot — preservation
 
@@ -190,14 +283,14 @@ early launch dates from rolling out before the 30-day review.
 
 ### Raw Traffic snapshot — 30d
 
-Pending capture at `2026-08-25T15:00:00Z`; hard deadline before
+Pending capture at `2026-08-25T15:10:49Z`; hard deadline before
 `2026-08-26T00:00:00Z`. The response must retain UTC rows from `2026-08-11`
 through `2026-08-24` without a gap in the saved daily arrays. This Traffic
-series is a calendar-day approximation: it includes seven pre-launch hours in
-the partial `2026-07-26` bucket and omits the final seven hours from
-`2026-08-25T00:00:00Z` to the 30-day checkpoint. Stars, forks, and external
-issues/PRs are captured at the exact checkpoint time; Traffic is reported with
-these boundary limitations.
+series is a calendar-day approximation: it includes 15 hours, 10 minutes, and
+49 seconds before launch in the `2026-07-26` bucket and omits the final 15
+hours, 10 minutes, and 49 seconds from `2026-08-25T00:00:00Z` to the 30-day
+checkpoint. Stars, forks, and external issues/PRs are captured at the exact
+checkpoint time; Traffic is reported with these boundary limitations.
 
 ## Feedback disposition
 

@@ -69,6 +69,28 @@ post senza risposte dell'autore muore in poche ore.
 - Il presidio post-lancio resta attivo; checkpoint a 72 ore previsto per il
   2026-07-29 e verdetto a 30 giorni per il 2026-08-25.
 
+## Progress (2026-08-02)
+
+- Show HN e X sono stati pubblicati il 2026-07-26, LinkedIn il 2026-07-27 e
+  r/SideProject il 2026-07-28. Tutti e quattro hanno URL canonici, timestamp e
+  account dell'autore verificati nel
+  [launch log](../../specs/repo-promotion-launch-log.md); non serve alcuna
+  ripubblicazione.
+- Il checkpoint delle 72 ore non è stato acquisito in orario. Una
+  ricostruzione read-only ha salvato le righe Traffic ancora disponibili e ha
+  verificato che le 4 stelle attualmente attive erano già state create entro
+  il confine delle 72 ore. Al momento della ricostruzione: 0 fork e nessuna
+  issue/PR esterna in alcuno stato.
+- La finestra Traffic mobile osservata in ritardo riporta 175 view / 96 unici e
+  136 clone / 72 unici. Le righe UTC 2026-07-26–28 sommano 116 view e 11 clone;
+  il giorno del lancio include però 15h10m49s precedenti al primo post e gli
+  unici giornalieri non sono persone de-duplicate.
+- Alla verifica del 2026-08-02 LinkedIn riportava 1.006 impressioni, 3
+  reazioni, 2 commenti e 1 repost; Reddit riportava 1 voto e 1 commento. Non è
+  emerso feedback ricorrente da trasformare in nuovi ticket. Il ticket 06
+  resta aperto per il preservation snapshot dell'11 agosto e il verdetto a 30
+  giorni del 25 agosto.
+
 ## Out of Scope
 
 - Contenuti di follow-up (ticket 07); rilanci ripetuti sugli stessi canali.
