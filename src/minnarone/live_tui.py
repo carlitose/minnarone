@@ -319,8 +319,9 @@ def _build_send_commands(agent: _LiveAgent) -> object | None:
     """Build a SendCommandSurface if the agent exposes a send_policy.
 
     The surface is the TUI's narrow mutation channel: promote and kill-switch.
-    When no send_policy is present (console runtime, mode off/shadow), the TUI
-    stays fully read-only.
+    When no send policy is present the TUI stays fully read-only. A policy may
+    expose shadow or live-armed state while still rejecting promotion because
+    no platform sender capability exists.
     """
     send_policy = getattr(agent, "send_policy", None)
     if send_policy is None:

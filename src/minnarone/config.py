@@ -21,6 +21,7 @@ import yaml
 
 from .asr import AsrConfig, AsrConfigError
 from .output import CommentatorStyle, OutputMode
+from .public_send import PublicSendMode, PublicTarget
 from .speaker import (
     SpeakerClusteringConfig,
     SpeakerConfigError,
@@ -268,12 +269,9 @@ def _normalized_channel(value: object, field_name: str) -> str:
 TWITCH_SEND_TOKEN_ENV_VAR = "TWITCH_SEND_OAUTH_TOKEN"
 
 
-class TwitchSendMode(Enum):
-    """Stato dell'invio pubblico: spento, prova senza rete, o invio reale."""
-
-    OFF = "off"
-    SHADOW = "shadow"
-    LIVE = "live"
+# Public compatibility name retained for operator configs and downstream code.
+# The enum itself lives with the neutral policy and has no Twitch dependency.
+TwitchSendMode = PublicSendMode
 
 
 def _coerce_send_mode(value: object) -> TwitchSendMode:
@@ -327,6 +325,20 @@ class TwitchSendConfig:
                 name,
                 _coerce_config_positive_int(getattr(self, name), f"twitch.send.{name}"),
             )
+
+    @property
+    def allowed_targets(self) -> tuple[PublicTarget, ...]:
+        """Typed allow-list translated at the Twitch configuration edge."""
+        return tuple(
+            PublicTarget("twitch", channel) for channel in self.allowed_channels
+        )
+
+    @staticmethod
+    def coerce_target(value: object) -> PublicTarget:
+        """Normalize a runtime Twitch target before entering the neutral policy."""
+        if not isinstance(value, str):
+            raise TypeError("Twitch target must be a string")
+        return PublicTarget("twitch", normalize_twitch_channel(value))
 
     def validate_for_mode(self, mode: OutputMode) -> None:
         """Gate cross-field: l'invio pubblico ha senso solo con output public.
@@ -472,12 +484,100 @@ class TwitchConfig:
         return _coerce_config_float(value, field_name)
 
 
+def _coerce_youtube_send_mode(value: object) -> PublicSendMode:
+    if isinstance(value, bool) and value is True:
+        raise ConfigError(
+            "youtube.send.mode: use 'off', 'shadow' or 'live' "
+            "(quote the value: YAML interprets on/yes/true as boolean)"
+        )
+    return _coerce_enum(
+        value,
+        PublicSendMode,
+        "youtube.send.mode",
+        false_alias=PublicSendMode.OFF,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeSendConfig:
+    """Safety settings for YouTube candidates; ticket 06 adds no sender."""
+
+    mode: PublicSendMode = PublicSendMode.SHADOW
+    allowed_video_ids: tuple[str, ...] = ()
+    max_per_minute: int = 1
+    max_per_hour: int = 20
+    failure_threshold: int = 3
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mode", _coerce_youtube_send_mode(self.mode))
+        values = self.allowed_video_ids
+        if isinstance(values, str) or not isinstance(values, (list, tuple)):
+            raise ConfigError(
+                "youtube.send.allowed_video_ids must be a list of video IDs"
+            )
+        normalized: list[str] = []
+        for value in values:
+            try:
+                normalized.append(YouTubeVideoId.parse(value).value)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(f"youtube.send.allowed_video_ids: {exc}") from exc
+        object.__setattr__(self, "allowed_video_ids", tuple(normalized))
+        for name in ("max_per_minute", "max_per_hour", "failure_threshold"):
+            object.__setattr__(
+                self,
+                name,
+                _coerce_config_positive_int(
+                    getattr(self, name), f"youtube.send.{name}"
+                ),
+            )
+
+    @property
+    def allowed_targets(self) -> tuple[PublicTarget, ...]:
+        return tuple(
+            PublicTarget("youtube", video_id) for video_id in self.allowed_video_ids
+        )
+
+    @staticmethod
+    def coerce_target(value: object) -> PublicTarget:
+        return PublicTarget("youtube", YouTubeVideoId.parse(value).value)
+
+    def validate_for_mode(self, mode: OutputMode) -> None:
+        if self.mode is not PublicSendMode.OFF and mode is not OutputMode.PUBLIC:
+            raise ConfigError(
+                f"youtube.send.mode: '{self.mode.value}' requires mode: public"
+            )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> YouTubeSendConfig:
+        allowed = {
+            "mode",
+            "allowed_video_ids",
+            "max_per_minute",
+            "max_per_hour",
+            "failure_threshold",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "unknown youtube.send fields: "
+                + ", ".join(f"'{key}'" for key in unknown)
+            )
+        return cls(
+            mode=data.get("mode", PublicSendMode.SHADOW),  # type: ignore[arg-type]
+            allowed_video_ids=data.get("allowed_video_ids", ()),  # type: ignore[arg-type]
+            max_per_minute=data.get("max_per_minute", 1),  # type: ignore[arg-type]
+            max_per_hour=data.get("max_per_hour", 20),  # type: ignore[arg-type]
+            failure_threshold=data.get("failure_threshold", 3),  # type: ignore[arg-type]
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class YouTubeConfig:
     """Read-only YouTube chat configuration for one explicit live video.
 
-    Credentials stay outside YAML in ``YOUTUBE_API_KEY``.  There is
-    deliberately no OAuth, send, audio, or video field in this ticket.
+    Read credentials stay outside YAML in ``YOUTUBE_API_KEY``. The nested
+    ``send`` block contains only neutral policy state and budgets; it exposes
+    no OAuth credential, sender, or insert transport.
     """
 
     video_id: str
@@ -487,6 +587,7 @@ class YouTubeConfig:
     retry_max_seconds: float = 30.0
     dedup_capacity: int = 4096
     request_timeout_seconds: float = 10.0
+    send: YouTubeSendConfig = field(default_factory=YouTubeSendConfig)
 
     def __post_init__(self) -> None:
         try:
@@ -530,6 +631,16 @@ class YouTubeConfig:
         object.__setattr__(self, "retry_base_seconds", retry_base)
         object.__setattr__(self, "retry_max_seconds", retry_max)
         object.__setattr__(self, "request_timeout_seconds", request_timeout)
+        if not isinstance(self.send, YouTubeSendConfig):
+            raise ConfigError("youtube.send must be a YouTubeSendConfig")
+        if (
+            self.send.mode is PublicSendMode.LIVE
+            and self.video_id not in self.send.allowed_video_ids
+        ):
+            raise ConfigError(
+                "youtube.send.allowed_video_ids must include youtube.video_id "
+                "when youtube.send.mode is 'live'"
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> YouTubeConfig:
@@ -541,6 +652,7 @@ class YouTubeConfig:
             "retry_max_seconds",
             "dedup_capacity",
             "request_timeout_seconds",
+            "send",
         }
         unknown = sorted(set(data) - allowed)
         if unknown:
@@ -549,6 +661,9 @@ class YouTubeConfig:
             )
         if "video_id" not in data:
             raise ConfigError("required field 'youtube.video_id' is missing")
+        send_raw = data.get("send")
+        if send_raw is not None and not isinstance(send_raw, dict):
+            raise ConfigError("'youtube.send' must be a mapping")
         return cls(
             video_id=data["video_id"],  # type: ignore[arg-type]
             max_results=data.get("max_results", 500),  # type: ignore[arg-type]
@@ -557,6 +672,7 @@ class YouTubeConfig:
             retry_max_seconds=data.get("retry_max_seconds", 30.0),  # type: ignore[arg-type]
             dedup_capacity=data.get("dedup_capacity", 4096),  # type: ignore[arg-type]
             request_timeout_seconds=data.get("request_timeout_seconds", 10.0),  # type: ignore[arg-type]
+            send=YouTubeSendConfig.from_dict(send_raw or {}),
         )
 
 
@@ -995,6 +1111,8 @@ class Config:
         self._validate_public_youtube_persona()
         if self.twitch is not None:
             self.twitch.send.validate_for_mode(self.mode)
+        if self.youtube is not None:
+            self.youtube.send.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' requires the 'twitch' section")
         if self.adapter == "os_capture" and self.os_capture is None:

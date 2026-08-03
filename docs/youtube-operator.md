@@ -1,10 +1,11 @@
-# YouTube Live chat-only shadow
+# YouTube Live public-safety shadow
 
 This guide covers the first production YouTube path: one explicit live video,
 read-only chat ingestion, the existing `ChatPerceiver`, and candidate reactions
-shown locally as `[SHADOW]`. It has no OAuth, no sender, no insert endpoint, and
-no audio or video. Chrome/player media capture belongs to the later full-shadow
-ticket.
+behind the same product safety floor used by Twitch. It has no OAuth, no sender,
+and no insert endpoint. A `live` configuration only arms the policy shape for a
+later sender ticket; this runtime cannot promote without an explicit sender
+capability/transport.
 
 The contract follows the ticket-01 platform research and the bounded ticket-03
 read smoke: `videos.list(part=liveStreamingDetails)` resolves the ephemeral
@@ -56,6 +57,12 @@ youtube:
   retry_max_seconds: 30.0
   dedup_capacity: 4096
   request_timeout_seconds: 10.0
+  send:
+    mode: shadow
+    allowed_video_ids: []
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
 disclosure:
   announce_ai: true
 commentator:
@@ -63,10 +70,34 @@ commentator:
     original_chat: {}
 ```
 
-The `youtube` section is strict. It has no `send`, OAuth, audio, or video
-field. `max_results` follows the documented 200–2000 range. The dedup window is
+The `youtube` section is strict. Its `send` block is only a neutral safety
+policy; it contains no OAuth token, sender, endpoint, audio, or video field.
+`max_results` follows the documented 200–2000 range. The dedup window is
 bounded and keyed by `(liveChatId, messageId)`; it does not deduplicate equal
 text or display names.
+
+### Public target and mode matrix
+
+The allow-list is typed internally, so identifiers from one platform never
+authorize another even when their text happens to match.
+
+| Platform edge | Stable public target | Config allow-list | Edge validation |
+| --- | --- | --- | --- |
+| Twitch | normalized channel login | `twitch.send.allowed_channels` | Twitch channel normalization happens before the neutral policy |
+| YouTube | explicit 11-character `video_id` | `youtube.send.allowed_video_ids` | the existing strict video-ID parser runs before the neutral policy |
+
+YouTube modes behave as follows:
+
+- `off`: drop the candidate and record reason `mode_off`;
+- `shadow` (default): show/record `[SHADOW]` and consume the configured minute
+  and hour product budgets;
+- `live`: require the explicit `video_id` in `allowed_video_ids`, but start
+  unpromoted in shadow. Ticket 06 has no sender capability, so a promotion is
+  rejected and no credential or transport is constructed.
+
+The kill-switch, failure counter, snapshots, reason codes and transition events
+use the platform-neutral policy. Failed turns are never retried or queued; an
+unexpected exception is not reclassified as a sender failure.
 
 ## Validate and run
 
@@ -87,8 +118,9 @@ uv run python -m minnarone path/to/youtube.local.yaml --tui
 ```
 
 Console candidates have the `[SHADOW]` prefix. Under the TUI they appear with
-the same marker in the `MINNARONE` panel and do not leak through stdout. No
-configuration in this ticket can promote them or construct a sender.
+the same marker in the `MINNARONE` panel and do not leak through stdout. The
+TUI can display the shared policy snapshot and transition controls, but no
+configuration in this ticket can successfully promote or construct a sender.
 
 Stop with `Ctrl-C`. Server pacing waits are interruptible. Requests have a
 finite timeout and temporary/rate failures use bounded, jittered exponential backoff;

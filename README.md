@@ -154,7 +154,7 @@ This repository generalizes that idea into a reusable framework: the same percep
 
 - **[Project specification](docs/SPECIFICATION.md)** — requirements, user stories, use cases, edge cases, system design and roadmap.
 - **[Twitch operator guide](docs/twitch-operator.md)** — capture smoke, VAD diagnostics, `adapter: twitch` runtime and enabling public send (shadow/live).
-- **[YouTube operator guide](docs/youtube-operator.md)** — explicit-video, read-only chat shadow setup; no OAuth, sender, audio, or video.
+- **[YouTube operator guide](docs/youtube-operator.md)** — explicit-video, read-only chat with shared off/shadow/live-armed safety; no OAuth or sender yet.
 - **[Meeting assistant guide](docs/meeting-assistant-operator.md)** — synthesizer and suggester profiles on Teams via `adapter: os_capture`.
 - **[Source material](docs/source/)** — transcript and screenshots from which the specification was derived.
 
@@ -344,6 +344,17 @@ auto-degrade to shadow after `failure_threshold` consecutive failed sends (defau
 dedicated bot account. In the TUI, press `p` twice within 3 seconds to promote
 and `k` once for the kill-switch. Full procedure in the
 [Twitch operator guide](docs/twitch-operator.md).
+
+## Public-output safety on YouTube (`youtube.send`)
+
+YouTube reuses the same typed target allow-list, `off`/`shadow`/`live` policy,
+product budgets, snapshots, promotion, kill-switch and failure state. The
+stable target is the explicit `video_id`; identifiers are validated at the
+YouTube edge before the platform-neutral policy sees them. `shadow` is the
+default and consumes the configured budgets. `live` starts unpromoted and,
+until the separate sender ticket lands, cannot promote because no sender
+capability, OAuth write credential, or insert transport is constructed. See the
+[YouTube operator guide](docs/youtube-operator.md#public-target-and-mode-matrix).
 
 ## Local commentator on Teams (OS capture)
 

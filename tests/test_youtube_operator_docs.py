@@ -1,4 +1,4 @@
-"""Committed YouTube operator surfaces stay sanitized and shadow-only."""
+"""Committed YouTube operator surfaces stay sanitized and sender-free."""
 
 from pathlib import Path
 
@@ -10,8 +10,10 @@ def test_youtube_example_is_chat_only_shadow_and_contains_no_secret():
     assert "video_id: abcDEF123_-" in text
     assert "announce_ai: true" in text
     assert "YOUTUBE_API_KEY=" not in text
-    assert "oauth" not in text.lower()
-    assert "send:" not in text
+    assert "oauth_token" not in text.lower()
+    assert "send:" in text
+    assert "mode: shadow" in text
+    assert "allowed_video_ids: []" in text
     assert "audio:" not in text
     assert "video:" not in text
 
@@ -29,7 +31,9 @@ def test_youtube_operator_guide_documents_read_only_and_artifact_boundaries():
         "manual deletion",
         "does not authorize public send",
         "no OAuth",
-        "no audio or video",
+        "no sender capability",
+        "allowed_video_ids",
+        "mode_off",
     ):
         assert required in text
 

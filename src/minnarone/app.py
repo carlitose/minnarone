@@ -61,7 +61,6 @@ from .config import (
     Config,
     ConfigError,
     OsCaptureConfig,
-    TwitchSendConfig,
     TwitchSendMode,
 )
 from .console import ConsoleOutputRouter
@@ -80,7 +79,8 @@ from .perception_queue import (
 from .prompt import PromptBuilder
 from .prompt_observation import ObservedLLMProvider, PromptObservationRecorder
 from .prompt_source import load_prompt_set, load_summarizer_prompt_set
-from .public_send import PublicSendPolicy
+from .public_router import PublicOutputRouter
+from .public_send import PublicSendMode, PublicSendPolicy, PublicTarget
 from .reactor import Reactor
 from .run_artifacts import RunSession
 from .run_events import RunEventRecorder
@@ -107,7 +107,6 @@ from .video import Captioner, VideoFrame, VideoPerceiver
 from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 from .vlm_llamacpp import LlamaCppCaptioner
 from .youtube_chat import YouTubeApi, YouTubeLiveChatReader
-from .youtube_shadow import YouTubeShadowOutputRouter
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
@@ -440,8 +439,9 @@ def _build_router(
     mode: OutputMode,
     *,
     commentator_style: CommentatorStyle | None = None,
-    send_config: TwitchSendConfig | None = None,
+    send_config: object | None = None,
     channel: str | None = None,
+    target: PublicTarget | None = None,
     event_recorder: object | None = None,
     clock: Callable[[], float] | None = None,
     sender: object | None = None,
@@ -455,20 +455,32 @@ def _build_router(
     TuiPrivateOutputRouter (il display è del pannello TUI, non di stdout).
     """
     if mode is OutputMode.PUBLIC:
-        if send_config is not None and send_config.mode is not TwitchSendMode.OFF:
+        if send_config is not None and (
+            target is not None or send_config.mode is not PublicSendMode.OFF
+        ):
             import time
 
             policy = PublicSendPolicy(
                 send_config,
                 clock=clock if clock is not None else time.monotonic,
+                live_capability=sender is not None,
             )
-            router = TwitchPublicOutputRouter(
-                policy=policy,
-                channel=channel or "",
-                event_recorder=event_recorder,
-                sender=sender,
-                echo=echo,
-            )
+            if target is not None:
+                router = PublicOutputRouter(
+                    policy=policy,
+                    target=target,
+                    event_recorder=event_recorder,
+                    sender=sender,
+                    echo=echo,
+                )
+            else:
+                router = TwitchPublicOutputRouter(
+                    policy=policy,
+                    channel=channel or "",
+                    event_recorder=event_recorder,
+                    sender=sender,
+                    echo=echo,
+                )
             return router, policy
         return ConsoleOutputRouter(), None
     if commentator_style is not None:
@@ -1014,6 +1026,8 @@ def build_agent(
         send_config = (
             config.twitch.send
             if config.adapter == "twitch" and config.twitch is not None
+            else config.youtube.send
+            if config.adapter == "youtube" and config.youtube is not None
             else None
         )
         twitch_channel = (
@@ -1021,22 +1035,21 @@ def build_agent(
             if config.adapter == "twitch" and config.twitch is not None
             else None
         )
-        if config.adapter == "youtube" and config.youtube is not None:
-            public_router = YouTubeShadowOutputRouter(
-                video_id=config.youtube.video_id,
-                event_recorder=event_recorder,
-                echo=False,
-            )
-        else:
-            public_router, send_policy = _build_router(
-                config.mode,
-                commentator_style=_first_style,
-                send_config=send_config,
-                channel=twitch_channel,
-                event_recorder=event_recorder,
-                sender=sender,
-                echo=False,
-            )
+        public_target = (
+            PublicTarget("youtube", config.youtube.video_id)
+            if config.adapter == "youtube" and config.youtube is not None
+            else None
+        )
+        public_router, send_policy = _build_router(
+            config.mode,
+            commentator_style=_first_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            target=public_target,
+            event_recorder=event_recorder,
+            sender=sender,
+            echo=False,
+        )
         for style in styles_to_build:
             style_stream = MinnaroneOutputStream()
             output_streams[style] = style_stream
@@ -1056,6 +1069,8 @@ def build_agent(
         send_config = (
             config.twitch.send
             if config.adapter == "twitch" and config.twitch is not None
+            else config.youtube.send
+            if config.adapter == "youtube" and config.youtube is not None
             else None
         )
         twitch_channel = (
@@ -1063,20 +1078,20 @@ def build_agent(
             if config.adapter == "twitch" and config.twitch is not None
             else None
         )
-        if config.adapter == "youtube" and config.youtube is not None:
-            out_router = YouTubeShadowOutputRouter(
-                video_id=config.youtube.video_id,
-                event_recorder=event_recorder,
-            )
-        else:
-            out_router, send_policy = _build_router(
-                config.mode,
-                commentator_style=_first_style,
-                send_config=send_config,
-                channel=twitch_channel,
-                event_recorder=event_recorder,
-                sender=sender,
-            )
+        public_target = (
+            PublicTarget("youtube", config.youtube.video_id)
+            if config.adapter == "youtube" and config.youtube is not None
+            else None
+        )
+        out_router, send_policy = _build_router(
+            config.mode,
+            commentator_style=_first_style,
+            send_config=send_config,
+            channel=twitch_channel,
+            target=public_target,
+            event_recorder=event_recorder,
+            sender=sender,
+        )
 
     # -- Build N Reactors (one per active style) --------------------------------
     reactors: list[Reactor] = []

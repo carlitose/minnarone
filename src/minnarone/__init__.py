@@ -44,6 +44,7 @@ from .config import (
     RetentionConfig,
     TwitchConfig,
     YouTubeConfig,
+    YouTubeSendConfig,
 )
 from .console import ConsoleOutputRouter
 from .dashboard import (
@@ -68,6 +69,15 @@ from .prompt_observation import (
     ObservedLLMProvider,
     PromptObservation,
     PromptObservationRecorder,
+)
+from .public_router import PublicOutputRouter, PublicSendFailure
+from .public_send import (
+    PolicySnapshot,
+    PublicSendConfig,
+    PublicSendMode,
+    PublicSendPolicy,
+    PublicTarget,
+    SendDecision,
 )
 from .reactor import Reactor
 from .senser import ConversationWindow, Senser, Trigger
@@ -138,6 +148,7 @@ __all__ = [
     "ProfileConfig",
     "TwitchConfig",
     "YouTubeConfig",
+    "YouTubeSendConfig",
     "YouTubeVideoId",
     "YouTubeLiveChatReader",
     "YouTubeLiveChatError",
@@ -197,6 +208,14 @@ __all__ = [
     "PromptObservationRecorder",
     "ObservedLLMProvider",
     "ConsoleOutputRouter",
+    "PublicOutputRouter",
+    "PublicSendFailure",
+    "PublicSendConfig",
+    "PublicSendMode",
+    "PublicSendPolicy",
+    "PublicTarget",
+    "PolicySnapshot",
+    "SendDecision",
     "Reactor",
     "Summarizer",
     "CadenceLoop",

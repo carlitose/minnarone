@@ -20,6 +20,7 @@ import asyncio
 import logging
 import re
 
+from .public_router import PublicSendFailure
 from .twitch_chat import ConnectIRC, TwitchIRCStream, normalize_twitch_oauth_token
 from .twitch_media import normalize_twitch_channel
 
@@ -47,7 +48,7 @@ _BACKOFF_MAX_SECONDS = 30.0
 # ---------------------------------------------------------------------------
 
 
-class TwitchSendError(RuntimeError):
+class TwitchSendError(PublicSendFailure):
     """Base error for the Twitch chat sender."""
 
 
