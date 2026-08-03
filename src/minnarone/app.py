@@ -106,6 +106,8 @@ from .vad import StreamingVad, WebRtcVadDetector
 from .video import Captioner, VideoFrame, VideoPerceiver
 from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 from .vlm_llamacpp import LlamaCppCaptioner
+from .youtube_chat import YouTubeApi, YouTubeLiveChatReader
+from .youtube_shadow import YouTubeShadowOutputRouter
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
@@ -232,6 +234,8 @@ class Agent:
             started_at = self.run_session.started_at
         elif self.config.twitch is not None:
             channel = self.config.twitch.channel
+        elif self.config.youtube is not None:
+            channel = self.config.youtube.video_id
         return snapshot(
             store=self.store,
             senser=self.senser,
@@ -531,6 +535,18 @@ def _required_twitch_send_credentials() -> None:
         )
 
 
+def _required_youtube_api_key() -> str:
+    """Return the read-only API key without ever including it in diagnostics."""
+
+    value = os.environ.get("YOUTUBE_API_KEY")
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(
+            "missing or empty YouTube read credential: set YOUTUBE_API_KEY "
+            "outside YAML; OAuth/write credentials are not used"
+        )
+    return value
+
+
 def _require_media_perceiver(
     *, enabled: bool, perceiver: object | None, channel_key: str
 ) -> None:
@@ -591,6 +607,7 @@ def _configured_adapter(
     video_frame_decoder: VideoFrameDecoder | None = None,
     os_capture_audio_source: Captured | None = None,
     os_capture_video_source: Captured | None = None,
+    youtube_api: YouTubeApi | None = None,
 ) -> SourceAdapter | None:
     """Costruisce l'adapter runtime dichiarato in config, se oggi operativo."""
     if config.adapter == "os_capture" and config.os_capture is not None:
@@ -600,6 +617,19 @@ def _configured_adapter(
             video_perceiver=video_perceiver,
             os_capture_audio_source=os_capture_audio_source,
             os_capture_video_source=os_capture_video_source,
+        )
+    if config.adapter == "youtube" and config.youtube is not None:
+        youtube = config.youtube
+        return YouTubeLiveChatReader(
+            video_id=youtube.video_id,
+            api_key=_required_youtube_api_key(),
+            api=youtube_api,
+            max_results=youtube.max_results,
+            max_retries=youtube.max_retries,
+            retry_base_seconds=youtube.retry_base_seconds,
+            retry_max_seconds=youtube.retry_max_seconds,
+            dedup_capacity=youtube.dedup_capacity,
+            request_timeout_seconds=youtube.request_timeout_seconds,
         )
     if config.adapter != "twitch" or config.twitch is None:
         return None
@@ -820,6 +850,7 @@ def build_agent(
     video_frame_decoder: VideoFrameDecoder | None = None,
     os_capture_audio_source: Captured | None = None,
     os_capture_video_source: Captured | None = None,
+    youtube_api: YouTubeApi | None = None,
 ) -> Agent:
     """Compone e cabla TUTTI i moduli da una `Config`, restituendo un `Agent`.
 
@@ -856,7 +887,11 @@ def build_agent(
     """
     # Gate fail-fast dell'invio pubblico: `twitch.send.mode: live` valida poi
     # entrambi i token, quindi richiede già al build username, read e send.
-    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
+    if (
+        config.adapter == "twitch"
+        and config.twitch is not None
+        and config.twitch.send.mode is TwitchSendMode.LIVE
+    ):
         _required_twitch_chat_credentials()
         _required_twitch_send_credentials()
 
@@ -880,9 +915,11 @@ def build_agent(
     # Il canale nel prompt ({{channel}} in rules.md/intro.md) segue
     # `twitch.channel` quando la sezione twitch è configurata; senza (run
     # non-Twitch) resta il default del PromptBuilder.
-    prompt_channel_kwargs: dict[str, str] = (
-        {"channel": config.twitch.channel} if config.twitch is not None else {}
-    )
+    prompt_channel_kwargs: dict[str, str] = {}
+    if config.adapter == "twitch" and config.twitch is not None:
+        prompt_channel_kwargs = {"channel": config.twitch.channel}
+    elif config.adapter == "youtube" and config.youtube is not None:
+        prompt_channel_kwargs = {"channel": config.youtube.video_id}
 
     prompt_recorder = PromptObservationRecorder(
         debug_dir=run_session.debug_dir if run_session is not None else None
@@ -897,7 +934,11 @@ def build_agent(
     # questo speaker vengono escluse dai trigger e dalla finestra recente del
     # prompt. Assente (send: off o non-Twitch) → nessun filtro.
     bot_identity: str | None = None
-    if config.twitch is not None and config.twitch.send.mode is not TwitchSendMode.OFF:
+    if (
+        config.adapter == "twitch"
+        and config.twitch is not None
+        and config.twitch.send.mode is not TwitchSendMode.OFF
+    ):
         bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
 
     # Prompt-set del summarizer (ticket 05): set SEPARATO da quello original-chat
@@ -914,7 +955,11 @@ def build_agent(
     # off/shadow non costruiscono il sender né leggono il token di scrittura.
     sender: TwitchChatSender | None = None
     token_guard: TwitchLiveTokenGuard | None = None
-    if config.twitch is not None and config.twitch.send.mode is TwitchSendMode.LIVE:
+    if (
+        config.adapter == "twitch"
+        and config.twitch is not None
+        and config.twitch.send.mode is TwitchSendMode.LIVE
+    ):
         sender = TwitchChatSender(
             channel=config.twitch.channel,
             username=os.environ["TWITCH_BOT_USERNAME"],
@@ -940,7 +985,7 @@ def build_agent(
         # indipendentemente dal commentator. Il prompt usa il contratto
         # RE:/MSG:/#end_conv perché è il formato che il Reactor sa normalizzare
         # per l'output su chat pubblica.
-        if config.adapter == "twitch" and config.mode is OutputMode.PUBLIC:
+        if config.adapter in {"twitch", "youtube"} and config.mode is OutputMode.PUBLIC:
             styles_to_build = [CommentatorStyle.ORIGINAL_CHAT]
         # Otherwise: zero profiles → zero Reactors (only pump + summarizer).
 
@@ -966,17 +1011,32 @@ def build_agent(
         # per il TuiPrivateOutputRouter che avvolge il public_router e cattura i
         # marcatori [SHADOW]/[SENT] nel pannello MINNARONE; per questo il
         # public_router è costruito con echo=False (niente stdout sotto la TUI).
-        send_config = config.twitch.send if config.twitch is not None else None
-        twitch_channel = config.twitch.channel if config.twitch is not None else None
-        public_router, send_policy = _build_router(
-            config.mode,
-            commentator_style=_first_style,
-            send_config=send_config,
-            channel=twitch_channel,
-            event_recorder=event_recorder,
-            sender=sender,
-            echo=False,
+        send_config = (
+            config.twitch.send
+            if config.adapter == "twitch" and config.twitch is not None
+            else None
         )
+        twitch_channel = (
+            config.twitch.channel
+            if config.adapter == "twitch" and config.twitch is not None
+            else None
+        )
+        if config.adapter == "youtube" and config.youtube is not None:
+            public_router = YouTubeShadowOutputRouter(
+                video_id=config.youtube.video_id,
+                event_recorder=event_recorder,
+                echo=False,
+            )
+        else:
+            public_router, send_policy = _build_router(
+                config.mode,
+                commentator_style=_first_style,
+                send_config=send_config,
+                channel=twitch_channel,
+                event_recorder=event_recorder,
+                sender=sender,
+                echo=False,
+            )
         for style in styles_to_build:
             style_stream = MinnaroneOutputStream()
             output_streams[style] = style_stream
@@ -993,16 +1053,30 @@ def build_agent(
             public_router=public_router,
         )
     else:
-        send_config = config.twitch.send if config.twitch is not None else None
-        twitch_channel = config.twitch.channel if config.twitch is not None else None
-        out_router, send_policy = _build_router(
-            config.mode,
-            commentator_style=_first_style,
-            send_config=send_config,
-            channel=twitch_channel,
-            event_recorder=event_recorder,
-            sender=sender,
+        send_config = (
+            config.twitch.send
+            if config.adapter == "twitch" and config.twitch is not None
+            else None
         )
+        twitch_channel = (
+            config.twitch.channel
+            if config.adapter == "twitch" and config.twitch is not None
+            else None
+        )
+        if config.adapter == "youtube" and config.youtube is not None:
+            out_router = YouTubeShadowOutputRouter(
+                video_id=config.youtube.video_id,
+                event_recorder=event_recorder,
+            )
+        else:
+            out_router, send_policy = _build_router(
+                config.mode,
+                commentator_style=_first_style,
+                send_config=send_config,
+                channel=twitch_channel,
+                event_recorder=event_recorder,
+                sender=sender,
+            )
 
     # -- Build N Reactors (one per active style) --------------------------------
     reactors: list[Reactor] = []
@@ -1161,6 +1235,7 @@ def build_agent(
             video_frame_decoder=video_frame_decoder,
             os_capture_audio_source=os_capture_audio_source,
             os_capture_video_source=os_capture_video_source,
+            youtube_api=youtube_api,
         )
 
     # NB: `config.retention` e `config.auto_memory` sono ACCETTATI ma INERTI:

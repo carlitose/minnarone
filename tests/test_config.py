@@ -17,6 +17,7 @@ from minnarone.config import (
     OsCaptureConfig,
     SuggesterProfileConfig,
     TwitchSendMode,
+    YouTubeConfig,
 )
 from minnarone.output import OutputMode
 from minnarone.speaker import SpeakerClusteringConfig, SpeakerEmbeddingConfig
@@ -71,6 +72,24 @@ TWITCH_YAML = textwrap.dedent(
       video: true
       audio_chunk_seconds: 1.0
       video_fps: 1.0
+    """
+)
+
+YOUTUBE_YAML = textwrap.dedent(
+    """
+    mode: public
+    soul_path: soul.md
+    facts_dir: facts
+    adapter: youtube
+    llm_provider: grok
+    youtube:
+      video_id: https://www.youtube.com/watch?v=abcDEF123_-
+      max_results: 500
+      max_retries: 3
+      retry_base_seconds: 1.0
+      retry_max_seconds: 30.0
+      dedup_capacity: 4096
+      request_timeout_seconds: 10.0
     """
 )
 
@@ -186,6 +205,91 @@ def test_twitch_adapter_rejects_wrong_twitch_object_type():
             llm_provider="grok",
             twitch="not-a-config",  # type: ignore[arg-type]
         )
+
+
+def test_youtube_config_parses_and_normalizes_explicit_video_target(tmp_path):
+    cfg = Config.load(_write(tmp_path, YOUTUBE_YAML))
+
+    assert cfg.adapter == "youtube"
+    assert cfg.youtube == YouTubeConfig(video_id="abcDEF123_-")
+    assert cfg.twitch is None
+
+
+def test_youtube_adapter_requires_youtube_section(tmp_path):
+    bad = MINIMAL_YAML.replace("adapter: os_capture", "adapter: youtube").replace(
+        "os_capture:\n  audio: true\n  video: true\n", ""
+    )
+    with pytest.raises(ConfigError, match="youtube"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_youtube_public_mode_accepts_only_original_chat_profile(tmp_path):
+    bad = YOUTUBE_YAML + "commentator:\n  profiles:\n    operator: {}\n"
+    with pytest.raises(ConfigError, match="YouTube.*original_chat"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_youtube_adapter_rejects_sibling_twitch_live_send_section(tmp_path):
+    bad = YOUTUBE_YAML + textwrap.dedent(
+        """
+        twitch:
+          channel: synthetic
+          chat: true
+          send:
+            mode: live
+            allowed_channels: [synthetic]
+        """
+    )
+
+    with pytest.raises(ConfigError, match="youtube.*twitch"):
+        Config.load(_write(tmp_path, bad))
+
+
+def test_youtube_section_is_strict_and_has_no_send_or_media_fields(tmp_path):
+    for forbidden in ("send: {}", "oauth_token: secret", "audio: true"):
+        bad = YOUTUBE_YAML.replace("  max_results: 500", f"  {forbidden}")
+        with pytest.raises(ConfigError, match="unknown youtube fields"):
+            Config.load(_write(tmp_path, bad))
+
+
+@pytest.mark.parametrize(
+    ("line", "replacement", "message"),
+    [
+        (
+            "video_id: https://www.youtube.com/watch?v=abcDEF123_-",
+            "video_id: x",
+            "video_id",
+        ),
+        ("max_results: 500", "max_results: 199", "max_results"),
+        ("max_retries: 3", "max_retries: -1", "max_retries"),
+        ("retry_base_seconds: 1.0", "retry_base_seconds: 0", "retry_base_seconds"),
+        ("retry_max_seconds: 30.0", "retry_max_seconds: 0.5", "retry_max_seconds"),
+        ("dedup_capacity: 4096", "dedup_capacity: 0", "dedup_capacity"),
+        (
+            "request_timeout_seconds: 10.0",
+            "request_timeout_seconds: 0",
+            "request_timeout_seconds",
+        ),
+        (
+            "retry_base_seconds: 1.0",
+            "retry_base_seconds: .nan",
+            "retry_base_seconds",
+        ),
+        (
+            "retry_max_seconds: 30.0",
+            "retry_max_seconds: .inf",
+            "retry_max_seconds",
+        ),
+        (
+            "request_timeout_seconds: 10.0",
+            "request_timeout_seconds: .inf",
+            "request_timeout_seconds",
+        ),
+    ],
+)
+def test_invalid_youtube_config_fails_clearly(tmp_path, line, replacement, message):
+    with pytest.raises(ConfigError, match=message):
+        Config.load(_write(tmp_path, YOUTUBE_YAML.replace(line, replacement)))
 
 
 def test_config_parses_os_capture_section(tmp_path):

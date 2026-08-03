@@ -43,6 +43,7 @@ from .config import (
     ProfileConfig,
     RetentionConfig,
     TwitchConfig,
+    YouTubeConfig,
 )
 from .console import ConsoleOutputRouter
 from .dashboard import (
@@ -104,6 +105,13 @@ from .vlm import (
     QwenVlConfigError,
     frame_to_pil_image,
 )
+from .youtube_chat import (
+    YouTubeChatOutcome,
+    YouTubeChatStats,
+    YouTubeLiveChatError,
+    YouTubeLiveChatReader,
+)
+from .youtube_target import YouTubeVideoId
 
 __all__ = [
     "Perception",
@@ -129,6 +137,12 @@ __all__ = [
     "CommentatorConfig",
     "ProfileConfig",
     "TwitchConfig",
+    "YouTubeConfig",
+    "YouTubeVideoId",
+    "YouTubeLiveChatReader",
+    "YouTubeLiveChatError",
+    "YouTubeChatOutcome",
+    "YouTubeChatStats",
     "PerceptionStore",
     "EventPerceiver",
     "ChatPerceiver",

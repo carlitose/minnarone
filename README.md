@@ -154,6 +154,7 @@ This repository generalizes that idea into a reusable framework: the same percep
 
 - **[Project specification](docs/SPECIFICATION.md)** — requirements, user stories, use cases, edge cases, system design and roadmap.
 - **[Twitch operator guide](docs/twitch-operator.md)** — capture smoke, VAD diagnostics, `adapter: twitch` runtime and enabling public send (shadow/live).
+- **[YouTube operator guide](docs/youtube-operator.md)** — explicit-video, read-only chat shadow setup; no OAuth, sender, audio, or video.
 - **[Meeting assistant guide](docs/meeting-assistant-operator.md)** — synthesizer and suggester profiles on Teams via `adapter: os_capture`.
 - **[Source material](docs/source/)** — transcript and screenshots from which the specification was derived.
 
@@ -226,6 +227,7 @@ values. The template is [`.env.example`](.env.example) (`cp .env.example .env`).
 | `TWITCH_BOT_USERNAME` | With `adapter: twitch` + `twitch.chat: true` (read-side IRC ingestion). |
 | `TWITCH_OAUTH_TOKEN` | With `adapter: twitch` + `twitch.chat: true` or live send — **read** token (`chat:read`). |
 | `TWITCH_SEND_OAUTH_TOKEN` | **Only** for `twitch.send.mode: live` — **write** token (`chat:edit`) of the dedicated bot account. |
+| `YOUTUBE_API_KEY` | With `adapter: youtube` for read-only public live-chat discovery/listing. No OAuth or send capability. |
 
 The read token and the write token are deliberately distinct: a read-only
 config must never have the power to send messages. In `live`, both tokens must
