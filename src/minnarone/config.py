@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
+from math import isfinite
 from pathlib import Path
 from typing import TypeVar, Union
 from urllib.parse import urlsplit
@@ -31,6 +32,7 @@ from .twitch_video import validate_video_fps
 from .vad import VadConfig, VadInputError
 from .video import VideoConfigError, VideoPerceptionConfig
 from .vlm import QwenVlConfig, QwenVlConfigError
+from .youtube_target import YouTubeVideoId
 
 
 class ConfigError(ValueError):
@@ -471,6 +473,100 @@ class TwitchConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class YouTubeConfig:
+    """Read-only YouTube chat configuration for one explicit live video.
+
+    Credentials stay outside YAML in ``YOUTUBE_API_KEY``.  There is
+    deliberately no OAuth, send, audio, or video field in this ticket.
+    """
+
+    video_id: str
+    max_results: int = 500
+    max_retries: int = 3
+    retry_base_seconds: float = 1.0
+    retry_max_seconds: float = 30.0
+    dedup_capacity: int = 4096
+    request_timeout_seconds: float = 10.0
+
+    def __post_init__(self) -> None:
+        try:
+            target = YouTubeVideoId.parse(self.video_id)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"youtube.video_id: {exc}") from exc
+        object.__setattr__(self, "video_id", target.value)
+
+        max_results = _strict_int(self.max_results, "youtube.max_results", minimum=200)
+        if max_results > 2000:
+            raise ConfigError("youtube.max_results must be between 200 and 2000")
+        object.__setattr__(self, "max_results", max_results)
+        object.__setattr__(
+            self,
+            "max_retries",
+            _strict_int(self.max_retries, "youtube.max_retries", minimum=0),
+        )
+        object.__setattr__(
+            self,
+            "dedup_capacity",
+            _strict_int(self.dedup_capacity, "youtube.dedup_capacity", minimum=1),
+        )
+        retry_base = _coerce_config_float(
+            self.retry_base_seconds, "youtube.retry_base_seconds"
+        )
+        retry_max = _coerce_config_float(
+            self.retry_max_seconds, "youtube.retry_max_seconds"
+        )
+        request_timeout = _coerce_config_float(
+            self.request_timeout_seconds, "youtube.request_timeout_seconds"
+        )
+        if not isfinite(retry_base) or retry_base <= 0:
+            raise ConfigError("youtube.retry_base_seconds must be > 0")
+        if not isfinite(retry_max) or retry_max < retry_base:
+            raise ConfigError(
+                "youtube.retry_max_seconds must be finite and >= "
+                "youtube.retry_base_seconds"
+            )
+        if not isfinite(request_timeout) or request_timeout <= 0:
+            raise ConfigError("youtube.request_timeout_seconds must be finite and > 0")
+        object.__setattr__(self, "retry_base_seconds", retry_base)
+        object.__setattr__(self, "retry_max_seconds", retry_max)
+        object.__setattr__(self, "request_timeout_seconds", request_timeout)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> YouTubeConfig:
+        allowed = {
+            "video_id",
+            "max_results",
+            "max_retries",
+            "retry_base_seconds",
+            "retry_max_seconds",
+            "dedup_capacity",
+            "request_timeout_seconds",
+        }
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ConfigError(
+                "unknown youtube fields: " + ", ".join(f"'{key}'" for key in unknown)
+            )
+        if "video_id" not in data:
+            raise ConfigError("required field 'youtube.video_id' is missing")
+        return cls(
+            video_id=data["video_id"],  # type: ignore[arg-type]
+            max_results=data.get("max_results", 500),  # type: ignore[arg-type]
+            max_retries=data.get("max_retries", 3),  # type: ignore[arg-type]
+            retry_base_seconds=data.get("retry_base_seconds", 1.0),  # type: ignore[arg-type]
+            retry_max_seconds=data.get("retry_max_seconds", 30.0),  # type: ignore[arg-type]
+            dedup_capacity=data.get("dedup_capacity", 4096),  # type: ignore[arg-type]
+            request_timeout_seconds=data.get("request_timeout_seconds", 10.0),  # type: ignore[arg-type]
+        )
+
+
+def _strict_int(value: object, field_name: str, *, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ConfigError(f"{field_name} must be an integer >= {minimum}")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
 class OsCaptureConfig:
     """Configurazione dell'adapter di cattura del sistema operativo.
 
@@ -843,6 +939,7 @@ class Config:
     auto_memory: bool = False
     twitch: TwitchConfig | None = None
     os_capture: OsCaptureConfig | None = None
+    youtube: YouTubeConfig | None = None
     vad: VadConfig = field(default_factory=VadConfig)
     asr: AsrConfig = field(default_factory=AsrConfig)
     speaker_embedding: SpeakerEmbeddingConfig = field(
@@ -875,6 +972,8 @@ class Config:
             self.os_capture, OsCaptureConfig
         ):
             raise ConfigError("os_capture must be an OsCaptureConfig")
+        if self.youtube is not None and not isinstance(self.youtube, YouTubeConfig):
+            raise ConfigError("youtube must be a YouTubeConfig")
         if not isinstance(self.vad, VadConfig):
             raise ConfigError("vad must be a VadConfig")
         if not isinstance(self.asr, AsrConfig):
@@ -893,12 +992,20 @@ class Config:
             raise ConfigError("llamacpp must be a LlamaCppConfig")
         self.commentator.validate_for_mode(self.mode)
         self._validate_public_twitch_persona()
+        self._validate_public_youtube_persona()
         if self.twitch is not None:
             self.twitch.send.validate_for_mode(self.mode)
         if self.adapter == "twitch" and self.twitch is None:
             raise ConfigError("adapter 'twitch' requires the 'twitch' section")
         if self.adapter == "os_capture" and self.os_capture is None:
             raise ConfigError("adapter 'os_capture' requires the 'os_capture' section")
+        if self.adapter == "youtube" and self.youtube is None:
+            raise ConfigError("adapter 'youtube' requires the 'youtube' section")
+        if self.adapter == "youtube" and self.twitch is not None:
+            raise ConfigError(
+                "adapter 'youtube' is incompatible with the 'twitch' section; "
+                "YouTube shadow must not expose Twitch send credentials or wiring"
+            )
         if self.senser_interval <= 0:
             raise ConfigError("senser_interval must be > 0")
         if self.idle_interval <= 0:
@@ -946,6 +1053,23 @@ class Config:
                 "(the twitch+public default is original_chat)."
             )
 
+    def _validate_public_youtube_persona(self) -> None:
+        """YouTube public candidates use the existing chat response contract."""
+
+        if self.adapter != "youtube" or self.mode is not OutputMode.PUBLIC:
+            return
+        offending = [
+            style
+            for style in self.commentator.active_styles()
+            if style is not CommentatorStyle.ORIGINAL_CHAT
+        ]
+        if offending:
+            names = ", ".join(style.value for style in offending)
+            raise ConfigError(
+                "on YouTube in public mode only commentator profile "
+                f"'original_chat' is allowed; got '{names}'"
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "Config":
         """Costruisce e valida una Config da un dizionario (es. TOML parsato)."""
@@ -973,6 +1097,12 @@ class Config:
             OsCaptureConfig.from_dict(os_capture_raw)
             if os_capture_raw is not None
             else None
+        )
+        youtube_raw = data.get("youtube")
+        if youtube_raw is not None and not isinstance(youtube_raw, dict):
+            raise ConfigError("'youtube' must be a mapping")
+        youtube = (
+            YouTubeConfig.from_dict(youtube_raw) if youtube_raw is not None else None
         )
         vad_raw = data.get("vad", {})
         if not isinstance(vad_raw, dict):
@@ -1018,6 +1148,7 @@ class Config:
                 llm_provider=data.get("llm_provider"),  # type: ignore[arg-type]
                 twitch=twitch,
                 os_capture=os_capture,
+                youtube=youtube,
                 agent_name=str(data.get("agent_name", "minnarone")),
                 prompts_dir=data.get("prompts_dir"),  # type: ignore[arg-type]
                 llm_params=dict(data.get("llm_params", {})),  # type: ignore[arg-type]

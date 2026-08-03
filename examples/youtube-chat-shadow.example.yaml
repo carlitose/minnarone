@@ -1,0 +1,34 @@
+# YouTube Live chat-only shadow. Copy to a local path and replace video_id.
+# The API key belongs only in local `.env` as YOUTUBE_API_KEY.
+mode: public
+soul_path: original-chat-memory/soul.md
+facts_dir: original-chat-memory/facts
+adapter: youtube
+llm_provider: grok
+agent_name: minnarone
+
+youtube:
+  # One explicit 11-character video ID. Supported watch/live URLs normalize
+  # to this value; channel search and silent retargeting are not used.
+  video_id: abcDEF123_-
+  max_results: 500
+  max_retries: 3
+  retry_base_seconds: 1.0
+  retry_max_seconds: 30.0
+  dedup_capacity: 4096
+  request_timeout_seconds: 10.0
+
+senser_interval: 0.5
+idle_interval: 150.0
+summarizer_interval: 30.0
+recent_chat_window: 15
+
+disclosure:
+  announce_ai: true
+retention:
+  perceptions_days: 7 # reserved/inert; follow the guide for manual deletion
+
+commentator:
+  language: it
+  profiles:
+    original_chat: {}

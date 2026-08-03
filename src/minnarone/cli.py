@@ -98,7 +98,13 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def _create_live_run_session(config: Config) -> RunSession:
     workspace_root = Path(config.facts_dir).resolve().parent
-    channel = config.twitch.channel if config.twitch is not None else None
+    channel = (
+        config.twitch.channel
+        if config.adapter == "twitch" and config.twitch is not None
+        else config.youtube.video_id
+        if config.adapter == "youtube" and config.youtube is not None
+        else None
+    )
     return create_run_session(
         root=workspace_root / DEFAULT_RUNS_ROOT,
         channel=channel,
