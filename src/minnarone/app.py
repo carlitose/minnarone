@@ -69,8 +69,9 @@ from .dashboard import DashboardState, snapshot
 from .human import HumanLikeness
 from .llm import LLMProvider
 from .memory import FileMemory, Memory
+from .merge import MergingSourceAdapter
 from .openrouter import Transport, build_provider
-from .os_capture import OsCaptureAdapter
+from .os_capture import OsCaptureAdapter, build_os_capture_readers
 from .output import CommentatorStyle, OutputMode, OutputRouter
 from .output_sink import MinnaroneOutputStream, TuiPrivateOutputRouter
 from .perception_queue import (
@@ -113,6 +114,62 @@ from .youtube_shadow import YouTubeShadowOutputRouter
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
 # canale è cablare una entry, non un ramo nel core.
 PerceiveFn = Callable[[RawEvent], object | Awaitable[object]]
+
+
+class _RestartableCaptureSource:
+    """Recreate one lazy device generator for every adapter run."""
+
+    def __init__(
+        self,
+        factory: Callable[[], AsyncIterator[AudioChunk | VideoFrame]],
+    ) -> None:
+        self._factory = factory
+
+    def __aiter__(self) -> AsyncIterator[AudioChunk | VideoFrame]:
+        return self._factory()
+
+
+class _LazyAudioPerceiver:
+    """Open the YouTube-local VAD/ASR/speaker stack on first audio work."""
+
+    def __init__(self, factory: Callable[[], AudioPerceiver]) -> None:
+        self._factory = factory
+        self._perceiver: AudioPerceiver | None = None
+        self._failure_message: str | None = None
+        self._lock = Lock()
+
+    @property
+    def speaker_diagnostics(self) -> object:
+        # Keep the diagnostics boundary live without constructing any model.
+        return self
+
+    def stats(self) -> object:
+        perceiver = self._perceiver
+        if perceiver is None:
+            return object()
+        diagnostics = perceiver.speaker_diagnostics
+        stats = getattr(diagnostics, "stats", None)
+        return stats() if stats is not None else object()
+
+    def perceive_event(self, event: RawEvent) -> object:
+        return self._get().perceive_event(event)
+
+    def _get(self) -> AudioPerceiver:
+        if self._perceiver is not None:
+            return self._perceiver
+        if self._failure_message is not None:
+            raise ConfigError(self._failure_message) from None
+        with self._lock:
+            if self._perceiver is not None:
+                return self._perceiver
+            if self._failure_message is not None:
+                raise ConfigError(self._failure_message) from None
+            try:
+                self._perceiver = self._factory()
+            except Exception as exc:
+                self._failure_message = str(exc)
+                raise ConfigError(self._failure_message) from None
+            return self._perceiver
 
 
 class PrivateModeNotImplemented(NotImplementedError):
@@ -578,7 +635,7 @@ def _lazy_device_audio_source(config: OsCaptureConfig) -> Captured:
         ):
             yield chunk
 
-    return _source()
+    return _RestartableCaptureSource(_source)
 
 
 def _lazy_device_video_source(config: OsCaptureConfig) -> Captured:
@@ -594,7 +651,7 @@ def _lazy_device_video_source(config: OsCaptureConfig) -> Captured:
         ):
             yield frame
 
-    return _source()
+    return _RestartableCaptureSource(_source)
 
 
 def _configured_adapter(
@@ -620,7 +677,7 @@ def _configured_adapter(
         )
     if config.adapter == "youtube" and config.youtube is not None:
         youtube = config.youtube
-        return YouTubeLiveChatReader(
+        chat_reader = YouTubeLiveChatReader(
             video_id=youtube.video_id,
             api_key=_required_youtube_api_key(),
             api=youtube_api,
@@ -630,6 +687,24 @@ def _configured_adapter(
             retry_max_seconds=youtube.retry_max_seconds,
             dedup_capacity=youtube.dedup_capacity,
             request_timeout_seconds=youtube.request_timeout_seconds,
+        )
+        if config.os_capture is None:
+            return chat_reader
+        audio_source, video_source = _configured_os_capture_sources(
+            config.os_capture,
+            audio_perceiver=audio_perceiver,
+            video_perceiver=video_perceiver,
+            os_capture_audio_source=os_capture_audio_source,
+            os_capture_video_source=os_capture_video_source,
+        )
+        media_readers = build_os_capture_readers(
+            config.os_capture,
+            audio_source=audio_source,
+            video_source=video_source,
+        )
+        return MergingSourceAdapter(
+            readers={"chat": chat_reader, **media_readers},
+            priority_channels=("chat",),
         )
     if config.adapter != "twitch" or config.twitch is None:
         return None
@@ -679,6 +754,30 @@ def _configured_os_capture_adapter(
     runtime live differisce l'apertura di soundcard/mss alla prima iterazione,
     così build e `--check` non toccano hardware.
     """
+    audio_source, video_source = _configured_os_capture_sources(
+        os_capture,
+        audio_perceiver=audio_perceiver,
+        video_perceiver=video_perceiver,
+        os_capture_audio_source=os_capture_audio_source,
+        os_capture_video_source=os_capture_video_source,
+    )
+    return OsCaptureAdapter(
+        os_capture,
+        audio_source=audio_source,
+        video_source=video_source,
+    )
+
+
+def _configured_os_capture_sources(
+    os_capture: OsCaptureConfig,
+    *,
+    audio_perceiver: AudioPerceiver | None,
+    video_perceiver: VideoPerceiver | None,
+    os_capture_audio_source: Captured | None,
+    os_capture_video_source: Captured | None,
+) -> tuple[Captured | None, Captured | None]:
+    """Resolve enabled OS sources once for standalone and platform mergers."""
+
     audio_source: Captured | None = None
     if os_capture.audio:
         _require_media_perceiver(
@@ -699,11 +798,7 @@ def _configured_os_capture_adapter(
             if os_capture_video_source is not None
             else _lazy_device_video_source(os_capture)
         )
-    return OsCaptureAdapter(
-        os_capture,
-        audio_source=audio_source,
-        video_source=video_source,
-    )
+    return audio_source, video_source
 
 
 def _build_default_audio_perceiver(
@@ -1184,13 +1279,24 @@ def build_agent(
     # I perceiver audio/video si costruiscono con GLI STESSI helper per Twitch e
     # os_capture: il canale è cablato se l'adapter dichiarato lo abilita.
     if _adapter_enables_audio(config) and audio_perceiver is None:
-        audio_perceiver = _build_default_audio_perceiver(
-            config,
-            store,
-            asr_model_factory=asr_model_factory,
-            vad_detector=vad_detector,
-            speaker_embedding_factory=speaker_embedding_factory,
-            channel_label=f"{config.adapter}.audio",
+        media_prefix = (
+            "os_capture" if config.adapter in {"os_capture", "youtube"} else "twitch"
+        )
+
+        def build_audio_perceiver() -> AudioPerceiver:
+            return _build_default_audio_perceiver(
+                config,
+                store,
+                asr_model_factory=asr_model_factory,
+                vad_detector=vad_detector,
+                speaker_embedding_factory=speaker_embedding_factory,
+                channel_label=f"{media_prefix}.audio",
+            )
+
+        audio_perceiver = (
+            _LazyAudioPerceiver(build_audio_perceiver)  # type: ignore[assignment]
+            if config.adapter == "youtube"
+            else build_audio_perceiver()
         )
     speaker_diagnostics = _speaker_diagnostics_from_audio_perceiver(audio_perceiver)
 
@@ -1279,7 +1385,7 @@ def _adapter_enables_audio(config: Config) -> bool:
     """Whether the configured adapter enables the local audio channel."""
     if config.adapter == "twitch" and config.twitch is not None:
         return config.twitch.audio
-    if config.adapter == "os_capture" and config.os_capture is not None:
+    if config.adapter in {"os_capture", "youtube"} and config.os_capture is not None:
         return config.os_capture.audio
     return False
 
@@ -1288,6 +1394,6 @@ def _adapter_enables_video(config: Config) -> bool:
     """Whether the configured adapter enables the local video channel."""
     if config.adapter == "twitch" and config.twitch is not None:
         return config.twitch.video
-    if config.adapter == "os_capture" and config.os_capture is not None:
+    if config.adapter in {"os_capture", "youtube"} and config.os_capture is not None:
         return config.os_capture.video
     return False
