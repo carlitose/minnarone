@@ -31,6 +31,32 @@ from .merge import MergeStats, MergingSourceAdapter
 from .source import RawEvent, SourceAdapter
 
 
+def build_os_capture_readers(
+    config: OsCaptureConfig,
+    *,
+    audio_source: Captured | None = None,
+    video_source: Captured | None = None,
+) -> dict[str, SourceAdapter]:
+    """Build reusable, single-channel OS readers for one top-level config.
+
+    Platform compositions (for example YouTube chat plus local Chrome media)
+    need the OS readers without nesting the multi-channel
+    :class:`OsCaptureAdapter`.  This factory keeps source validation and the
+    ``AudioChunk``/``VideoFrame`` wrapping contract in one place.
+    """
+
+    readers: dict[str, SourceAdapter] = {}
+    if config.audio:
+        if audio_source is None:
+            raise ValueError("os_capture.audio is enabled but audio_source is missing")
+        readers["audio"] = os_audio_capture(audio_source)
+    if config.video:
+        if video_source is None:
+            raise ValueError("os_capture.video is enabled but video_source is missing")
+        readers["video"] = os_screen_capture(video_source)
+    return readers
+
+
 class OsCaptureAdapter(SourceAdapter):
     """Compone i reader di cattura audio/video del SO in un unico source adapter.
 
@@ -52,7 +78,7 @@ class OsCaptureAdapter(SourceAdapter):
         queue_size: int = 100,
         cleanup_timeout: float = 5.0,
     ) -> None:
-        readers = self._build_readers(
+        readers = build_os_capture_readers(
             config,
             audio_source=audio_source,
             video_source=video_source,
@@ -84,25 +110,3 @@ class OsCaptureAdapter(SourceAdapter):
         # `MergeStats` è già la forma che TUI/osservabilità leggono; non serve
         # riavvolgerla (a differenza di Twitch, che conserva un nome storico).
         return self._merger.stats()
-
-    @staticmethod
-    def _build_readers(
-        config: OsCaptureConfig,
-        *,
-        audio_source: Captured | None,
-        video_source: Captured | None,
-    ) -> dict[str, SourceAdapter]:
-        readers: dict[str, SourceAdapter] = {}
-        if config.audio:
-            if audio_source is None:
-                raise ValueError(
-                    "os_capture.audio is enabled but audio_source is missing"
-                )
-            readers["audio"] = os_audio_capture(audio_source)
-        if config.video:
-            if video_source is None:
-                raise ValueError(
-                    "os_capture.video is enabled but video_source is missing"
-                )
-            readers["video"] = os_screen_capture(video_source)
-        return readers

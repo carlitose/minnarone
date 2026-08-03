@@ -1,0 +1,74 @@
+# YouTube Live full shadow. The operator opens Chrome and playback manually;
+# Minnarone reads chat and captures the selected monitor plus system audio.
+mode: public
+soul_path: original-chat-memory/soul.md
+facts_dir: original-chat-memory/facts
+adapter: youtube
+llm_provider: grok
+agent_name: minnarone
+
+youtube:
+  # One explicit 11-character target. Media settings do not belong here.
+  video_id: abcDEF123_-
+  max_results: 500
+  max_retries: 3
+  retry_base_seconds: 1.0
+  retry_max_seconds: 30.0
+  dedup_capacity: 4096
+  request_timeout_seconds: 10.0
+
+# The same top-level block used by the standalone OS-capture adapter.
+os_capture:
+  audio: true
+  video: true
+  audio_chunk_seconds: 1.0
+  video_fps: 1.0
+  monitor: 1
+
+perception_queue_size: 32
+perception_shutdown_timeout: 5.0
+
+vad:
+  mode: 2
+  frame_ms: 30
+  padding_ms: 300
+  max_utterance_seconds: 30.0
+
+asr:
+  model: large-v3-turbo
+  device: auto
+  compute_type: default
+  language: null
+
+speaker_embedding:
+  # Replace with a local, verified VoxCeleb CAM++ ONNX artifact.
+  model_path: .local/models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
+  provider: cpu
+  num_threads: 1
+  dimension: 512
+
+speaker_clustering:
+  threshold: 0.5
+  warmup_seconds: 60.0
+  min_update_seconds: 1.0
+
+video:
+  sample_every: 1
+  dedup_change_threshold: 0.0
+
+vlm:
+  backend: qwen
+  # Replace with a local Qwen2-VL-compatible model path or identifier.
+  model: .local/models/qwen2-vl
+  device: auto
+  language: it
+
+disclosure:
+  announce_ai: true
+retention:
+  perceptions_days: 7 # reserved/inert; deletion remains manual
+
+commentator:
+  language: it
+  profiles:
+    original_chat: {}
