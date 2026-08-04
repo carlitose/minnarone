@@ -33,7 +33,7 @@ from .twitch_video import validate_video_fps
 from .vad import VadConfig, VadInputError
 from .video import VideoConfigError, VideoPerceptionConfig
 from .vlm import QwenVlConfig, QwenVlConfigError
-from .youtube_target import YouTubeVideoId
+from .youtube_target import YouTubeChannelId, YouTubeVideoId
 
 
 class ConfigError(ValueError):
@@ -500,10 +500,11 @@ def _coerce_youtube_send_mode(value: object) -> PublicSendMode:
 
 @dataclass(frozen=True, slots=True)
 class YouTubeSendConfig:
-    """Safety settings for YouTube candidates; ticket 06 adds no sender."""
+    """Safety settings plus the approved stable YouTube sender identity."""
 
     mode: PublicSendMode = PublicSendMode.SHADOW
     allowed_video_ids: tuple[str, ...] = ()
+    approved_channel_id: str | None = None
     max_per_minute: int = 1
     max_per_hour: int = 20
     failure_threshold: int = 3
@@ -522,6 +523,21 @@ class YouTubeSendConfig:
             except (TypeError, ValueError) as exc:
                 raise ConfigError(f"youtube.send.allowed_video_ids: {exc}") from exc
         object.__setattr__(self, "allowed_video_ids", tuple(normalized))
+        if self.approved_channel_id is not None:
+            try:
+                approved_channel_id = YouTubeChannelId.parse(
+                    self.approved_channel_id
+                ).value
+            except ValueError as exc:
+                raise ConfigError(
+                    "youtube.send.approved_channel_id must be a stable YouTube "
+                    "channel ID"
+                ) from exc
+            object.__setattr__(self, "approved_channel_id", approved_channel_id)
+        if self.mode is PublicSendMode.LIVE and self.approved_channel_id is None:
+            raise ConfigError(
+                "youtube.send.approved_channel_id is required when mode is 'live'"
+            )
         for name in ("max_per_minute", "max_per_hour", "failure_threshold"):
             object.__setattr__(
                 self,
@@ -552,6 +568,7 @@ class YouTubeSendConfig:
         allowed = {
             "mode",
             "allowed_video_ids",
+            "approved_channel_id",
             "max_per_minute",
             "max_per_hour",
             "failure_threshold",
@@ -565,6 +582,7 @@ class YouTubeSendConfig:
         return cls(
             mode=data.get("mode", PublicSendMode.SHADOW),  # type: ignore[arg-type]
             allowed_video_ids=data.get("allowed_video_ids", ()),  # type: ignore[arg-type]
+            approved_channel_id=data.get("approved_channel_id"),  # type: ignore[arg-type]
             max_per_minute=data.get("max_per_minute", 1),  # type: ignore[arg-type]
             max_per_hour=data.get("max_per_hour", 20),  # type: ignore[arg-type]
             failure_threshold=data.get("failure_threshold", 3),  # type: ignore[arg-type]
@@ -573,11 +591,11 @@ class YouTubeSendConfig:
 
 @dataclass(frozen=True, slots=True)
 class YouTubeConfig:
-    """Read-only YouTube chat configuration for one explicit live video.
+    """YouTube chat configuration for one explicit live video.
 
     Read credentials stay outside YAML in ``YOUTUBE_API_KEY``. The nested
-    ``send`` block contains only neutral policy state and budgets; it exposes
-    no OAuth credential, sender, or insert transport.
+    ``send`` contains only non-secret policy state and the approved channel ID.
+    OAuth values remain outside YAML and are loaded lazily only for a live run.
     """
 
     video_id: str

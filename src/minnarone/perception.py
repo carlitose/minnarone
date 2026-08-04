@@ -44,6 +44,8 @@ class Perception:
         type: sottotipo dipendente da `source` (es. "msg", "speech", "caption").
         text: contenuto testuale della percezione.
         speaker: chi ha prodotto l'evento, se noto (chat/audio diarizzato).
+        speaker_id: identità stabile della piattaforma, se disponibile. Non
+            viene resa nei prompt; serve ai filtri own-message/self-echo.
     """
 
     ts: float
@@ -51,6 +53,7 @@ class Perception:
     type: str
     text: str
     speaker: str | None = None
+    speaker_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.ts, (int, float)):
@@ -69,6 +72,8 @@ class Perception:
             raise ValueError("text must be a string")
         if self.speaker is not None and not isinstance(self.speaker, str):
             raise ValueError("speaker must be a string or None")
+        if self.speaker_id is not None and not isinstance(self.speaker_id, str):
+            raise ValueError("speaker_id must be a string or None")
 
     def to_json(self) -> str:
         """Serializza in una singola riga JSON (formato del perception store)."""
@@ -80,6 +85,8 @@ class Perception:
         }
         if self.speaker is not None:
             payload["speaker"] = self.speaker
+        if self.speaker_id is not None:
+            payload["speaker_id"] = self.speaker_id
         return json.dumps(payload, ensure_ascii=False)
 
     @classmethod
@@ -112,6 +119,7 @@ class Perception:
             type=type_,
             text=text,
             speaker=data.get("speaker"),
+            speaker_id=data.get("speaker_id"),
         )
 
 
@@ -125,6 +133,16 @@ def format_perception_line(p: Perception) -> str:
     """
     who = p.speaker if p.speaker else "anon"
     return f"{who}: {p.text}"
+
+
+def matches_speaker_identity(perception: Perception, identity: str) -> bool:
+    """Match a platform-stable ID exactly, else a legacy login by casefold."""
+    if perception.speaker_id is not None:
+        return perception.speaker_id == identity
+    return (
+        perception.speaker is not None
+        and perception.speaker.casefold() == identity.casefold()
+    )
 
 
 def format_recent_line(p: Perception, now: float) -> str:

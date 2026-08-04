@@ -167,6 +167,63 @@ def test_self_perception_does_not_trigger_continuation(tmp_path):
     assert all(t.kind != "continuation" for t in triggers)
 
 
+def test_youtube_self_echo_uses_stable_channel_id_not_display_name(tmp_path):
+    """A renamed YouTube account remains self; a namesake is still third-party."""
+    from minnarone.source import RawEvent
+
+    clock = FakeClock(start=0.0)
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    chat = ChatPerceiver(store)
+    senser = Senser(
+        store,
+        agent_name="Minnarone",
+        bot_identity="UCabcdefghijklmnopqrstuv",
+        clock=clock,
+    )
+
+    own = chat.perceive_event(
+        RawEvent(
+            channel="chat",
+            payload={
+                "text": "minnarone: messaggio proprio",
+                "speaker": "Display Name Changed",
+                "author_channel_id": "UCabcdefghijklmnopqrstuv",
+            },
+            ts=1.0,
+        )
+    )
+    assert own is not None
+    assert own.speaker == "Display Name Changed"
+    assert own.speaker_id == "UCabcdefghijklmnopqrstuv"
+    assert senser.tick() == []
+
+    chat.perceive_event(
+        RawEvent(
+            channel="chat",
+            payload={
+                "text": "minnarone: sono un altro canale",
+                "speaker": "Display Name Changed",
+                "author_channel_id": "UCzyxwvutsrqponmlkjihgfe",
+            },
+            ts=2.0,
+        )
+    )
+    triggers = senser.tick()
+    assert len(triggers) == 1
+    assert triggers[0].interlocutor == "Display Name Changed"
+
+    stored = store.tail(2)
+    assert [item.speaker_id for item in stored] == [
+        "UCabcdefghijklmnopqrstuv",
+        "UCzyxwvutsrqponmlkjihgfe",
+    ]
+    reopened = PerceptionStore(store.path)
+    assert [item.speaker_id for item in reopened.tail(2)] == [
+        "UCabcdefghijklmnopqrstuv",
+        "UCzyxwvutsrqponmlkjihgfe",
+    ]
+
+
 # --- Cycle 10: self perceptions filtered from recent prompt context -----------
 
 

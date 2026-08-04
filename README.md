@@ -154,7 +154,7 @@ This repository generalizes that idea into a reusable framework: the same percep
 
 - **[Project specification](docs/SPECIFICATION.md)** — requirements, user stories, use cases, edge cases, system design and roadmap.
 - **[Twitch operator guide](docs/twitch-operator.md)** — capture smoke, VAD diagnostics, `adapter: twitch` runtime and enabling public send (shadow/live).
-- **[YouTube operator guide](docs/youtube-operator.md)** — explicit-video, read-only chat with shared off/shadow/live-armed safety; no OAuth or sender yet.
+- **[YouTube operator guide](docs/youtube-operator.md)** — explicit-video chat shadow plus confirmation-gated, attended live send through the shared safety policy and OAuth guard.
 - **[Meeting assistant guide](docs/meeting-assistant-operator.md)** — synthesizer and suggester profiles on Teams via `adapter: os_capture`.
 - **[Source material](docs/source/)** — transcript and screenshots from which the specification was derived.
 
@@ -227,7 +227,10 @@ values. The template is [`.env.example`](.env.example) (`cp .env.example .env`).
 | `TWITCH_BOT_USERNAME` | With `adapter: twitch` + `twitch.chat: true` (read-side IRC ingestion). |
 | `TWITCH_OAUTH_TOKEN` | With `adapter: twitch` + `twitch.chat: true` or live send — **read** token (`chat:read`). |
 | `TWITCH_SEND_OAUTH_TOKEN` | **Only** for `twitch.send.mode: live` — **write** token (`chat:edit`) of the dedicated bot account. |
-| `YOUTUBE_API_KEY` | With `adapter: youtube` for read-only public live-chat discovery/listing. No OAuth or send capability. |
+| `YOUTUBE_API_KEY` | With `adapter: youtube` for read-only public live-chat discovery/listing. |
+| `YOUTUBE_OAUTH_CLIENT_ID` | Only for a running `youtube.send.mode: live` session; excluded from `off`, `shadow`, and `--check` dotenv loading. |
+| `YOUTUBE_OAUTH_CLIENT_SECRET` | Only for a running YouTube live-send session; never accepted in YAML or artifacts. |
+| `YOUTUBE_OAUTH_REFRESH_TOKEN` | Only for a running YouTube live-send session with offline consent and an accepted YouTube scope. |
 
 The read token and the write token are deliberately distinct: a read-only
 config must never have the power to send messages. In `live`, both tokens must
@@ -351,9 +354,12 @@ YouTube reuses the same typed target allow-list, `off`/`shadow`/`live` policy,
 product budgets, snapshots, promotion, kill-switch and failure state. The
 stable target is the explicit `video_id`; identifiers are validated at the
 YouTube edge before the platform-neutral policy sees them. `shadow` is the
-default and consumes the configured budgets. `live` starts unpromoted and,
-until the separate sender ticket lands, cannot promote because no sender
-capability, OAuth write credential, or insert transport is constructed. See the
+default and consumes the configured budgets. `live` requires an approved stable
+YouTube channel ID and constructs only lazy capability/sender objects. The
+runtime refreshes and verifies OAuth identity/scope/expiry before enabling the
+manual TUI promotion; every insert is single-attempt and auth failures disarm
+the session permanently. `off`, `shadow`, and `--check` do not load write
+credentials or open OAuth network/browser flows. See the
 [YouTube operator guide](docs/youtube-operator.md#public-target-and-mode-matrix).
 
 ## Local commentator on Teams (OS capture)

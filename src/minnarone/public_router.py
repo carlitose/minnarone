@@ -55,9 +55,15 @@ class PublicOutputRouter(OutputRouter):
                 # A failed turn is skipped once.  There is no retry or stale
                 # message queue. Unexpected exceptions propagate unchanged.
                 self._display("[FAILED]", message)
+                disarms_live = bool(getattr(exc, "disarms_live", False))
+                if disarms_live:
+                    disable_live = getattr(self._policy, "disable_live", None)
+                    if callable(disable_live):
+                        disable_live()
                 self._policy.record_failure()
                 self._record_decision(message, "failed", str(exc))
-                self._record_auto_degrade_if_engaged()
+                if not disarms_live:
+                    self._record_auto_degrade_if_engaged()
                 return
             self._display("[SENT]", message)
             self._policy.record_success()

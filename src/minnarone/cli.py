@@ -58,6 +58,19 @@ from .replay import run_replay_tui
 from .run_artifacts import DEFAULT_RUNS_ROOT, RunSession, create_run_session
 from .twitch_auth import TwitchTokenValidationError
 from .twitch_stream import TwitchStreamRuntimeError
+from .youtube_oauth import (
+    YOUTUBE_OAUTH_CLIENT_ID_ENV_VAR,
+    YOUTUBE_OAUTH_CLIENT_SECRET_ENV_VAR,
+    YOUTUBE_OAUTH_REFRESH_TOKEN_ENV_VAR,
+)
+
+_YOUTUBE_WRITE_ENV_VARS = frozenset(
+    {
+        YOUTUBE_OAUTH_CLIENT_ID_ENV_VAR,
+        YOUTUBE_OAUTH_CLIENT_SECRET_ENV_VAR,
+        YOUTUBE_OAUTH_REFRESH_TOKEN_ENV_VAR,
+    }
+)
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -274,10 +287,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     # Carica i segreti da .env (dir del config, poi cwd) prima di leggerli.
-    _load_env_files(args.config)
-
     try:
         config = Config.load(args.config)
+        load_youtube_write = (
+            not args.check
+            and config.adapter == "youtube"
+            and config.youtube is not None
+            and config.youtube.send.mode.value == "live"
+        )
+        _load_env_files(
+            args.config,
+            exclude_keys=() if load_youtube_write else _YOUTUBE_WRITE_ENV_VARS,
+        )
         run_session = None
         if args.tui and not args.check:
             ensure_live_tui_available()

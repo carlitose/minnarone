@@ -22,7 +22,7 @@ from .human import HumanLikeness
 from .llm import LLMError, LLMProvider
 from .original_chat_output import normalize_original_chat_response
 from .output import CommentatorStyle, OutputMode, OutputRouter
-from .perception import Perception, Source
+from .perception import Perception, Source, matches_speaker_identity
 from .prompt import ORIGINAL_CHAT_CONTEXT_SPECS, PromptBuilder, SelfMessage
 from .prompt_observation import prompt_observation_context
 from .senser import Senser
@@ -103,7 +103,7 @@ class Reactor:
         # Self-echo filter: lowercased send-account username. Quando presente,
         # le percezioni chat del bot vengono escluse dalla finestra recente del
         # prompt, così l'LLM non le vede come terze parti.
-        self._bot_identity = bot_identity.lower() if bot_identity else None
+        self._bot_identity = bot_identity if bot_identity else None
 
     def recent_messages(self, n: int | None = None) -> list[str]:
         """Snapshot read-only degli ultimi messaggi instradati dall'agente.
@@ -298,8 +298,7 @@ class Reactor:
             for p in perceptions
             if not (
                 p.source is Source.CHAT
-                and p.speaker is not None
-                and p.speaker.lower() == self._bot_identity
+                and matches_speaker_identity(p, self._bot_identity)
             )
         ]
 

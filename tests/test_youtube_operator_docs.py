@@ -1,4 +1,4 @@
-"""Committed YouTube operator surfaces stay sanitized and sender-free."""
+"""Committed YouTube operator surfaces stay sanitized and attended-only."""
 
 from pathlib import Path
 
@@ -18,7 +18,7 @@ def test_youtube_example_is_chat_only_shadow_and_contains_no_secret():
     assert "video:" not in text
 
 
-def test_youtube_operator_guide_documents_read_only_and_artifact_boundaries():
+def test_youtube_operator_guide_documents_guarded_live_and_artifact_boundaries():
     text = Path("docs/youtube-operator.md").read_text()
 
     for required in (
@@ -29,9 +29,13 @@ def test_youtube_operator_guide_documents_read_only_and_artifact_boundaries():
         "--check",
         "retention.perceptions_days",
         "manual deletion",
-        "does not authorize public send",
-        "no OAuth",
-        "no sender capability",
+        "liveChatMessages.insert",
+        "YOUTUBE_OAUTH_REFRESH_TOKEN",
+        "approved_channel_id",
+        "channels.list(part=id,mine=true)",
+        "press `p` twice",
+        "single-attempt",
+        "stable ID",
         "allowed_video_ids",
         "mode_off",
     ):

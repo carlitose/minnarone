@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from .audio import STREAMER
-from .perception import Perception, Source
+from .perception import Perception, Source, matches_speaker_identity
 from .store import PerceptionStore
 
 # Quanto può discostarsi una parola dal nome dell'agente per contare come
@@ -131,7 +131,7 @@ class Senser:
         self._interval_s = interval_s
         self._store = store
         self._agent_name = agent_name.lower()
-        self._bot_identity = bot_identity.lower() if bot_identity else None
+        self._bot_identity = bot_identity if bot_identity else None
         # Match esatto a confine di parola (veloce); il fuzzy interviene solo se
         # questo fallisce, per tollerare i nomi storpiati senza falsi positivi.
         self._mention = re.compile(rf"\b{re.escape(agent_name)}\b", re.IGNORECASE)
@@ -379,13 +379,13 @@ class Senser:
             return False
         if p.source != Source.CHAT:
             return False
-        return p.speaker is not None and p.speaker.lower() == self._bot_identity
+        return matches_speaker_identity(p, self._bot_identity)
 
     def _is_self_perception_audio(self, p: Perception) -> bool:
         """True se la percezione audio è del bot stesso (self-echo su AUDIO)."""
         if self._bot_identity is None:
             return False
-        return p.speaker is not None and p.speaker.lower() == self._bot_identity
+        return matches_speaker_identity(p, self._bot_identity)
 
     def _is_mention(self, text: str) -> bool:
         """Menzione del nome: match esatto a confine di parola o fuzzy (EC09)."""
