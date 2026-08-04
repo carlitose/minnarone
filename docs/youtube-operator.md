@@ -1,11 +1,15 @@
 # YouTube Live public-safety shadow
 
-This guide covers the first production YouTube path: one explicit live video,
-read-only chat ingestion, the existing `ChatPerceiver`, and candidate reactions
-behind the same product safety floor used by Twitch. It has no OAuth, no sender,
-and no insert endpoint. A `live` configuration only arms the policy shape for a
-later sender ticket; this runtime cannot promote without an explicit sender
-capability/transport.
+This guide covers two production-safe rehearsal paths for one explicit live
+video. Chat-only shadow uses read-only chat ingestion and the existing
+`ChatPerceiver`; the optional full shadow adds local audio and screen
+perception from a visible Chrome player. Candidate reactions remain local as
+`[SHADOW]` behind the same product safety floor used by Twitch. Neither path
+has OAuth, a sender, or an insert endpoint. A `live` configuration only arms
+the policy shape for a later sender ticket; this runtime cannot promote without
+an explicit sender capability and transport. The chat-only configuration has
+no audio or video, while the optional full shadow obtains both locally through
+operator-managed OS capture.
 
 The contract follows the ticket-01 platform research and the bounded ticket-03
 read smoke: `videos.list(part=liveStreamingDetails)` resolves the ephemeral
@@ -126,6 +130,127 @@ Stop with `Ctrl-C`. Server pacing waits are interruptible. Requests have a
 finite timeout and temporary/rate failures use bounded, jittered exponential backoff;
 quota or authentication failures stop fail-closed rather than rotating keys or
 falling back to a future write credential.
+
+## Full multimodal shadow via Chrome and OS capture
+
+The full path keeps YouTube chat on the API reader and obtains media from a
+visible Chrome window that the operator opens, positions, and starts manually.
+Chrome is **operator-managed**: Minnarone does not start or control the browser,
+install an extension, attach through CDP, or capture a tab directly. The first
+version is **full-monitor** capture, so use a dedicated monitor or a clean
+desktop and disable notifications.
+
+Install the capture and perception extras needed by the selected local models:
+
+```bash
+uv sync --extra os-capture --extra audio --extra vlm --extra tui
+```
+
+Copy
+[`youtube-full-shadow.example.yaml`](../examples/youtube-full-shadow.example.yaml)
+to a gitignored local workspace. Set the same explicit `youtube.video_id` used
+for the chat rehearsal, then set only the existing top-level `os_capture`
+block:
+
+```yaml
+adapter: youtube
+youtube:
+  video_id: abcDEF123_-
+os_capture:
+  audio: true
+  video: true
+  audio_chunk_seconds: 1.0
+  video_fps: 1.0
+  monitor: 1
+```
+
+Audio remains mono PCM 16 kHz with `source_label="system"`; video remains a
+sampled `VideoFrame` from the configured monitor. The existing
+VAD/ASR/speaker and VLM perceivers consume those payloads, and their bounded
+work queue exposes processed, dropped, failed, cancelled, and cleanup counts.
+The `youtube` block does not duplicate monitor, fps, chunk, model, or media
+settings.
+
+### Prepare the visible player
+
+1. Open the exact target in visible Chrome and start playback manually.
+2. Put Chrome on the dedicated monitor selected by `os_capture.monitor`.
+3. On macOS, grant the terminal **Screen Recording** permission. Restart the
+   terminal after changing the permission if the OS asks for it.
+4. Route YouTube audio through the system output that capture observes.
+   Windows and Linux can expose native output loopback. macOS has no native
+   SoundCard loopback: configure an operator-managed virtual device such as
+   **BlackHole** before the run. Minnarone does not install or configure it.
+5. Keep the run attended. Anything shown on that monitor can enter local
+   artifacts and prompts.
+
+### Bounded capture-only smoke tests
+
+Run audio and video separately before starting models or the agent. These
+`minnarone-oscapture-smoke` commands are capture-only: **no LLM** and **no
+sender** are constructed. Duration and raw artifacts are capped explicitly.
+
+```bash
+uv run minnarone-oscapture-smoke \
+  --duration 30 \
+  --output ./.smoke/youtube-os-audio \
+  --audio \
+  --audio-chunk-seconds 1.0 \
+  --max-audio-samples 3
+```
+
+```bash
+uv run minnarone-oscapture-smoke \
+  --duration 30 \
+  --output ./.smoke/youtube-os-video \
+  --video \
+  --video-fps 1.0 \
+  --monitor 1 \
+  --max-video-frames 3
+```
+
+Inspect `stats.json`, at most three `raw/audio/*.pcm` samples, and at most
+three `raw/video/*.jpg` frames. These smokes prove only local raw capture; they
+do not prove YouTube API access, ASR, speaker attribution, VLM captions, or the
+combined runtime.
+
+### Validate and run full shadow
+
+Validation remains offline and lazy with respect to YouTube, Chrome,
+`soundcard`, `mss`, and local model loading:
+
+```bash
+uv run python -m minnarone path/to/youtube-full-shadow.local.yaml --check
+```
+
+The check validates configuration, local paths and wiring; it does not open an
+API connection, a browser, or a capture device, and it does not prove that the
+selected model/device will initialize on the first media event. Then run the
+attended shadow:
+
+```bash
+uv run python -m minnarone path/to/youtube-full-shadow.local.yaml --tui
+```
+
+Every candidate remains `[SHADOW]`; this path has no sender or live promotion.
+Stop with `Ctrl-C`. Reader/device and perception-worker cleanup is bounded; if
+a channel is stuck or slow, inspect merger failures and queue cleanup counters
+before the next run.
+
+### Silence and black-frame diagnosis
+
+| Symptom | Check |
+| --- | --- |
+| Audio `silenzio` / zero chunks | Confirm Chrome is playing through the selected default output. On macOS verify BlackHole routing, then rerun only the audio smoke. |
+| `frame neri` or empty video | Confirm `monitor`, Screen Recording permission, and that Chrome is visible on that display; rerun only the video smoke. |
+| Wrong/private pixels captured | Stop immediately, move Chrome to a dedicated monitor, clear the bounded run/smoke artifacts, and restart deliberately. |
+| Chat failure with healthy media | Inspect the YouTube lifecycle outcome/key/quota; local media shuts down independently. |
+| Media/model failure with healthy chat | Inspect source-merger and perception-queue diagnostics for the named channel; chat can continue. |
+| Growing drops | Reduce `video_fps`, increase sampling, or choose a faster local model; do not remove queue/artifact bounds. |
+
+This path does not use Streamlink, yt-dlp, media URLs/manifests,
+FFmpeg/PyAV playback, shell commands, browser extensions, CDP, or
+`chrome.tabCapture` for YouTube media.
 
 ## Lifecycle outcomes
 
