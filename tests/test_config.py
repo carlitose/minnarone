@@ -258,6 +258,37 @@ def test_youtube_section_is_strict_and_has_no_credentials_or_media_fields(tmp_pa
         Config.load(_write(tmp_path, bad_send))
 
 
+def test_youtube_live_requires_one_approved_stable_sender_channel_id(tmp_path):
+    live = YOUTUBE_YAML.replace(
+        "  max_results: 500",
+        "  max_results: 500\n"
+        "  send:\n"
+        "    mode: live\n"
+        "    allowed_video_ids: [abcDEF123_-]",
+    )
+
+    with pytest.raises(ConfigError, match="approved_channel_id"):
+        Config.load(_write(tmp_path, live))
+
+    approved = live.replace(
+        "    allowed_video_ids: [abcDEF123_-]",
+        "    allowed_video_ids: [abcDEF123_-]\n"
+        "    approved_channel_id: UCabcdefghijklmnopqrstuv",
+    )
+    cfg = Config.load(_write(tmp_path, approved))
+    assert cfg.youtube is not None
+    assert cfg.youtube.send.approved_channel_id == "UCabcdefghijklmnopqrstuv"
+
+
+def test_youtube_config_never_accepts_oauth_secret_fields(tmp_path):
+    for field in ("access_token", "refresh_token", "client_secret", "auth_code"):
+        bad = YOUTUBE_YAML.replace(
+            "  max_results: 500", f"  max_results: 500\n  {field}: forbidden"
+        )
+        with pytest.raises(ConfigError, match="unknown youtube fields"):
+            Config.load(_write(tmp_path, bad))
+
+
 @pytest.mark.parametrize(
     ("line", "replacement", "message"),
     [

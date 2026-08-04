@@ -121,7 +121,9 @@ from .youtube_chat import (
     YouTubeLiveChatError,
     YouTubeLiveChatReader,
 )
-from .youtube_target import YouTubeVideoId
+from .youtube_chat_sender import YouTubeLiveChatSender, YouTubeSendError
+from .youtube_oauth import YouTubeLiveCapabilityGuard
+from .youtube_target import YouTubeChannelId, YouTubeVideoId
 
 __all__ = [
     "Perception",
@@ -150,10 +152,14 @@ __all__ = [
     "YouTubeConfig",
     "YouTubeSendConfig",
     "YouTubeVideoId",
+    "YouTubeChannelId",
     "YouTubeLiveChatReader",
     "YouTubeLiveChatError",
     "YouTubeChatOutcome",
     "YouTubeChatStats",
+    "YouTubeLiveChatSender",
+    "YouTubeSendError",
+    "YouTubeLiveCapabilityGuard",
     "PerceptionStore",
     "EventPerceiver",
     "ChatPerceiver",

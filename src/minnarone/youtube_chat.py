@@ -180,6 +180,7 @@ class YouTubeLiveChatReader(SourceAdapter):
         sleep: Callable[[float], Awaitable[None]] | None = None,
         jitter: Callable[[float], float] | None = None,
         clock: Callable[[], float] = time.time,
+        live_chat_id_observer: Callable[[str | None], None] | None = None,
     ) -> None:
         self._video_id = YouTubeVideoId.parse(video_id).value
         if not isinstance(api_key, str) or not api_key.strip():
@@ -229,6 +230,7 @@ class YouTubeLiveChatReader(SourceAdapter):
         self._sleep = sleep
         self._jitter = jitter or _default_jitter
         self._clock = clock
+        self._live_chat_id_observer = live_chat_id_observer
         self._seen: OrderedDict[tuple[str, str], None] = OrderedDict()
         self._stop_event = asyncio.Event()
         self._running = False
@@ -282,6 +284,7 @@ class YouTubeLiveChatReader(SourceAdapter):
         self._running = False
         self._outcome = YouTubeChatOutcome.STOPPED
         self._stop_event.set()
+        self._publish_live_chat_id(None)
 
     async def events(self) -> AsyncIterator[RawEvent]:
         if self._iterating:
@@ -371,6 +374,7 @@ class YouTubeLiveChatReader(SourceAdapter):
             self._running = False
             self._iterating = False
             self._stop_event.set()
+            self._publish_live_chat_id(None)
 
     async def _discover_chat(self) -> str | None:
         try:
@@ -385,23 +389,32 @@ class YouTubeLiveChatReader(SourceAdapter):
 
         items = _mapping_items(response.get("items"))
         if not items:
+            self._publish_live_chat_id(None)
             self._outcome = YouTubeChatOutcome.VIDEO_ABSENT
             return None
         details = items[0].get("liveStreamingDetails")
         if not isinstance(details, Mapping):
+            self._publish_live_chat_id(None)
             self._outcome = YouTubeChatOutcome.LIVE_NOT_STARTED
             return None
         if _optional_string(details.get("actualEndTime")) is not None:
+            self._publish_live_chat_id(None)
             self._outcome = YouTubeChatOutcome.LIVE_ENDED
             return None
         chat_id = _optional_string(details.get("activeLiveChatId"))
         if chat_id is not None:
+            self._publish_live_chat_id(chat_id)
             return chat_id
+        self._publish_live_chat_id(None)
         if _optional_string(details.get("actualStartTime")) is None:
             self._outcome = YouTubeChatOutcome.LIVE_NOT_STARTED
         else:
             self._outcome = YouTubeChatOutcome.CHAT_DISABLED
         return None
+
+    def _publish_live_chat_id(self, live_chat_id: str | None) -> None:
+        if self._live_chat_id_observer is not None:
+            self._live_chat_id_observer(live_chat_id)
 
     async def _refresh_terminal_lifecycle(self, fallback: YouTubeChatOutcome) -> None:
         self._outcome = fallback

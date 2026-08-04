@@ -144,6 +144,7 @@ def test_reader_discovers_chat_pages_deduplicates_and_preserves_minimal_identity
         ],
     )
     sleeps: list[float] = []
+    observed_live_chat_ids: list[str | None] = []
 
     async def fake_sleep(delay: float) -> None:
         sleeps.append(delay)
@@ -153,6 +154,7 @@ def test_reader_discovers_chat_pages_deduplicates_and_preserves_minimal_identity
         api_key="synthetic-read-key",
         api=api,
         sleep=fake_sleep,
+        live_chat_id_observer=observed_live_chat_ids.append,
     )
 
     async def collect():
@@ -181,6 +183,8 @@ def test_reader_discovers_chat_pages_deduplicates_and_preserves_minimal_identity
     assert reader.stats().unsupported_events == 1
     assert reader.stats().produced == {"chat": 2}
     assert reader.stats().failures == {}
+    assert "live-chat-1" in observed_live_chat_ids
+    assert observed_live_chat_ids[-1] is None
 
 
 def test_empty_chat_and_disabled_chat_are_not_generic_failures():

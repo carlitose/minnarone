@@ -108,6 +108,18 @@ from .video import Captioner, VideoFrame, VideoPerceiver
 from .vlm import Qwen2VlCaptioner, QwenVlCaptionError, QwenVlConfig
 from .vlm_llamacpp import LlamaCppCaptioner
 from .youtube_chat import YouTubeApi, YouTubeLiveChatReader
+from .youtube_chat_sender import (
+    InsertTransport,
+    YouTubeLiveChatIdState,
+    YouTubeLiveChatSender,
+)
+from .youtube_oauth import (
+    EnvYouTubeOAuthCredentialStore,
+    YouTubeCredentialStore,
+    YouTubeLiveCapabilityGuard,
+    YouTubeOAuthApi,
+    YouTubeOAuthRestApi,
+)
 
 # Una entry del dispatcher: data un `RawEvent`, lo trasforma in percezioni nello
 # store. Una callable per canale ("chat"/"audio"/"video"), così aggiungere un
@@ -257,7 +269,7 @@ class Agent:
     video_diagnostics: object | None = None
     send_policy: object | None = None
     sender: object | None = None
-    token_guard: TwitchLiveTokenGuard | None = None
+    token_guard: object | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -375,6 +387,8 @@ class Agent:
             send_enabled = await self.token_guard.validate_startup()
             if not send_enabled:
                 self._disable_live_send()
+            else:
+                self._enable_live_send_capability()
 
         if self.sender is not None and send_enabled:
             await self.sender.start()
@@ -392,7 +406,14 @@ class Agent:
                 self.token_guard.monitor(on_send_invalid=self._disable_live_send_async)
             )
             if self.token_guard is not None
+            and (
+                send_enabled
+                or not isinstance(self.token_guard, YouTubeLiveCapabilityGuard)
+            )
             else None
+        )
+        token_guard_drives_run = token_guard_task is not None and not isinstance(
+            self.token_guard, YouTubeLiveCapabilityGuard
         )
 
         try:
@@ -400,7 +421,7 @@ class Agent:
                 # La pompa guida la durata: attendi l'esaurimento dello stream,
                 # poi un ultimo tick di reazione deterministico per ogni Reactor.
                 drivers = [pump_task]
-                if token_guard_task is not None:
+                if token_guard_drives_run:
                     drivers.append(token_guard_task)
                 done, _pending = await asyncio.wait(
                     drivers, return_when=asyncio.FIRST_COMPLETED
@@ -420,7 +441,7 @@ class Agent:
                 # Con N Reactor, il primo che termina avvia lo shutdown di tutti.
                 # Con zero Reactor, niente da attendere (pump + summarizer only).
                 drivers = list(reactor_tasks) or [summarizer_task]
-                if token_guard_task is not None:
+                if token_guard_drives_run:
                     drivers.append(token_guard_task)
                 done, _pending = await asyncio.wait(
                     drivers, return_when=asyncio.FIRST_COMPLETED
@@ -467,6 +488,12 @@ class Agent:
         if callable(disable):
             disable()
 
+    def _enable_live_send_capability(self) -> None:
+        policy = self.send_policy
+        enable = getattr(policy, "enable_live_capability", None)
+        if callable(enable):
+            enable()
+
     async def _disable_live_send_async(self) -> None:
         self._disable_live_send()
         sender = self.sender
@@ -502,6 +529,7 @@ def _build_router(
     event_recorder: object | None = None,
     clock: Callable[[], float] | None = None,
     sender: object | None = None,
+    live_capability_ready: bool = True,
     echo: bool = True,
 ) -> tuple[OutputRouter, PublicSendPolicy | None]:
     """Seleziona l'OutputRouter dalla modalità (config, non un fork di codice).
@@ -520,7 +548,7 @@ def _build_router(
             policy = PublicSendPolicy(
                 send_config,
                 clock=clock if clock is not None else time.monotonic,
-                live_capability=sender is not None,
+                live_capability=sender is not None and live_capability_ready,
             )
             if target is not None:
                 router = PublicOutputRouter(
@@ -677,6 +705,7 @@ def _configured_adapter(
     os_capture_audio_source: Captured | None = None,
     os_capture_video_source: Captured | None = None,
     youtube_api: YouTubeApi | None = None,
+    youtube_live_chat_id_observer: Callable[[str | None], None] | None = None,
 ) -> SourceAdapter | None:
     """Costruisce l'adapter runtime dichiarato in config, se oggi operativo."""
     if config.adapter == "os_capture" and config.os_capture is not None:
@@ -699,6 +728,7 @@ def _configured_adapter(
             retry_max_seconds=youtube.retry_max_seconds,
             dedup_capacity=youtube.dedup_capacity,
             request_timeout_seconds=youtube.request_timeout_seconds,
+            live_chat_id_observer=youtube_live_chat_id_observer,
         )
         if config.os_capture is None:
             return chat_reader
@@ -958,6 +988,11 @@ def build_agent(
     os_capture_audio_source: Captured | None = None,
     os_capture_video_source: Captured | None = None,
     youtube_api: YouTubeApi | None = None,
+    youtube_credential_store: YouTubeCredentialStore | None = None,
+    youtube_oauth_api: YouTubeOAuthApi | None = None,
+    youtube_insert: InsertTransport | None = None,
+    youtube_live_chat_id: Callable[[], str | None] | None = None,
+    youtube_oauth_validation_interval: float = 60.0 * 60.0,
 ) -> Agent:
     """Compone e cabla TUTTI i moduli da una `Config`, restituendo un `Agent`.
 
@@ -1036,10 +1071,11 @@ def build_agent(
         recorder=prompt_recorder,
     )
 
-    # Self-echo filter: se l'invio pubblico è attivo, il bot_identity è lo
-    # username del send-account (TWITCH_BOT_USERNAME). Le percezioni chat di
-    # questo speaker vengono escluse dai trigger e dalla finestra recente del
-    # prompt. Assente (send: off o non-Twitch) → nessun filtro.
+    youtube_chat_id_state = YouTubeLiveChatIdState()
+
+    # Self-echo filter: Twitch falls back to the account login because IRC
+    # carries that stable identity. YouTube uses only the approved channel ID,
+    # never the mutable display name.
     bot_identity: str | None = None
     if (
         config.adapter == "twitch"
@@ -1047,21 +1083,32 @@ def build_agent(
         and config.twitch.send.mode is not TwitchSendMode.OFF
     ):
         bot_identity = os.environ.get("TWITCH_BOT_USERNAME") or None
+    elif (
+        config.adapter == "youtube"
+        and config.youtube is not None
+        and config.youtube.send.mode is PublicSendMode.LIVE
+    ):
+        bot_identity = config.youtube.send.approved_channel_id
 
     # Prompt-set del summarizer (ticket 05): set SEPARATO da quello original-chat
     # (preoccupazione distinta, NON nel prefisso stabile in cache), caricato e
     # validato all'avvio (fail-fast) con gli stessi override per-file da
     # `config.prompts_dir`.
     summarizer_prompt_set = load_summarizer_prompt_set(config.prompts_dir)
-    summarizer = Summarizer(llm=llm, store=store, prompt_set=summarizer_prompt_set)
+    summarizer = Summarizer(
+        llm=llm,
+        store=store,
+        prompt_set=summarizer_prompt_set,
+        bot_identity=bot_identity,
+    )
     human = HumanLikeness()
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None
     )
     # Costruzione del sender: SOLO quando il config dichiara mode: live.
     # off/shadow non costruiscono il sender né leggono il token di scrittura.
-    sender: TwitchChatSender | None = None
-    token_guard: TwitchLiveTokenGuard | None = None
+    sender: object | None = None
+    token_guard: object | None = None
     if (
         config.adapter == "twitch"
         and config.twitch is not None
@@ -1079,6 +1126,29 @@ def build_agent(
             send_token=os.environ[TWITCH_SEND_TOKEN_ENV_VAR],
             transport=twitch_token_transport,
             interval=twitch_token_validation_interval,
+        )
+    elif (
+        config.adapter == "youtube"
+        and config.youtube is not None
+        and config.youtube.send.mode is PublicSendMode.LIVE
+    ):
+        approved_channel_id = config.youtube.send.approved_channel_id
+        assert approved_channel_id is not None  # validated by YouTubeSendConfig
+        youtube_guard = YouTubeLiveCapabilityGuard(
+            approved_channel_id=approved_channel_id,
+            credential_store=(
+                youtube_credential_store or EnvYouTubeOAuthCredentialStore()
+            ),
+            api=youtube_oauth_api or YouTubeOAuthRestApi(),
+            interval=youtube_oauth_validation_interval,
+        )
+        token_guard = youtube_guard
+        sender = YouTubeLiveChatSender(
+            live_chat_id=youtube_live_chat_id or youtube_chat_id_state.current,
+            access_token=youtube_guard.access_token,
+            insert=youtube_insert,
+            on_disarm=youtube_guard.disarm,
+            timeout_seconds=config.youtube.request_timeout_seconds,
         )
 
     # -- Determine styles to build Reactors for --------------------------------
@@ -1143,6 +1213,9 @@ def build_agent(
             target=public_target,
             event_recorder=event_recorder,
             sender=sender,
+            live_capability_ready=not isinstance(
+                token_guard, YouTubeLiveCapabilityGuard
+            ),
             echo=False,
         )
         for style in styles_to_build:
@@ -1186,6 +1259,9 @@ def build_agent(
             target=public_target,
             event_recorder=event_recorder,
             sender=sender,
+            live_capability_ready=not isinstance(
+                token_guard, YouTubeLiveCapabilityGuard
+            ),
         )
 
     # -- Build N Reactors (one per active style) --------------------------------
@@ -1357,6 +1433,7 @@ def build_agent(
             os_capture_audio_source=os_capture_audio_source,
             os_capture_video_source=os_capture_video_source,
             youtube_api=youtube_api,
+            youtube_live_chat_id_observer=youtube_chat_id_state.update,
         )
 
     # NB: `config.retention` e `config.auto_memory` sono ACCETTATI ma INERTI:

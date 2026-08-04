@@ -79,6 +79,7 @@ def test_twitch_and_youtube_translate_identifiers_to_typed_targets():
     youtube = YouTubeSendConfig(
         mode="live",
         allowed_video_ids=("https://youtube.com/watch?v=abcDEF123_-",),
+        approved_channel_id="UCabcdefghijklmnopqrstuv",
     )
 
     assert twitch.allowed_targets == (PublicTarget("twitch", "example"),)
@@ -137,7 +138,7 @@ def test_youtube_shadow_displays_and_consumes_product_budget(tmp_path, monkeypat
     assert agent.router.last_decision.reason == "budget_minute"
 
 
-def test_youtube_live_is_armed_but_cannot_promote_without_sender_capability(
+def test_youtube_live_builds_lazy_sender_but_cannot_promote_before_validation(
     tmp_path, monkeypatch
 ):
     agent = _youtube_agent(
@@ -147,6 +148,7 @@ def test_youtube_live_is_armed_but_cannot_promote_without_sender_capability(
             "send:\n"
             "  mode: live\n"
             "  allowed_video_ids: [abcDEF123_-]\n"
+            "  approved_channel_id: UCabcdefghijklmnopqrstuv\n"
             "  max_per_minute: 10\n"
             "  max_per_hour: 10"
         ),
@@ -158,11 +160,12 @@ def test_youtube_live_is_armed_but_cannot_promote_without_sender_capability(
 
     assert before.mode is PublicSendMode.LIVE
     assert before.promoted is False
+    assert before.live_capability is False
     assert accepted is False
     assert decision.action == "shadow"
     assert decision.reason == "not_promoted"
-    assert agent.sender is None
-    assert agent.token_guard is None
+    assert agent.sender is not None
+    assert agent.token_guard is not None
 
     result = SendCommandSurface(agent.send_policy).promote()
     assert result.accepted is False
@@ -199,7 +202,12 @@ def test_youtube_live_requires_the_explicit_video_id_in_the_allow_list(tmp_path)
     with pytest.raises(ConfigError, match="youtube.send.allowed_video_ids"):
         _workspace(
             tmp_path,
-            send="send:\n  mode: live\n  allowed_video_ids: [zzzZZZ999_-]",
+            send=(
+                "send:\n"
+                "  mode: live\n"
+                "  allowed_video_ids: [zzzZZZ999_-]\n"
+                "  approved_channel_id: UCabcdefghijklmnopqrstuv"
+            ),
         )
 
 

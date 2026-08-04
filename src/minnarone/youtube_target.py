@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_CHANNEL_ID_RE = re.compile(r"^UC[A-Za-z0-9_-]{22}$")
 _YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com"})
 
 
@@ -64,3 +65,20 @@ class YouTubeVideoId:
         if len(parts) == 2 and parts[0] == "live":
             return cls(parts[1])
         raise ValueError("unsupported YouTube target path")
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeChannelId:
+    """One stable YouTube channel identity, never a mutable display name."""
+
+    value: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, str) or not _CHANNEL_ID_RE.fullmatch(self.value):
+            raise ValueError("YouTube channel ID must be UC plus 22 safe characters")
+
+    @classmethod
+    def parse(cls, value: object) -> YouTubeChannelId:
+        if not isinstance(value, str):
+            raise ValueError("YouTube channel ID must be a string")
+        return cls(value.strip())

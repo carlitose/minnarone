@@ -79,6 +79,45 @@ def test_summarization_prompt_includes_perception_content(tmp_path):
     assert "enkk" in llm.last_prompt
 
 
+def test_summarizer_filters_youtube_self_echo_by_stable_id_but_keeps_namesake(
+    tmp_path,
+):
+    store = PerceptionStore(tmp_path / "perceptions.jsonl")
+    llm = FakeLLMProvider(message="riassunto")
+    identity = "UCabcdefghijklmnopqrstuv"
+    summarizer = Summarizer(llm=llm, store=store, bot_identity=identity)
+    store.append(
+        Perception(
+            ts=1.0,
+            source=Source.CHAT,
+            type="msg",
+            text="SELF-ECHO-UNICO",
+            speaker="Display Name Changed",
+            speaker_id=identity,
+        )
+    )
+    store.append(
+        Perception(
+            ts=2.0,
+            source=Source.CHAT,
+            type="msg",
+            text="NAMESAKE-TERZO",
+            speaker="Display Name Changed",
+            speaker_id="UCzyxwvutsrqponmlkjihgfe",
+        )
+    )
+
+    asyncio.run(summarizer.summarize())
+
+    assert llm.last_prompt is not None
+    assert "SELF-ECHO-UNICO" not in llm.last_prompt
+    assert "NAMESAKE-TERZO" in llm.last_prompt
+    assert [item.text for item in store.tail(2)] == [
+        "SELF-ECHO-UNICO",
+        "NAMESAKE-TERZO",
+    ]
+
+
 def test_summarizer_prompt_observation_has_context_label(tmp_path):
     store = PerceptionStore(tmp_path / "perceptions.jsonl")
     chat = ChatPerceiver(store)

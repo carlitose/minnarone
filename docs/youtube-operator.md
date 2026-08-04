@@ -1,22 +1,21 @@
-# YouTube Live public-safety shadow
+# YouTube Live chat: shadow e invio attended
 
-This guide covers two production-safe rehearsal paths for one explicit live
-video. Chat-only shadow uses read-only chat ingestion and the existing
-`ChatPerceiver`; the optional full shadow adds local audio and screen
-perception from a visible Chrome player. Candidate reactions remain local as
-`[SHADOW]` behind the same product safety floor used by Twitch. Neither path
-has OAuth, a sender, or an insert endpoint. A `live` configuration only arms
-the policy shape for a later sender ticket; this runtime cannot promote without
-an explicit sender capability and transport. The chat-only configuration has
-no audio or video, while the optional full shadow obtains both locally through
-operator-managed OS capture.
+This guide covers two rehearsal paths for one explicit live video. Chat-only
+shadow uses read-only chat ingestion and the existing `ChatPerceiver`; the
+optional full shadow adds local audio and screen perception from a visible
+Chrome player. Both keep candidate reactions local as `[SHADOW]` behind the
+same public-safety floor used by Twitch. The optional attended sender uses that
+same floor: its only write owner is `YouTubeLiveChatSender`, which performs one
+`liveChatMessages.insert` attempt per candidate with no retry or stale queue.
+Every live session starts in shadow and requires a fresh manual TUI promotion.
+The full-shadow media path remains operator-managed OS capture.
 
 The contract follows the ticket-01 platform research and the bounded ticket-03
 read smoke: `videos.list(part=liveStreamingDetails)` resolves the ephemeral
 `activeLiveChatId`; `liveChatMessages.list` advances with `nextPageToken` and
 waits at least the returned `pollingIntervalMillis` before the next request.
 
-## Prerequisites and API key
+## Read prerequisite and API key
 
 Create or select a Google Cloud project, enable **YouTube Data API v3**, and
 create an API key under **APIs & Services → Credentials**. Restrict the key to
@@ -38,7 +37,8 @@ The cloud-console key options do not change Minnarone's runtime shape:
 - **Application restriction:** use the restriction supported by the machine
   and deployment; do not disable an existing restriction merely to make a
   smoke pass.
-- **OAuth consent screen / OAuth client:** not needed for this chat-only ticket.
+- **OAuth consent screen / OAuth client:** not needed for shadow; see the
+  attended live section below.
 - **Service account:** not used and not a YouTube public chat identity.
 
 ## Configuration
@@ -75,7 +75,8 @@ commentator:
 ```
 
 The `youtube` section is strict. Its `send` block is only a neutral safety
-policy; it contains no OAuth token, sender, endpoint, audio, or video field.
+policy plus an optional non-secret approved channel ID; it contains no OAuth
+token, client secret, refresh token, endpoint, audio, or video field.
 `max_results` follows the documented 200–2000 range. The dedup window is
 bounded and keyed by `(liveChatId, messageId)`; it does not deduplicate equal
 text or display names.
@@ -95,13 +96,50 @@ YouTube modes behave as follows:
 - `off`: drop the candidate and record reason `mode_off`;
 - `shadow` (default): show/record `[SHADOW]` and consume the configured minute
   and hour product budgets;
-- `live`: require the explicit `video_id` in `allowed_video_ids`, but start
-  unpromoted in shadow. Ticket 06 has no sender capability, so a promotion is
-  rejected and no credential or transport is constructed.
+- `live`: require the explicit `video_id` in `allowed_video_ids` and one
+  `approved_channel_id`. Construction is lazy and starts unpromoted. At runtime
+  the OAuth guard must refresh the token, verify an accepted YouTube scope,
+  resolve `channels.list(part=id,mine=true)` to that exact stable channel ID,
+  and remain outside its expiry margin before the TUI can promote.
 
 The kill-switch, failure counter, snapshots, reason codes and transition events
-use the platform-neutral policy. Failed turns are never retried or queued; an
-unexpected exception is not reclassified as a sender failure.
+use the platform-neutral policy. Every candidate is single-attempt: failed
+turns are never retried or queued; an unexpected exception is not reclassified
+as a sender failure.
+
+## Attended live OAuth setup
+
+OAuth acquisition is an operator step outside Minnarone: the runtime never
+opens Chrome, starts an authorization callback, handles an auth code, or writes
+credentials. In Google Cloud, configure a consent screen and an OAuth client,
+then obtain offline consent for either
+`https://www.googleapis.com/auth/youtube.force-ssl` or
+`https://www.googleapis.com/auth/youtube`. Keep the resulting client ID,
+client secret, and refresh token only in the local gitignored `.env`, under
+`YOUTUBE_OAUTH_CLIENT_ID`, `YOUTUBE_OAUTH_CLIENT_SECRET`, and
+`YOUTUBE_OAUTH_REFRESH_TOKEN`. Never place their values in YAML, commands,
+screenshots, tickets, logs, fixtures, or run artifacts.
+
+The approved identity is the stable `UC...` channel ID returned for that OAuth
+account, not its display name. Arm exactly one target and identity:
+
+```yaml
+youtube:
+  video_id: abcDEF123_-
+  send:
+    mode: live
+    allowed_video_ids: [abcDEF123_-]
+    approved_channel_id: UCabcdefghijklmnopqrstuv
+    max_per_minute: 1
+    max_per_hour: 20
+    failure_threshold: 3
+```
+
+The sample ID is synthetic and cannot authorize a real account. Replacing it
+is an attended operator decision. A scope mismatch, identity mismatch, expiry,
+revocation, HTTP 401, or forbidden insert permanently disarms live for that
+process. Quota exhaustion, rate limiting, ended/disabled/not-found chat,
+invalid message, and temporary provider failure retain distinct safe reasons.
 
 ## Validate and run
 
@@ -112,9 +150,10 @@ uv run python -m minnarone path/to/youtube.local.yaml --check
 ```
 
 `--check` is offline and lazy: it validates the config, local memory/prompts,
-and presence of `YOUTUBE_API_KEY`, but it does not call YouTube, discover a
-chat, or prove quota/network availability. Start an attended console or TUI
-shadow run only after that succeeds:
+and presence of `YOUTUBE_API_KEY`, but it does not even load the three OAuth
+write values, call YouTube, discover a chat, refresh a token, or open a browser.
+`off` and `shadow` likewise exclude the OAuth variables from dotenv loading.
+Start an attended console or TUI shadow run only after that succeeds:
 
 ```bash
 uv run python -m minnarone path/to/youtube.local.yaml
@@ -122,9 +161,10 @@ uv run python -m minnarone path/to/youtube.local.yaml --tui
 ```
 
 Console candidates have the `[SHADOW]` prefix. Under the TUI they appear with
-the same marker in the `MINNARONE` panel and do not leak through stdout. The
-TUI can display the shared policy snapshot and transition controls, but no
-configuration in this ticket can successfully promote or construct a sender.
+the same marker in the `MINNARONE` panel and do not leak through stdout. Only
+the attended TUI exposes promotion: press `p` twice within three seconds after
+capability validation, and `k` once for the kill-switch. Console live config
+remains shadow because it has no interactive promotion action.
 
 Stop with `Ctrl-C`. Server pacing waits are interruptible. Requests have a
 finite timeout and temporary/rate failures use bounded, jittered exponential backoff;
@@ -269,16 +309,18 @@ The reader keeps these states distinct in diagnostics/tests:
 
 Only `textMessageEvent` becomes a canonical `RawEvent(channel="chat")`.
 Minnarone carries the public display name plus stable message/author/chat IDs
-at the adapter boundary, then the existing `ChatPerceiver` stores only the
-text and speaker used by the current core. Profile-image URLs and raw Google
-payloads do not enter prompts or perceptions.
+at the adapter boundary. `ChatPerceiver` persists the author channel ID only as
+`speaker_id`; it is never rendered in prompts. Own echoes remain in the
+perception log but the Senser/Reactor compare this stable ID—not the display
+name—so they create no trigger and do not appear as third-party prompt context.
+Profile-image URLs and raw Google payloads do not enter prompts or perceptions.
 
 ## Authority, disclosure, and artifacts
 
 A public YouTube live does not authorize public send. Reconfirm authority for
-the exact target before each rehearsal. This read-only decision also does not
-authorize a later OAuth identity or message insertion. Those remain separate
-attended gates.
+the exact target and approved OAuth identity before each rehearsal. Read access,
+OAuth provisioning, capability validation, and manual promotion are separate
+attended gates; none silently grants the next.
 
 Use an honest AI disclosure for any future public Minnarone channel/profile.
 `disclosure.announce_ai: true` keeps the local prompt stance explicit, but it is

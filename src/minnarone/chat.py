@@ -23,7 +23,12 @@ class ChatPerceiver:
         self._store = store
 
     def perceive(
-        self, text: str, *, speaker: str | None = None, ts: float | None = None
+        self,
+        text: str,
+        *,
+        speaker: str | None = None,
+        speaker_id: str | None = None,
+        ts: float | None = None,
     ) -> Perception:
         """Scrive `text` come `Perception(chat/msg)` nello store e la restituisce."""
         perception = Perception(
@@ -32,6 +37,7 @@ class ChatPerceiver:
             type="msg",
             text=text,
             speaker=speaker,
+            speaker_id=speaker_id,
         )
         self._store.append(perception)
         return perception
@@ -50,13 +56,16 @@ class ChatPerceiver:
         if isinstance(payload, dict):
             text = payload.get("text")
             speaker = payload.get("speaker")
+            speaker_id = payload.get("author_channel_id")
         else:
             text = payload if isinstance(payload, str) else None
             speaker = None
+            speaker_id = None
         if not isinstance(text, str) or not text:
             return None
         return self.perceive(
             text,
             speaker=speaker if isinstance(speaker, str) else None,
+            speaker_id=speaker_id if isinstance(speaker_id, str) else None,
             ts=event.ts,
         )

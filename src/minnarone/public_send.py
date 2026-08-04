@@ -310,7 +310,20 @@ class PublicSendPolicy:
         """Permanently disarm live sending for this session after auth failure."""
         with self._lock:
             self._live_disabled = True
+            self._live_capability = False
             self.engage_kill_switch()
+
+    def enable_live_capability(self) -> bool:
+        """Mark a startup capability validated without promoting public send.
+
+        A permanently disabled session cannot be re-enabled. The operator must
+        still invoke ``promote()`` after this transition.
+        """
+        with self._lock:
+            if self._live_disabled or self._config.mode is not PublicSendMode.LIVE:
+                return False
+            self._live_capability = True
+            return True
 
     def record_failure(self) -> None:
         """Registra un fallimento d'invio consecutivo; auto-degrada alla soglia.
