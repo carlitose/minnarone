@@ -52,6 +52,15 @@ class SendCommandSurface:
         with self._lock:
             accepted = self._policy.promote()
             if not accepted:
+                snapshot = getattr(self._policy, "snapshot", lambda: None)()
+                if (
+                    getattr(getattr(snapshot, "mode", None), "value", None) == "live"
+                    and getattr(snapshot, "live_capability", True) is False
+                ):
+                    return TransitionResult(
+                        accepted=False,
+                        reason="live sender capability is unavailable",
+                    )
                 return TransitionResult(
                     accepted=False,
                     reason="config does not arm live",

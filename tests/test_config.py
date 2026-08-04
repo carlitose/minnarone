@@ -245,11 +245,17 @@ def test_youtube_adapter_rejects_sibling_twitch_live_send_section(tmp_path):
         Config.load(_write(tmp_path, bad))
 
 
-def test_youtube_section_is_strict_and_has_no_send_or_media_fields(tmp_path):
-    for forbidden in ("send: {}", "oauth_token: secret", "audio: true"):
+def test_youtube_section_is_strict_and_has_no_credentials_or_media_fields(tmp_path):
+    for forbidden in ("oauth_token: secret", "audio: true"):
         bad = YOUTUBE_YAML.replace("  max_results: 500", f"  {forbidden}")
         with pytest.raises(ConfigError, match="unknown youtube fields"):
             Config.load(_write(tmp_path, bad))
+
+    bad_send = YOUTUBE_YAML.replace(
+        "  max_results: 500", "  send:\n    insert_endpoint: forbidden"
+    )
+    with pytest.raises(ConfigError, match="unknown youtube.send fields"):
+        Config.load(_write(tmp_path, bad_send))
 
 
 @pytest.mark.parametrize(

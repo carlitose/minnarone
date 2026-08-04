@@ -1,4 +1,4 @@
-"""PublicSendPolicy: modulo puro di decisione sull'invio pubblico (slice 02).
+"""Platform-neutral public output safety policy.
 
 È il cuore della sicurezza dell'output pubblico. Dato un messaggio candidato,
 il canale bersaglio e l'istante corrente (clock INIETTATO), decide se il
@@ -27,10 +27,8 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from threading import RLock
-
-from .config import TwitchSendConfig, TwitchSendMode
-from .twitch_media import normalize_twitch_channel
 
 # --- Vocabolario chiuso delle azioni e dei motivi --------------------------
 
@@ -53,6 +51,66 @@ _MINUTE_WINDOW = 60.0
 _HOUR_WINDOW = 3600.0
 
 
+class PublicSendMode(Enum):
+    """Configured public-output posture for one platform target."""
+
+    OFF = "off"
+    SHADOW = "shadow"
+    LIVE = "live"
+
+
+@dataclass(frozen=True, slots=True)
+class PublicTarget:
+    """Stable, namespaced identifier authorized for public output."""
+
+    platform: str
+    identifier: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.platform, str) or not self.platform.strip():
+            raise ValueError("public target platform must be a non-empty string")
+        if not isinstance(self.identifier, str) or not self.identifier.strip():
+            raise ValueError("public target identifier must be a non-empty string")
+        object.__setattr__(self, "platform", self.platform.strip().lower())
+        object.__setattr__(self, "identifier", self.identifier.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class PublicSendConfig:
+    """Neutral inputs consumed by :class:`PublicSendPolicy`."""
+
+    mode: PublicSendMode = PublicSendMode.OFF
+    allowed_targets: tuple[PublicTarget, ...] = ()
+    max_per_minute: int = 1
+    max_per_hour: int = 20
+    failure_threshold: int = 3
+
+    def __post_init__(self) -> None:
+        mode = self.mode
+        if isinstance(mode, str):
+            try:
+                mode = PublicSendMode(mode)
+            except ValueError as exc:
+                raise ValueError(
+                    "public send mode must be off, shadow, or live"
+                ) from exc
+        if not isinstance(mode, PublicSendMode):
+            raise TypeError("public send mode must be a PublicSendMode")
+        object.__setattr__(self, "mode", mode)
+
+        targets = self.allowed_targets
+        if not isinstance(targets, (list, tuple)):
+            raise TypeError("allowed_targets must be a list of PublicTarget values")
+        if not all(isinstance(target, PublicTarget) for target in targets):
+            raise TypeError("allowed_targets must contain only PublicTarget values")
+        object.__setattr__(self, "allowed_targets", tuple(targets))
+
+        for name in ("max_per_minute", "max_per_hour", "failure_threshold"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be an integer >= 1")
+
+
 @dataclass(frozen=True, slots=True)
 class SendDecision:
     """Esito immutabile della decisione su un messaggio pubblico.
@@ -73,30 +131,44 @@ class PolicySnapshot:
     Solo dati semplici: nessun riferimento allo stato mutabile interno.
     """
 
-    mode: TwitchSendMode
+    mode: PublicSendMode
     promoted: bool
     kill_switch: bool
     consecutive_failures: int
     minute_remaining: int
     hour_remaining: int
     last_decision: SendDecision | None
+    live_capability: bool = True
 
 
 class PublicSendPolicy:
-    """Decisione pura e deterministica sull'invio pubblico in chat Twitch."""
+    """Pure public-output decision state shared by platform adapters."""
 
     def __init__(
         self,
-        config: TwitchSendConfig,
+        config: object,
         *,
         clock: Callable[[], float],
+        live_capability: bool = True,
     ) -> None:
-        if not isinstance(config, TwitchSendConfig):
-            raise TypeError("config must be a TwitchSendConfig")
+        required = (
+            "mode",
+            "allowed_targets",
+            "max_per_minute",
+            "max_per_hour",
+            "failure_threshold",
+        )
+        if not isinstance(config, PublicSendConfig) and not all(
+            hasattr(config, name) for name in required
+        ):
+            raise TypeError("config must implement the public send settings contract")
         if not callable(clock):
             raise TypeError("clock must be a callable () -> float")
+        if not isinstance(live_capability, bool):
+            raise TypeError("live_capability must be boolean")
         self._config = config
         self._clock = clock
+        self._live_capability = live_capability
         self._lock = RLock()
         # Ogni sessione parte in shadow: `live` in config ARMA la capacità, ma
         # non promuove nulla finché l'operatore non chiama `promote()`.
@@ -112,8 +184,8 @@ class PublicSendPolicy:
 
     # -- Decisione ----------------------------------------------------------
 
-    def decide(self, message: str, channel: str) -> SendDecision:
-        """Decide se inviare, mettere in shadow o scartare `message` su `channel`.
+    def decide(self, message: str, target: PublicTarget | str) -> SendDecision:
+        """Decide whether to send, shadow, or drop for ``target``.
 
         Passi (puri, l'unico effetto è aggiornare il budget su send/shadow):
 
@@ -127,7 +199,7 @@ class PublicSendPolicy:
             now = self._clock()
             self._prune(now)
 
-            action, reason = self._intended(channel)
+            action, reason = self._intended(self._coerce_target(target))
 
             if action == ACTION_DROP:
                 return self._remember(SendDecision(action, reason))
@@ -141,14 +213,14 @@ class PublicSendPolicy:
             self._hour_events.append(now)
             return self._remember(SendDecision(action, reason))
 
-    def _intended(self, channel: str) -> tuple[str, str]:
+    def _intended(self, target: PublicTarget | None) -> tuple[str, str]:
         """Azione/motivo voluti da modo e stato, prima del vincolo di budget."""
         mode = self._config.mode
-        if mode is TwitchSendMode.OFF:
+        if mode is PublicSendMode.OFF:
             # In pratica `off` non arriva alla policy (selezione nel router),
             # ma qui deve comunque rispondere in sicurezza.
             return ACTION_DROP, REASON_MODE_OFF
-        if mode is TwitchSendMode.SHADOW:
+        if mode is PublicSendMode.SHADOW:
             # In shadow non si controlla l'allow-list: non si invia mai davvero.
             return ACTION_SHADOW, REASON_OK
         # mode is LIVE: shadow finché non promosso, di nuovo shadow se il
@@ -159,18 +231,28 @@ class PublicSendPolicy:
             return ACTION_SHADOW, REASON_NOT_PROMOTED
         # Promosso e senza kill-switch: invio reale, ma allow-list ricontrollata
         # al momento della decisione (difesa in profondità).
-        if not self._channel_allowed(channel):
+        if not self._target_allowed(target):
             return ACTION_DROP, REASON_CHANNEL_NOT_ALLOWED
         return ACTION_SEND, REASON_OK
 
-    def _channel_allowed(self, channel: str) -> bool:
-        """True se `channel` (normalizzato) è nell'allow-list configurata."""
+    def _coerce_target(self, target: PublicTarget | str) -> PublicTarget | None:
+        if isinstance(target, PublicTarget):
+            return target
+        # Explicit compatibility boundary for existing Twitch string callers.
+        # The platform config owns normalization; the neutral policy imports no
+        # platform parser.
+        coerce = getattr(self._config, "coerce_target", None)
+        if not callable(coerce):
+            return None
         try:
-            normalized = normalize_twitch_channel(channel)
-        except (AttributeError, ValueError):
-            # Un canale non normalizzabile non può essere autorizzato.
-            return False
-        return normalized in self._config.allowed_channels
+            result = coerce(target)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return result if isinstance(result, PublicTarget) else None
+
+    def _target_allowed(self, target: PublicTarget | None) -> bool:
+        """True only for a typed target in the configured allow-list."""
+        return target is not None and target in self._config.allowed_targets
 
     def _budget_block(self) -> str | None:
         """Motivo di budget se una finestra è esaurita, altrimenti None."""
@@ -203,7 +285,11 @@ class PublicSendPolicy:
         kill-switch (nessun re-enable silenzioso).
         """
         with self._lock:
-            if self._config.mode is not TwitchSendMode.LIVE or self._live_disabled:
+            if (
+                self._config.mode is not PublicSendMode.LIVE
+                or self._live_disabled
+                or not self._live_capability
+            ):
                 return False
             self._promoted = True
             self._kill_switch = False
@@ -261,4 +347,5 @@ class PublicSendPolicy:
                 minute_remaining=self._config.max_per_minute - len(self._minute_events),
                 hour_remaining=self._config.max_per_hour - len(self._hour_events),
                 last_decision=self._last_decision,
+                live_capability=self._live_capability,
             )

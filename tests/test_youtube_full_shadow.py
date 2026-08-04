@@ -109,7 +109,7 @@ def _workspace(tmp_path, *, audio: bool = True, video: bool = True):
     config.write_text(
         textwrap.dedent(
             f"""
-            mode: private
+            mode: public
             soul_path: {soul}
             facts_dir: {facts}
             adapter: youtube
