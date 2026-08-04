@@ -161,6 +161,222 @@ def test_periodic_revocation_disarms_once_and_stops_monitor():
     assert api.refresh_calls == 2
 
 
+def test_external_disarm_while_monitor_sleeps_prevents_another_refresh():
+    store = MemoryCredentialStore()
+    api = FakeOAuthApi(
+        tokens=[_token(expires_in=20)],
+        channels=[APPROVED_CHANNEL_ID],
+    )
+    clock = [0.0]
+    callbacks = 0
+
+    async def run() -> None:
+        nonlocal callbacks
+        sleeping = asyncio.Event()
+        release = asyncio.Event()
+
+        async def sleep(delay: float) -> None:
+            clock[0] += delay
+            sleeping.set()
+            await release.wait()
+
+        async def on_send_invalid() -> None:
+            nonlocal callbacks
+            callbacks += 1
+
+        guard = YouTubeLiveCapabilityGuard(
+            approved_channel_id=APPROVED_CHANNEL_ID,
+            credential_store=store,
+            api=api,
+            interval=5.0,
+            clock=lambda: clock[0],
+            sleep=sleep,
+        )
+        assert await guard.validate_startup() is True
+        monitor = asyncio.create_task(guard.monitor(on_send_invalid=on_send_invalid))
+        await sleeping.wait()
+        guard.disarm("auth_revoked")
+        release.set()
+        await monitor
+
+        assert guard.send_enabled is False
+        with pytest.raises(YouTubeCapabilityError, match="auth_revoked"):
+            guard.access_token()
+
+    asyncio.run(run())
+
+    assert callbacks == 0
+    assert store.calls == api.refresh_calls == api.channel_calls == 1
+
+
+def test_external_disarm_during_refresh_cannot_restore_capability():
+    store = MemoryCredentialStore()
+    callbacks = 0
+
+    async def run() -> tuple[YouTubeLiveCapabilityGuard, FakeOAuthApi]:
+        nonlocal callbacks
+        refreshing = asyncio.Event()
+        release = asyncio.Event()
+
+        class BlockingRefreshApi(FakeOAuthApi):
+            async def refresh(self, credentials):
+                if self.refresh_calls == 1:
+                    refreshing.set()
+                    await release.wait()
+                return await super().refresh(credentials)
+
+        api = BlockingRefreshApi(
+            tokens=[_token(expires_in=20), _token(expires_in=20)],
+            channels=[APPROVED_CHANNEL_ID],
+        )
+        clock = [0.0]
+
+        async def sleep(delay: float) -> None:
+            clock[0] += delay
+
+        async def on_send_invalid() -> None:
+            nonlocal callbacks
+            callbacks += 1
+
+        guard = YouTubeLiveCapabilityGuard(
+            approved_channel_id=APPROVED_CHANNEL_ID,
+            credential_store=store,
+            api=api,
+            interval=5.0,
+            clock=lambda: clock[0],
+            sleep=sleep,
+        )
+        assert await guard.validate_startup() is True
+        monitor = asyncio.create_task(guard.monitor(on_send_invalid=on_send_invalid))
+        await refreshing.wait()
+        guard.disarm("auth_revoked")
+        release.set()
+        await monitor
+        return guard, api
+
+    guard, api = asyncio.run(run())
+
+    assert guard.send_enabled is False
+    with pytest.raises(YouTubeCapabilityError, match="auth_revoked"):
+        guard.access_token()
+    assert callbacks == 0
+    assert store.calls == api.refresh_calls == 2
+    assert api.channel_calls == 1
+
+
+def test_access_during_blocked_refresh_disarms_an_expired_token():
+    store = MemoryCredentialStore()
+    callbacks = 0
+
+    async def run() -> tuple[YouTubeLiveCapabilityGuard, FakeOAuthApi]:
+        nonlocal callbacks
+        refreshing = asyncio.Event()
+        release = asyncio.Event()
+
+        class BlockingRefreshApi(FakeOAuthApi):
+            async def refresh(self, credentials):
+                if self.refresh_calls == 1:
+                    refreshing.set()
+                    await release.wait()
+                return await super().refresh(credentials)
+
+        api = BlockingRefreshApi(
+            tokens=[_token(expires_in=20), _token(expires_in=20)],
+            channels=[APPROVED_CHANNEL_ID],
+        )
+        clock = [0.0]
+
+        async def sleep(delay: float) -> None:
+            clock[0] += delay
+
+        async def on_send_invalid() -> None:
+            nonlocal callbacks
+            callbacks += 1
+
+        guard = YouTubeLiveCapabilityGuard(
+            approved_channel_id=APPROVED_CHANNEL_ID,
+            credential_store=store,
+            api=api,
+            interval=5.0,
+            clock=lambda: clock[0],
+            sleep=sleep,
+        )
+        assert await guard.validate_startup() is True
+        monitor = asyncio.create_task(guard.monitor(on_send_invalid=on_send_invalid))
+        await refreshing.wait()
+        clock[0] = 20.0
+        with pytest.raises(YouTubeCapabilityError) as raised:
+            guard.access_token()
+        assert raised.value.reason == "token_expired"
+        release.set()
+        await monitor
+        return guard, api
+
+    guard, api = asyncio.run(run())
+
+    assert guard.send_enabled is False
+    with pytest.raises(YouTubeCapabilityError) as raised:
+        guard.access_token()
+    assert raised.value.reason == "token_expired"
+    assert callbacks == 0
+    assert store.calls == api.refresh_calls == 2
+    assert api.channel_calls == 1
+
+
+def test_external_disarm_during_identity_lookup_cannot_restore_capability():
+    store = MemoryCredentialStore()
+    callbacks = 0
+
+    async def run() -> tuple[YouTubeLiveCapabilityGuard, FakeOAuthApi]:
+        nonlocal callbacks
+        resolving_identity = asyncio.Event()
+        release = asyncio.Event()
+
+        class BlockingIdentityApi(FakeOAuthApi):
+            async def get_my_channel_id(self, access_token):
+                if self.channel_calls == 1:
+                    resolving_identity.set()
+                    await release.wait()
+                return await super().get_my_channel_id(access_token)
+
+        api = BlockingIdentityApi(
+            tokens=[_token(expires_in=20), _token(expires_in=20)],
+            channels=[APPROVED_CHANNEL_ID, APPROVED_CHANNEL_ID],
+        )
+        clock = [0.0]
+
+        async def sleep(delay: float) -> None:
+            clock[0] += delay
+
+        async def on_send_invalid() -> None:
+            nonlocal callbacks
+            callbacks += 1
+
+        guard = YouTubeLiveCapabilityGuard(
+            approved_channel_id=APPROVED_CHANNEL_ID,
+            credential_store=store,
+            api=api,
+            interval=5.0,
+            clock=lambda: clock[0],
+            sleep=sleep,
+        )
+        assert await guard.validate_startup() is True
+        monitor = asyncio.create_task(guard.monitor(on_send_invalid=on_send_invalid))
+        await resolving_identity.wait()
+        guard.disarm("auth_revoked")
+        release.set()
+        await monitor
+        return guard, api
+
+    guard, api = asyncio.run(run())
+
+    assert guard.send_enabled is False
+    with pytest.raises(YouTubeCapabilityError, match="auth_revoked"):
+        guard.access_token()
+    assert callbacks == 0
+    assert store.calls == api.refresh_calls == api.channel_calls == 2
+
+
 def test_rest_api_uses_refresh_and_mine_identity_contracts_with_fake_http():
     calls: list[dict[str, object]] = []
 

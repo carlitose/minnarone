@@ -177,6 +177,7 @@ def test_live_build_is_lazy_then_validates_before_manual_promotion(tmp_path):
     assert store.calls == 0
     assert agent.sender is not None
     assert agent.token_guard is not None
+    assert agent.summarizer._bot_identity == APPROVED_CHANNEL_ID
     assert agent.send_policy.promote() is False
 
     async def run() -> None:

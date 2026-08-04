@@ -23,7 +23,7 @@ import asyncio
 
 from .cadence import CadenceLoop
 from .llm import LLMError, LLMProvider
-from .perception import Perception, Source
+from .perception import Perception, Source, matches_speaker_identity
 from .prompt_observation import prompt_observation_context
 from .prompt_source import PromptSet, load_summarizer_prompt_set
 from .store import PerceptionStore
@@ -59,10 +59,12 @@ class Summarizer:
         store: PerceptionStore,
         window: int = _DEFAULT_WINDOW,
         prompt_set: PromptSet | None = None,
+        bot_identity: str | None = None,
     ) -> None:
         self._llm = llm
         self._store = store
         self._window = window
+        self._bot_identity = bot_identity
         # Prompt-set del summarizer (default impacchettati + override). Come per
         # `PromptBuilder`, se non iniettato si caricano SOLO i default nel wheel;
         # `app.py` inietta il set costruito da `config.prompts_dir`. La
@@ -143,7 +145,7 @@ class Summarizer:
         precedente resta. In caso di successo aggiorna `current_summary` e lo
         restituisce.
         """
-        perceptions = self._store.tail(self._window)
+        perceptions = self._filter_self_perceptions(self._store.tail(self._window))
         if not perceptions:
             return self._summary
         prompt = self._build_prompt(perceptions)
@@ -151,6 +153,21 @@ class Summarizer:
             result = await self._llm.complete(prompt)
         self._summary = result.message
         return self._summary
+
+    def _filter_self_perceptions(
+        self, perceptions: list[Perception]
+    ) -> list[Perception]:
+        """Exclude the bot's chat echo from summaries while preserving the store."""
+        if self._bot_identity is None:
+            return perceptions
+        return [
+            perception
+            for perception in perceptions
+            if not (
+                perception.source is Source.CHAT
+                and matches_speaker_identity(perception, self._bot_identity)
+            )
+        ]
 
     async def run(self, *, interval: float = 30.0) -> None:
         """Esegue il riassunto su cadenza finché `stop()` non viene chiamato.

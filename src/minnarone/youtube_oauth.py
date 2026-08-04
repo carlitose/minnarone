@@ -247,6 +247,7 @@ class YouTubeLiveCapabilityGuard:
         self._clock = clock
         self._sleep = sleep
         self._access_token: str | None = None
+        self._expires_at: float | None = None
         self._deadline: float | None = None
         self._disabled = False
         self._validated = False
@@ -254,9 +255,17 @@ class YouTubeLiveCapabilityGuard:
 
     @property
     def send_enabled(self) -> bool:
-        return self._validated and not self._disabled and self._access_token is not None
+        return (
+            self._validated
+            and not self._disabled
+            and self._access_token is not None
+            and self._expires_at is not None
+            and self._clock() < self._expires_at
+        )
 
     def access_token(self) -> str:
+        if self._expires_at is not None and self._clock() >= self._expires_at:
+            self.disarm("token_expired")
         if not self.send_enabled or self._access_token is None:
             raise YouTubeCapabilityError(self._failure_reason)
         return self._access_token
@@ -266,6 +275,7 @@ class YouTubeLiveCapabilityGuard:
         self._disabled = True
         self._validated = False
         self._access_token = None
+        self._expires_at = None
         self._deadline = None
         self._failure_reason = safe_reason
 
@@ -273,12 +283,14 @@ class YouTubeLiveCapabilityGuard:
         if self._disabled:
             return False
         try:
-            await self._refresh_and_validate(anchor=self._clock())
+            validated = await self._refresh_and_validate(anchor=self._clock())
         except YouTubeCapabilityError as exc:
+            if self._disabled:
+                return False
             self.disarm(exc.reason)
             logger.warning("YouTube live sending disabled: %s", exc)
             return False
-        return True
+        return validated
 
     async def monitor(
         self,
@@ -291,12 +303,32 @@ class YouTubeLiveCapabilityGuard:
             deadline = self._deadline
             try:
                 await self._sleep(max(0.0, deadline - self._clock()))
-                await self._refresh_and_validate(anchor=deadline)
+                if (
+                    not self._disabled
+                    and self._expires_at is not None
+                    and self._clock() >= self._expires_at
+                ):
+                    self.disarm("token_expired")
+                    logger.warning(
+                        "YouTube live sending disabled: %s",
+                        YouTubeCapabilityError("token_expired"),
+                    )
+                    await on_send_invalid()
+                    return
+                if not self.send_enabled or self._deadline is None:
+                    return
+                validated = await self._refresh_and_validate(anchor=deadline)
             except YouTubeCapabilityError as exc:
+                if self._disabled:
+                    return
                 reason = exc.reason
             except Exception:
+                if self._disabled:
+                    return
                 reason = "oauth_failed"
             else:
+                if not validated:
+                    return
                 continue
             self.disarm(reason)
             logger.warning(
@@ -306,9 +338,15 @@ class YouTubeLiveCapabilityGuard:
             await on_send_invalid()
             return
 
-    async def _refresh_and_validate(self, *, anchor: float) -> None:
+    async def _refresh_and_validate(self, *, anchor: float) -> bool:
+        if self._disabled:
+            return False
         credentials = await asyncio.to_thread(self._credential_store.load)
+        if self._disabled:
+            return False
         token = await self._api.refresh(credentials)
+        if self._disabled:
+            return False
         if (
             not isinstance(token.access_token, str)
             or not token.access_token.strip()
@@ -324,12 +362,19 @@ class YouTubeLiveCapabilityGuard:
         if usable_for <= 0:
             raise YouTubeCapabilityError("token_expired")
         channel_id = await self._api.get_my_channel_id(token.access_token)
+        if self._disabled:
+            return False
         if channel_id != self._approved_channel_id:
             raise YouTubeCapabilityError("identity_mismatch")
+        expires_at = anchor + token.expires_in
+        if self._clock() >= expires_at:
+            raise YouTubeCapabilityError("token_expired")
         self._access_token = token.access_token
+        self._expires_at = expires_at
         self._validated = True
         self._failure_reason = "ok"
         self._deadline = anchor + min(self._interval, usable_for)
+        return True
 
 
 def _json_object(body: bytes) -> dict[str, object]:

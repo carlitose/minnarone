@@ -1095,7 +1095,12 @@ def build_agent(
     # validato all'avvio (fail-fast) con gli stessi override per-file da
     # `config.prompts_dir`.
     summarizer_prompt_set = load_summarizer_prompt_set(config.prompts_dir)
-    summarizer = Summarizer(llm=llm, store=store, prompt_set=summarizer_prompt_set)
+    summarizer = Summarizer(
+        llm=llm,
+        store=store,
+        prompt_set=summarizer_prompt_set,
+        bot_identity=bot_identity,
+    )
     human = HumanLikeness()
     event_recorder = (
         RunEventRecorder(run_session.debug_dir) if run_session is not None else None
